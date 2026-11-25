@@ -1,10 +1,13 @@
-"""AI Scene Image provider with Ken Burns motion presets & offline procedural fallback."""
+"""AI & Real Photography Scene Visual Provider with Ken Burns presets & studio framing (M04)."""
 
 import asyncio
+from io import BytesIO
 from pathlib import Path
+import re
+from typing import List
 from urllib.parse import quote
 import httpx
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.m00_core_contracts import (
     AssetType,
@@ -23,13 +26,111 @@ MOTION_CYCLE = (
     MotionEffect.PAN_DOWN,
 )
 
+HTTP_HEADERS = {
+    "User-Agent": "ChaosShortVideo/3.1 (https://github.com/chaoscutis1tg/ChaosShortVideo)"
+}
+
+STOPWORDS_EN = {
+    "a",
+    "an",
+    "the",
+    "of",
+    "in",
+    "on",
+    "at",
+    "with",
+    "and",
+    "or",
+    "vertical",
+    "cinematic",
+    "illustration",
+    "detailed",
+    "shot",
+    "lighting",
+    "aspect",
+    "ratio",
+    "ultra",
+    "close",
+    "up",
+    "closeup",
+}
+
+
+def _extract_search_query(line: NarrationLineDTO) -> str:
+    """Build a concise 2-4 word English photography search query from `stock_keywords` or `image_prompt`."""
+    if line.stock_keywords:
+        joined = " ".join(k.strip() for k in line.stock_keywords[:2] if k.strip())
+        if joined:
+            return joined[:60]
+    words = [
+        w.lower()
+        for w in re.findall(r"[A-Za-z]{3,}", line.image_prompt or "")
+        if w.lower() not in STOPWORDS_EN
+    ]
+    if words:
+        return " ".join(words[:4])
+    return "acoustic music studio"
+
+
+def _frame_raw_photo_to_vertical_1080p(raw_bytes: bytes, dest: Path) -> bool:
+    """Convert downloaded photo bytes into a rich 1080x1920 vertical scene with bottom subtitle vignette."""
+    try:
+        with Image.open(BytesIO(raw_bytes)) as src_im:
+            rgb = ImageOps.exif_transpose(src_im).convert("RGB")
+            if rgb.width < 220 or rgb.height < 220:
+                return False
+
+            aspect = rgb.width / float(max(rgb.height, 1))
+            if aspect <= 0.85:
+                # Portrait or near-portrait: full-bleed cover crop
+                fitted = ImageOps.fit(
+                    rgb, (CANVAS_WIDTH, CANVAS_HEIGHT), method=Image.Resampling.LANCZOS
+                )
+                canvas = ImageEnhance.Brightness(fitted).enhance(0.92).convert("RGBA")
+            else:
+                # Landscape photo: blurred atmospheric studio backdrop + sharp central showcase card
+                bg = ImageOps.fit(
+                    rgb, (CANVAS_WIDTH, CANVAS_HEIGHT), method=Image.Resampling.LANCZOS
+                ).filter(ImageFilter.GaussianBlur(radius=28))
+                bg = ImageEnhance.Brightness(bg).enhance(0.46)
+                canvas = bg.convert("RGBA")
+
+                card_w = CANVAS_WIDTH - 72
+                scale = card_w / float(max(rgb.width, 1))
+                card_h = min(int(CANVAS_HEIGHT * 0.62), max(420, int(round(rgb.height * scale))))
+                fg = ImageOps.fit(rgb, (card_w, card_h), method=Image.Resampling.LANCZOS).convert(
+                    "RGBA"
+                )
+                mask = Image.new("L", (card_w, card_h), 0)
+                ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (card_w, card_h)], radius=28, fill=255)
+                cx = (CANVAS_WIDTH - card_w) // 2
+                cy = int(CANVAS_HEIGHT * 0.19)
+                canvas.paste(fg, (cx, cy), mask)
+
+            # Soft lower gradient so Vietnamese subtitles are always razor-sharp
+            grad = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+            gd = ImageDraw.Draw(grad)
+            grad_top = int(CANVAS_HEIGHT * 0.68)
+            for y in range(grad_top, CANVAS_HEIGHT, 4):
+                prog = (y - grad_top) / float(max(CANVAS_HEIGHT - grad_top, 1))
+                alpha = int(min(185, round(prog * 175)))
+                gd.rectangle([(0, y), (CANVAS_WIDTH, min(y + 4, CANVAS_HEIGHT))], fill=(6, 9, 15, alpha))
+
+            merged = Image.alpha_composite(canvas, grad).convert("RGB")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            merged.save(dest, format="PNG")
+            return True
+    except Exception:
+        return False
+
 
 class AIImageKenBurnsProvider(IVisualProvider):
-    """Generates 1080x1920 scene illustrations via cloud endpoint or offline cinematic canvas."""
+    """Generates 1080x1920 scene visuals via AI endpoint, Openverse CC Photography, or clean studio backdrop."""
 
-    def __init__(self, allow_remote_fetch: bool = True, timeout_sec: float = 20.0) -> None:
+    def __init__(self, allow_remote_fetch: bool = True, timeout_sec: float = 14.0) -> None:
         self.allow_remote_fetch = allow_remote_fetch
         self.timeout_sec = timeout_sec
+        self._used_urls: set[str] = set()
 
     async def fetch_scene_visual(
         self,
@@ -42,18 +143,17 @@ class AIImageKenBurnsProvider(IVisualProvider):
         img_path = out_dir / f"scene_{line.seq_index:04d}.png"
         motion = MOTION_CYCLE[line.seq_index % len(MOTION_CYCLE)]
 
-        prompt = (
-            line.image_prompt.strip()
-            or f"cinematic dramatic vertical illustration, high detail, {line.vi_text[:80]}"
-        )
         fetched = False
         if self.allow_remote_fetch:
-            fetched = await self._try_fetch_pollinations(prompt, line.seq_index, img_path)
+            fetched = await self._try_fetch_openverse_photo(line, img_path)
+            if not fetched:
+                short_prompt = _extract_search_query(line)
+                fetched = await self._try_fetch_pollinations(
+                    f"{short_prompt} warm cinematic photography", line.seq_index, img_path
+                )
 
         if not fetched or not img_path.exists():
-            await asyncio.to_thread(
-                self._render_procedural_card, img_path, line.vi_text, line.seq_index
-            )
+            await asyncio.to_thread(self._render_clean_studio_backdrop, img_path, line.seq_index)
 
         return SceneVisualItemDTO(
             seq_index=line.seq_index,
@@ -63,33 +163,84 @@ class AIImageKenBurnsProvider(IVisualProvider):
             motion_effect=motion,
         )
 
+    async def _try_fetch_openverse_photo(self, line: NarrationLineDTO, dest: Path) -> bool:
+        """Search Openverse CC high-resolution photography and compose into a 1080x1920 scene."""
+        query = _extract_search_query(line)
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_sec, follow_redirects=True, headers=HTTP_HEADERS
+            ) as client:
+                res = await client.get(
+                    "https://api.openverse.org/v1/images/",
+                    params={"q": query, "page_size": 12},
+                )
+                if res.status_code != 200:
+                    return False
+                results: List[dict] = res.json().get("results") or []
+                # Prefer portrait/square high-res photos first, then landscape, skipping already-used URLs
+                candidates = sorted(
+                    [
+                        r
+                        for r in results
+                        if r.get("url")
+                        and r.get("url") not in self._used_urls
+                        and (r.get("width") or 0) >= 500
+                    ],
+                    key=lambda item: 0
+                    if (item.get("height") or 1) >= (item.get("width") or 1)
+                    else 1,
+                )
+                for idx_try, cand in enumerate(candidates[:4]):
+                    img_url = str(cand["url"])
+                    try:
+                        dl = await client.get(img_url, timeout=9.0)
+                        ct = (dl.headers.get("content-type") or "").lower()
+                        if dl.status_code == 200 and "image" in ct and len(dl.content) > 8192:
+                            ok = await asyncio.to_thread(
+                                _frame_raw_photo_to_vertical_1080p, dl.content, dest
+                            )
+                            if ok:
+                                self._used_urls.add(img_url)
+                                return True
+                    except Exception:
+                        if idx_try >= 2:
+                            break
+                        continue
+        except Exception:
+            return False
+        return False
+
     async def _try_fetch_pollinations(self, prompt: str, seed: int, dest: Path) -> bool:
-        encoded = quote(f"{prompt}, vertical 9:16 aspect ratio, ultra detailed, no text")
+        encoded = quote(prompt[:80], safe="")
         url = (
             f"https://image.pollinations.ai/prompt/{encoded}"
-            f"?width={CANVAS_WIDTH}&height={CANVAS_HEIGHT}&seed={1000 + seed}&nologo=true"
+            f"?width=720&height=1280&seed={1000 + seed}&nologo=true"
         )
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_sec, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_sec, follow_redirects=True, headers=HTTP_HEADERS
+            ) as client:
                 resp = await client.get(url)
-                if resp.status_code == 200 and len(resp.content) > 4096:
-                    dest.write_bytes(resp.content)
-                    return True
+                ct = (resp.headers.get("content-type") or "").lower()
+                if resp.status_code == 200 and "image" in ct and len(resp.content) > 8192:
+                    return await asyncio.to_thread(
+                        _frame_raw_photo_to_vertical_1080p, resp.content, dest
+                    )
         except Exception:
             return False
         return False
 
     @staticmethod
-    def _render_procedural_card(dest: Path, text: str, index: int) -> None:
-        """Create a rich cinematic 1080x1920 gradient backdrop when offline."""
+    def _render_clean_studio_backdrop(dest: Path, index: int) -> None:
+        """Render a clean text-free luxury atmospheric backdrop (never overlaps ASS subtitles)."""
         palettes = [
-            ((15, 23, 42), (49, 46, 129)),
-            ((24, 24, 27), (124, 45, 18)),
-            ((6, 44, 48), (15, 23, 42)),
-            ((46, 16, 101), (17, 24, 39)),
+            ((14, 21, 36), (62, 39, 22)),
+            ((18, 18, 26), (78, 42, 18)),
+            ((10, 28, 36), (22, 34, 56)),
+            ((28, 18, 42), (16, 24, 39)),
         ]
         top_c, bot_c = palettes[index % len(palettes)]
-        img = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), top_c)
+        img = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (*top_c, 255))
         draw = ImageDraw.Draw(img)
 
         for y in range(0, CANVAS_HEIGHT, 4):
@@ -97,36 +248,13 @@ class AIImageKenBurnsProvider(IVisualProvider):
             r = int(top_c[0] + (bot_c[0] - top_c[0]) * ratio)
             g = int(top_c[1] + (bot_c[1] - top_c[1]) * ratio)
             b = int(top_c[2] + (bot_c[2] - top_c[2]) * ratio)
-            draw.rectangle([(0, y), (CANVAS_WIDTH, min(y + 4, CANVAS_HEIGHT))], fill=(r, g, b))
+            draw.rectangle([(0, y), (CANVAS_WIDTH, min(y + 4, CANVAS_HEIGHT))], fill=(r, g, b, 255))
 
-        # Subtle decorative frame
-        margin = 64
-        draw.rounded_rectangle(
-            [(margin, 280), (CANVAS_WIDTH - margin, CANVAS_HEIGHT - 360)],
-            radius=32,
-            outline=(148, 163, 184),
-            width=3,
-        )
-        try:
-            font = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 44)
-        except OSError:
-            font = ImageFont.load_default()
-
-        words = text.split()
-        wrapped_lines = []
-        cur = []
-        for w in words:
-            cur.append(w)
-            if len(" ".join(cur)) >= 28:
-                wrapped_lines.append(" ".join(cur))
-                cur = []
-        if cur:
-            wrapped_lines.append(" ".join(cur))
-
-        y_cursor = 760
-        for ln in wrapped_lines[:6]:
-            draw.text((120, y_cursor), ln, fill=(241, 245, 249), font=font)
-            y_cursor += 64
-
-        img.save(dest, format="PNG")
-
+        glow = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        r_glow = 420
+        cx, cy = CANVAS_WIDTH // 2, int(CANVAS_HEIGHT * 0.44)
+        gd.ellipse([(cx - r_glow, cy - r_glow), (cx + r_glow, cy + r_glow)], fill=(180, 120, 52, 75))
+        merged = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(radius=95)))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        merged.convert("RGB").save(dest, format="PNG")

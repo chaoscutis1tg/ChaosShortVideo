@@ -152,8 +152,8 @@ class GeminiContentBrainService(ILLMService):
             "Trả về JSON theo đúng cấu trúc:\n"
             '{"parts": [{"part_number": 1, "hook_banner_title": "...", "scenes": ['
             '{"duration_sec": 7, "vi_text": "Câu đọc thuyết minh tiếng Việt cuốn hút...", '
-            '"image_prompt": "Detailed cinematic vertical 9:16 illustration prompt in English...", '
-            '"stock_keywords": ["keyword1", "keyword2"]}]}]}'
+            '"image_prompt": "Detailed cinematic vertical 9:16 photography prompt in English...", '
+            '"stock_keywords": ["english photo keyword 1", "english photo keyword 2"]}]}]}'
         )
         data = await self._call_gemini_json(prompt)
         parts_raw = data.get("parts") or []

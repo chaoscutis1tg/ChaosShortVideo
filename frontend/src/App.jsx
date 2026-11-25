@@ -6,11 +6,13 @@ import {
   Film,
   FolderKanban,
   Mic,
+  Moon,
   Pause,
   Play,
   ShoppingBag,
   SlidersHorizontal,
   Smartphone,
+  Sun,
   Wifi,
   X,
 } from 'lucide-react';
@@ -41,21 +43,36 @@ const ACTIVE_OR_PAUSED = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('movie');
+  const [activeTab, setActiveTab] = useState('product');
+  const [theme, setTheme] = useState(() => localStorage.getItem('chaos_theme') || 'dark');
   const [systemStatus, setSystemStatus] = useState(null);
   const [voices, setVoices] = useState([]);
   const [bgmPresets, setBgmPresets] = useState([]);
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [layoutConfig, setLayoutConfig] = useState(DEFAULT_LAYOUT_CONFIG);
-  const [previewFrameUrl, setPreviewFrameUrl] = useState('');
+  const [previewFramesByTab, setPreviewFramesByTab] = useState({
+    movie: '',
+    product: '',
+    topic: '',
+    workspace: '',
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [showMobilePreviewDrawer, setShowMobilePreviewDrawer] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('chaos_theme', theme);
+  }, [theme]);
+
   const notify = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 3400);
+  };
+
+  const setTabPreviewFrame = (tabKey, url) => {
+    setPreviewFramesByTab((prev) => ({ ...prev, [tabKey]: url || '' }));
   };
 
   const refreshAllData = async () => {
@@ -110,6 +127,7 @@ export default function App() {
   const runningProjects = projects.filter((p) => ACTIVE_OR_PAUSED.includes(p.state));
   const pinnedJob = runningProjects[0] || null;
   const queuedCount = projects.filter((p) => p.state === 'QUEUED').length;
+  const currentPreviewFrameUrl = previewFramesByTab[activeTab] || '';
 
   const handleQuickPauseResume = async (job) => {
     try {
@@ -127,8 +145,8 @@ export default function App() {
   };
 
   const navItems = [
-    { id: 'movie', label: 'Cắt & Dịch Video', shortLabel: 'Cắt Video', icon: Film },
     { id: 'product', label: 'Video Bán Hàng', shortLabel: 'Bán Hàng', icon: ShoppingBag },
+    { id: 'movie', label: 'Cắt & Dịch Video', shortLabel: 'Cắt Video', icon: Film },
     { id: 'topic', label: 'Tạo Từ Chủ Đề', shortLabel: 'Chủ Đề', icon: FileText },
     {
       id: 'workspace',
@@ -148,16 +166,19 @@ export default function App() {
 
   return (
     <div>
-      {/* TOP COMPACT HEADER */}
+      {/* TOP HIGH-CLARITY STUDIO HEADER */}
       <header className="studio-header">
         <div className="brand-wrap">
           <div className="brand-mark">
-            <Clapperboard size={18} strokeWidth={2} />
+            <Clapperboard size={20} strokeWidth={2.1} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="brand-title">ShortVideo Studio</div>
+            <div className="brand-title">
+              ChaosShortVideo
+              <span className="brand-version-pill">Studio v3</span>
+            </div>
             <div className="brand-sub">
-              Biên tập video ngắn dọc 9:16 cho cửa hàng và nhà sáng tạo nội dung
+              Hệ thống dựng video bán hàng, cắt dịch phim & sáng tạo nội dung ngắn đa nền tảng
             </div>
           </div>
         </div>
@@ -171,10 +192,10 @@ export default function App() {
               title="Bấm để sao chép liên kết mở trên điện thoại hoặc máy tính cùng mạng Wi-Fi"
               onClick={() => {
                 copyTextSafe(systemStatus.lan_urls[0]);
-                notify(`Đã sao chép địa chỉ mạng nội bộ: ${systemStatus.lan_urls[0]}`);
+                notify(`Đã sao chép địa chỉ mạng LAN: ${systemStatus.lan_urls[0]}`);
               }}
             >
-              <Wifi size={13} /> {systemStatus.lan_urls[0].replace('http://', '')}
+              <Wifi size={13} /> LAN: {systemStatus.lan_urls[0].replace('http://', '')}
             </button>
           )}
 
@@ -185,18 +206,35 @@ export default function App() {
               : 'Chế độ CPU'}
           </span>
 
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+            title="Chuyển đổi giao diện Tối / Sáng dễ nhìn"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun size={14} /> <span className="hide-on-mobile">Nền sáng</span>
+              </>
+            ) : (
+              <>
+                <Moon size={14} /> <span className="hide-on-mobile">Nền tối</span>
+              </>
+            )}
+          </button>
+
           <button className="btn btn-secondary btn-sm" onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={14} /> <span className="hide-on-mobile">Kết nối API</span>
           </button>
         </div>
       </header>
 
-      {/* MAIN 3-COLUMN STUDIO LAYOUT */}
+      {/* MAIN 3-COLUMN STABLE STUDIO LAYOUT */}
       <div className="studio-layout-3col">
         {/* LEFT SIDEBAR RAIL */}
         <aside className="studio-sidebar">
           <nav className="nav-rail">
-            <div className="nav-section-label">Công cụ tạo video</div>
+            <div className="nav-section-label">Công cụ sản xuất</div>
             {navItems.slice(0, 3).map((item) => {
               const Icon = item.icon;
               return (
@@ -206,14 +244,14 @@ export default function App() {
                   onClick={() => setActiveTab(item.id)}
                 >
                   <span className="rail-btn-left">
-                    <Icon size={17} strokeWidth={1.8} />
+                    <Icon size={18} strokeWidth={1.9} />
                     <span>{item.label}</span>
                   </span>
                 </button>
               );
             })}
 
-            <div className="nav-section-label" style={{ marginTop: 6 }}>
+            <div className="nav-section-label" style={{ marginTop: 8 }}>
               Quản lý & Thư viện
             </div>
             {navItems.slice(3).map((item) => {
@@ -228,7 +266,7 @@ export default function App() {
                   }}
                 >
                   <span className="rail-btn-left">
-                    <Icon size={17} strokeWidth={1.8} />
+                    <Icon size={18} strokeWidth={1.9} />
                     <span>{item.label}</span>
                   </span>
                   {item.count !== undefined && <span className="rail-count">{item.count}</span>}
@@ -248,11 +286,11 @@ export default function App() {
                   marginBottom: 4,
                 }}
               >
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: '#38bdf8' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand-text)' }}>
                   {pinnedJob.state === 'PAUSED' ? 'Đang tạm dừng' : 'Đang xử lý video'}
                 </span>
                 {queuedCount > 0 && (
-                  <span className="badge badge-warn" style={{ fontSize: 10.5, padding: '1px 6px' }}>
+                  <span className="badge badge-warn" style={{ fontSize: 10.5, padding: '1px 7px' }}>
                     +{queuedCount} chờ
                   </span>
                 )}
@@ -260,8 +298,8 @@ export default function App() {
 
               <div
                 style={{
-                  fontSize: 13,
-                  fontWeight: 600,
+                  fontSize: 13.5,
+                  fontWeight: 700,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -272,7 +310,7 @@ export default function App() {
                 {pinnedJob.name}
               </div>
 
-              <div style={{ fontSize: 11.5, color: '#9ca3af' }}>
+              <div className="text-sub" style={{ fontSize: 12 }}>
                 {pinnedJob.live_progress?.step_label ||
                   STAGE_LABELS[pinnedJob.state] ||
                   pinnedJob.state}
@@ -288,16 +326,16 @@ export default function App() {
               </div>
 
               <div
+                className="text-sub"
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  fontSize: 11.5,
-                  color: '#d1d5db',
-                  marginBottom: 8,
+                  fontSize: 12,
+                  marginBottom: 9,
                 }}
               >
-                <span>{pinnedJob.live_progress?.percent || 0}%</span>
-                <span style={{ color: '#34d399', fontWeight: 500 }}>
+                <strong>{pinnedJob.live_progress?.percent || 0}%</strong>
+                <span style={{ color: 'var(--success-text)', fontWeight: 600 }}>
                   {pinnedJob.live_progress?.eta_sec !== null &&
                   pinnedJob.live_progress?.eta_sec !== undefined
                     ? `Còn ~${formatSecondsVi(pinnedJob.live_progress.eta_sec)}`
@@ -330,7 +368,7 @@ export default function App() {
                     setActiveTab('workspace');
                   }}
                 >
-                  Xem
+                  Chi tiết
                 </button>
               </div>
             </div>
@@ -344,7 +382,7 @@ export default function App() {
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
-              onPreviewFrameReady={setPreviewFrameUrl}
+              onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
             />
@@ -356,7 +394,7 @@ export default function App() {
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
               setLayoutConfig={setLayoutConfig}
-              onPreviewFrameReady={setPreviewFrameUrl}
+              onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
             />
@@ -390,7 +428,7 @@ export default function App() {
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
               setLayoutConfig={setLayoutConfig}
-              onPreviewFrameReady={setPreviewFrameUrl}
+              onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
               notify={notify}
             />
           )}
@@ -401,7 +439,7 @@ export default function App() {
           <Canvas916Designer
             layoutConfig={layoutConfig}
             setLayoutConfig={setLayoutConfig}
-            previewFrameUrl={previewFrameUrl}
+            previewFrameUrl={currentPreviewFrameUrl}
             systemStatus={systemStatus}
             onSystemStatusUpdated={setSystemStatus}
             activeTab={activeTab}
@@ -410,13 +448,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* FLOATING 9:16 PREVIEW TRIGGER FOR LAPTOP / TABLET / MOBILE */}
+      {/* FLOATING PREVIEW TRIGGER FOR LAPTOP / TABLET / MOBILE */}
       <button
         type="button"
         className="btn btn-primary floating-preview-fab"
         onClick={() => setShowMobilePreviewDrawer(true)}
       >
-        <Smartphone size={16} /> Khung hình & Phần cứng
+        <Smartphone size={16} /> Xem trước & Phần cứng
       </button>
 
       {/* SLIDE-OVER DRAWER FOR SMALL SCREENS */}
@@ -428,10 +466,10 @@ export default function App() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 10,
+                marginBottom: 12,
               }}
             >
-              <strong style={{ fontSize: 14 }}>Xem trước khung hình & Thiết bị</strong>
+              <strong style={{ fontSize: 15 }}>Xem trước khung hình & Thiết bị</strong>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -443,7 +481,7 @@ export default function App() {
             <Canvas916Designer
               layoutConfig={layoutConfig}
               setLayoutConfig={setLayoutConfig}
-              previewFrameUrl={previewFrameUrl}
+              previewFrameUrl={currentPreviewFrameUrl}
               systemStatus={systemStatus}
               onSystemStatusUpdated={setSystemStatus}
               activeTab={activeTab}
@@ -467,7 +505,7 @@ export default function App() {
                 setActiveTab(item.id);
               }}
             >
-              <Icon size={19} strokeWidth={1.8} />
+              <Icon size={19} strokeWidth={1.9} />
               <span>{item.shortLabel}</span>
             </button>
           );

@@ -301,8 +301,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         yield
 
     app = FastAPI(
-        title="ShortVideo Studio AI API",
-        version="2.0.0",
+        title="ChaosShortVideo API",
+        version="3.0.0",
         lifespan=_lifespan,
     )
     app.add_middleware(
@@ -1344,7 +1344,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             for src_p, arc_name in files_to_pack:
                 zf.write(src_p, arcname=arc_name)
 
-        safe_dl = f"ShortVideo_{project_id}.zip"
+        safe_dl = f"ChaosShortVideo_{project_id}.zip"
         return FileResponse(
             path=str(zip_path),
             media_type="application/zip",

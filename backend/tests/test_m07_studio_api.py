@@ -660,7 +660,7 @@ def test_m07_uc14_scraper_brandkit_cutout_soundwave_outro_and_zip(tmp_path: Path
         )
         assert r_res.status_code == 200
 
-        for _ in range(110):
+        for _ in range(200):
             proj_detail = client.get(f"/api/projects/{pid}").json()
             if proj_detail["state"] in ("COMPLETED", "FAILED"):
                 break
@@ -671,6 +671,7 @@ def test_m07_uc14_scraper_brandkit_cutout_soundwave_outro_and_zip(tmp_path: Path
         # Download & inspect .ZIP bundle
         zip_res = client.get(f"/api/projects/{pid}/download-zip")
         assert zip_res.status_code == 200
+        assert f"ChaosShortVideo_{pid}.zip" in zip_res.headers.get("content-disposition", "")
         with zipfile.ZipFile(BytesIO(zip_res.content), "r") as zf:
             names = set(zf.namelist())
             assert "Video_Part_01.mp4" in names

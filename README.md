@@ -1,6 +1,6 @@
-# ShortVideo Studio AI — YouTube Shorts & TikTok
+# ChaosShortVideo — Hệ Thống Biên Tập Video Ngắn & Bán Hàng Đa Năng
 
-Hệ thống **Local Web Studio** tạo video ngắn đa năng chạy trực tiếp trên máy tính cá nhân (tối ưu cho **NVIDIA GeForce RTX 3060 12GB VRAM + FFmpeg `h264_nvenc`**), tuân thủ nghiêm ngặt kiến trúc phân rã **08 Module độc lập (`M00 -> M07`)** để dễ dàng kế thừa và chia việc làm nhóm.
+Hệ thống **ChaosShortVideo** tạo video ngắn, cắt dịch phim và dựng quảng cáo sản phẩm chuyên nghiệp chạy trực tiếp trên máy tính cá nhân & mạng nội bộ LAN (tối ưu cho **NVIDIA GeForce RTX 3060 12GB VRAM**), tuân thủ nghiêm ngặt kiến trúc phân rã **08 Module độc lập (`M00 -> M07`)**.
 
 ---
 

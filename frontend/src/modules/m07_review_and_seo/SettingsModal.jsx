@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyRound, Save, X } from 'lucide-react';
+import { CheckCircle2, KeyRound, Save, X } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 
 export default function SettingsModal({ systemStatus, onClose, onUpdated, notify }) {
@@ -23,7 +23,7 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
 
       const updated = await studioApi.updateApiKeys(payload);
       onUpdated(updated);
-      notify('Đã lưu cấu hình khóa kết nối vào máy.');
+      notify('Đã lưu cấu hình khóa kết nối cho ChaosShortVideo.');
       onClose();
     } catch (err) {
       notify(`Lỗi lưu cấu hình: ${err.message}`);
@@ -39,26 +39,28 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.72)',
+        background: 'rgba(2, 6, 23, 0.72)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 110,
         padding: 16,
       }}
+      onClick={onClose}
     >
       <form
         className="card"
+        onClick={(e) => e.stopPropagation()}
         onSubmit={handleSave}
-        style={{ width: '100%', maxWidth: 580, marginBottom: 0 }}
+        style={{ width: '100%', maxWidth: 600, marginBottom: 0 }}
       >
         <div className="page-header" style={{ marginBottom: 14 }}>
           <div>
             <div className="page-title">
-              <KeyRound size={18} /> Cấu hình khóa kết nối dịch vụ
+              <KeyRound size={19} /> Kết nối khóa API — ChaosShortVideo
             </div>
             <div className="page-subtitle">
-              Lưu cục bộ trong tệp .env trên máy tính của bạn
+              Khóa được bảo mật cục bộ trong tệp .env ngay trên máy của bạn
             </div>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
@@ -66,17 +68,25 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
           </button>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">
-            Google Gemini API Key{' '}
-            <span style={{ color: keys.gemini ? '#34d399' : '#fbbf24' }}>
-              ({keys.gemini ? 'Đã kết nối' : 'Chưa nhập'})
+        <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Google Gemini API Key (Viết kịch bản, Nhìn ảnh sản phẩm & Dịch phim)
+            </label>
+            <span className={`badge ${keys.gemini ? 'badge-ok' : 'badge-warn'}`}>
+              {keys.gemini ? (
+                <>
+                  <CheckCircle2 size={12} /> Đã kết nối
+                </>
+              ) : (
+                'Chưa nhập'
+              )}
             </span>
-          </label>
+          </div>
           <input
             type="password"
             className="input"
-            placeholder="Nhập khóa mới nếu muốn thay đổi..."
+            placeholder="Dán khóa mới nếu muốn cập nhật (để trống để giữ khóa hiện tại)..."
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
           />
@@ -85,7 +95,7 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
         <div className="form-grid">
           <div className="form-group">
             <label className="form-label">
-              Pexels API Key ({keys.pexels ? 'Đã có' : 'Tùy chọn'})
+              Pexels API Key ({keys.pexels ? 'Đã có' : 'Tùy chọn cho Video Chủ Đề'})
             </label>
             <input
               type="password"
@@ -97,7 +107,7 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
           </div>
           <div className="form-group">
             <label className="form-label">
-              Pixabay API Key ({keys.pixabay ? 'Đã có' : 'Tùy chọn'})
+              Pixabay API Key ({keys.pixabay ? 'Đã có' : 'Tùy chọn cho Video Chủ Đề'})
             </label>
             <input
               type="password"
@@ -137,8 +147,11 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
         </div>
 
         <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Hủy
+          </button>
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            <Save size={15} /> Lưu cấu hình
+            <Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
           </button>
         </div>
       </form>

@@ -5,8 +5,6 @@ import {
   Award,
   BookmarkPlus,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   ClipboardPaste,
   Columns,
   Edit3,
@@ -38,6 +36,7 @@ import {
   InlineVoiceSelector,
   MediaDropzone,
   ModeChoiceGrid,
+  SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
 const VIDEO_EXT_RE = /\.(mp4|mov|mkv|webm|avi|flv|ts)$/i;
@@ -136,7 +135,6 @@ export default function ProductStudioForm({
 
   const [complianceReport, setComplianceReport] = useState(null);
   const [checkingPolicy, setCheckingPolicy] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadingFeedback, setUploadingFeedback] = useState(false);
   const [uploadingDemo, setUploadingDemo] = useState(false);
@@ -163,7 +161,7 @@ export default function ProductStudioForm({
     }));
   }, []);
 
-  // Global Ctrl+V Clipboard Image Paste Listener (Zalo PC / Screenshot -> Direct Upload!)
+  // Global Ctrl+V Clipboard Image Paste Listener (Zalo PC / Screenshot -> Direct Upload)
   useEffect(() => {
     const onWindowPaste = (e) => {
       const items = e.clipboardData?.items;
@@ -459,32 +457,42 @@ export default function ProductStudioForm({
       <div className="page-header">
         <div>
           <div className="page-title">
-            <ShoppingBag size={19} strokeWidth={1.9} /> Làm Video Giới Thiệu & Bán Sản Phẩm Chuyên Nghiệp
+            <ShoppingBag size={20} strokeWidth={2} /> Làm Video Giới Thiệu & Bán Sản Phẩm Chuyên Nghiệp
           </div>
           <div className="page-subtitle">
-            Dán ảnh thẳng từ Zalo (Ctrl+V), hút link website, trộn đa clip + ảnh, tách nền Studio, so sánh 2 phiên bản & vẽ sóng âm đàn mộc
+            Dán ảnh thẳng từ Zalo (Ctrl+V), hút thông tin từ website, trộn đa clip + ảnh, tách nền Studio, so sánh 2 phiên bản & vẽ sóng âm đàn mộc
           </div>
         </div>
+        <span className="badge badge-ok">Chuẩn CapCut • Giữ nguyên 100% khung hình</span>
       </div>
 
-      {/* BAR 1: AUTO-SCRAPE PRODUCT URL & SAVED TEMPLATES */}
+      {/* BAR 1: QUICK AUTO-SCRAPE PRODUCT URL & SAVED STORE CATALOG */}
       <div
+        className="step-box"
         style={{
           display: 'grid',
-          gap: 8,
-          marginBottom: 14,
-          padding: '10px 12px',
-          borderRadius: 9,
-          background: 'var(--bg-input)',
-          border: '1px solid var(--border)',
+          gap: 10,
+          padding: '13px 15px',
         }}
       >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Globe size={15} style={{ color: '#38bdf8', flexShrink: 0 }} />
+          <span
+            style={{
+              fontSize: 12.8,
+              fontWeight: 700,
+              color: 'var(--brand-text)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 165,
+            }}
+          >
+            <Globe size={15} /> Hút nhanh từ Website:
+          </span>
           <input
             className="input"
-            style={{ flex: 1, minWidth: 210, minHeight: 34, padding: '5px 10px', fontSize: 12.8 }}
-            placeholder="Dán link sản phẩm trên Website cửa hàng (VD: https://www.sonmusic.vn/...) để tự lấy ảnh & mô tả..."
+            style={{ flex: 1, minWidth: 220, minHeight: 37, padding: '6px 12px', fontSize: 13.2 }}
+            placeholder="Dán link sản phẩm (VD: https://www.sonmusic.vn/...) để tự lấy tên, mô tả & bộ ảnh..."
             value={scrapeUrl}
             onChange={(e) => setScrapeUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleScrapeProductUrl()}
@@ -492,29 +500,40 @@ export default function ProductStudioForm({
           <button
             type="button"
             className="btn btn-primary btn-sm"
+            style={{ minHeight: 37 }}
             disabled={scrapingUrl}
             onClick={handleScrapeProductUrl}
           >
-            <Globe size={13} /> {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút ảnh & thông số'}
+            <Globe size={14} /> {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút ảnh & thông số'}
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            paddingTop: 8,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
           <span
             style={{
-              fontSize: 12.4,
-              color: '#d1d5db',
-              fontWeight: 600,
+              fontSize: 12.8,
+              color: 'var(--text-primary)',
+              fontWeight: 700,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
+              minWidth: 165,
             }}
           >
-            <Package size={14} /> Kho mẫu lưu sẵn:
+            <Package size={15} style={{ color: 'var(--brand-text)' }} /> Kho mẫu lưu sẵn:
           </span>
           <select
             className="select"
-            style={{ flex: 1, minWidth: 190, minHeight: 32, padding: '4px 10px', fontSize: 12.5 }}
+            style={{ flex: 1, minWidth: 200, minHeight: 36, padding: '5px 11px', fontSize: 13 }}
             value={selectedTplId}
             onChange={(e) => {
               const id = e.target.value;
@@ -523,7 +542,7 @@ export default function ProductStudioForm({
               if (found) handleApplyTemplate(found);
             }}
           >
-            <option value="">Chọn nhanh sản phẩm trong kho ({templates.length})</option>
+            <option value="">Chọn nhanh sản phẩm đã lưu trong kho ({templates.length})</option>
             {templates.map((t) => (
               <option key={t.template_id} value={t.template_id}>
                 {t.product_name}
@@ -534,12 +553,19 @@ export default function ProductStudioForm({
           <button
             type="button"
             className="btn btn-secondary btn-sm"
+            style={{ minHeight: 36 }}
             onClick={handleSaveCurrentAsTemplate}
           >
-            <BookmarkPlus size={14} /> Lưu mẫu
+            <BookmarkPlus size={14} /> Lưu mẫu hiện tại
           </button>
           {selectedTplId && (
-            <button type="button" className="btn btn-danger btn-sm" onClick={handleDeleteTemplate}>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              style={{ minHeight: 36 }}
+              onClick={handleDeleteTemplate}
+              title="Xóa mẫu này khỏi kho"
+            >
               <Trash2 size={14} />
             </button>
           )}
@@ -564,7 +590,7 @@ export default function ProductStudioForm({
           {uploadedPhotos.length > 0 && (
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
+              className="btn btn-danger btn-sm"
               onClick={() => setUploadedPhotos([])}
             >
               <Trash2 size={13} /> Xóa hết
@@ -590,9 +616,9 @@ export default function ProductStudioForm({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(146px, 1fr))',
               gap: 10,
-              marginTop: 12,
+              marginTop: 14,
             }}
           >
             {uploadedPhotos.map((ph, idx) => (
@@ -607,22 +633,22 @@ export default function ProductStudioForm({
                 }}
                 style={{
                   background: 'var(--bg-panel)',
-                  border: idx === 0 ? '1px solid #0ea5e9' : '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: 6,
+                  border: idx === 0 ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: 7,
                 }}
               >
                 <div
                   onClick={() => !ph.isVideo && onPreviewFrameReady && onPreviewFrameReady(ph.media_url)}
-                  title="Kéo thả thẻ để đổi thứ tự xuất hiện"
+                  title="Bấm để xem thử trên khung điện thoại • Kéo thả để đổi thứ tự"
                   style={{
                     position: 'relative',
-                    borderRadius: 5,
+                    borderRadius: 6,
                     overflow: 'hidden',
                     aspectRatio: '3 / 4',
                     cursor: 'grab',
-                    marginBottom: 5,
-                    background: '#08090c',
+                    marginBottom: 6,
+                    background: '#080a0f',
                   }}
                 >
                   {ph.isVideo ? (
@@ -645,17 +671,17 @@ export default function ProductStudioForm({
                   <span
                     style={{
                       position: 'absolute',
-                      left: 4,
-                      bottom: 4,
+                      left: 5,
+                      bottom: 5,
                       background: ph.isVideo
                         ? 'rgba(16, 185, 129, 0.92)'
                         : idx === 0
-                        ? 'rgba(2, 132, 199, 0.92)'
-                        : 'rgba(11, 13, 16, 0.86)',
-                      color: '#f3f4f6',
-                      fontSize: 10,
-                      fontWeight: 600,
-                      padding: '1px 6px',
+                        ? 'rgba(2, 132, 199, 0.94)'
+                        : 'rgba(15, 23, 42, 0.88)',
+                      color: '#ffffff',
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      padding: '2px 6px',
                       borderRadius: 4,
                     }}
                   >
@@ -666,25 +692,25 @@ export default function ProductStudioForm({
                     <button
                       type="button"
                       disabled={cutoutBusyIdx === idx}
-                      title="Tách nền lộn xộn cho riêng bức ảnh này"
+                      title="Tách nền sang phông Studio cho riêng bức ảnh này"
                       onClick={(ev) => {
                         ev.stopPropagation();
                         handleSinglePhotoCutout(idx);
                       }}
                       style={{
                         position: 'absolute',
-                        top: 4,
-                        left: 4,
-                        height: 20,
-                        padding: '0 6px',
-                        borderRadius: 4,
-                        border: '1px solid rgba(212,175,55,0.6)',
+                        top: 5,
+                        left: 5,
+                        height: 22,
+                        padding: '0 7px',
+                        borderRadius: 5,
+                        border: '1px solid rgba(245, 158, 11, 0.65)',
                         background: ph.cutoutDone
-                          ? 'rgba(5, 150, 105, 0.9)'
-                          : 'rgba(17, 24, 39, 0.88)',
+                          ? 'rgba(5, 150, 105, 0.92)'
+                          : 'rgba(15, 23, 42, 0.9)',
                         color: '#fef3c7',
-                        fontSize: 9.5,
-                        fontWeight: 600,
+                        fontSize: 10,
+                        fontWeight: 700,
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 3,
@@ -703,30 +729,37 @@ export default function ProductStudioForm({
                     }}
                     style={{
                       position: 'absolute',
-                      top: 4,
-                      right: 4,
-                      width: 20,
-                      height: 20,
-                      borderRadius: 4,
+                      top: 5,
+                      right: 5,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 5,
                       border: 'none',
-                      background: 'rgba(17, 24, 39, 0.85)',
-                      color: '#fff',
+                      background: 'rgba(15, 23, 42, 0.88)',
+                      color: '#ffffff',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
                     }}
                   >
-                    <X size={12} />
+                    <X size={13} />
                   </button>
                 </div>
 
                 {/* Reorder Quick Controls */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4, marginBottom: layoutConfig.show_photo_callouts ? 5 : 0 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 4,
+                    marginBottom: layoutConfig.show_photo_callouts && !ph.isVideo ? 6 : 0,
+                  }}
+                >
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 6px', minHeight: 24 }}
+                    style={{ padding: '2px 7px', minHeight: 26 }}
                     disabled={idx === 0}
                     title="Đẩy sang trước"
                     onClick={() => movePhoto(idx, idx - 1)}
@@ -737,7 +770,7 @@ export default function ProductStudioForm({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ padding: '2px 6px', minHeight: 24, fontSize: 10.5, flex: 1 }}
+                      style={{ padding: '2px 6px', minHeight: 26, fontSize: 11, flex: 1 }}
                       title="Đưa lên làm cảnh đầu tiên mở màn"
                       onClick={() => movePhoto(idx, 0)}
                     >
@@ -747,7 +780,7 @@ export default function ProductStudioForm({
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 6px', minHeight: 24 }}
+                    style={{ padding: '2px 7px', minHeight: 26 }}
                     disabled={idx === uploadedPhotos.length - 1}
                     title="Đẩy ra sau"
                     onClick={() => movePhoto(idx, idx + 1)}
@@ -759,7 +792,7 @@ export default function ProductStudioForm({
                 {layoutConfig.show_photo_callouts && !ph.isVideo && (
                   <input
                     className="input"
-                    style={{ minHeight: 27, padding: '3px 7px', fontSize: 11.2 }}
+                    style={{ minHeight: 29, padding: '3px 8px', fontSize: 11.5 }}
                     placeholder="Nhãn ngắn trên ảnh..."
                     value={ph.note}
                     onChange={(e) => handlePhotoNoteChange(idx, e.target.value)}
@@ -771,23 +804,18 @@ export default function ProductStudioForm({
         )}
 
         {/* Real Acoustic Sound / Demo + Customer Feedback Social Proof Row */}
-        <div className="form-grid" style={{ marginTop: 12 }}>
-          <div
-            style={{
-              padding: '11px 12px',
-              borderRadius: 8,
-              background: 'var(--bg-panel)',
-              border: '1px solid var(--border)',
-            }}
-          >
+        <div className="form-grid" style={{ marginTop: 14 }}>
+          <div className="surface-box">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12.4, color: '#d1d5db' }}>
-                <strong>Thu âm tiếng đàn mộc / Clip test âm (5–20s):</strong>
-                <div style={{ color: '#9ca3af', fontSize: 11.5 }}>
-                  Tự ngắt giọng đọc & vẽ sóng âm vàng kim theo tiếng đàn
+              <div>
+                <div style={{ fontSize: 13.2, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Thu âm tiếng đàn mộc / Clip test âm (5–20s)
+                </div>
+                <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
+                  Tự ngắt giọng đọc & vẽ sóng âm vàng kim theo tiếng đàn thực tế
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 5 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
                 <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
                   <Music2 size={14} />{' '}
                   {uploadingDemo ? 'Đang tải...' : demoClip ? 'Đổi tệp' : 'Chọn tiếng đàn / clip'}
@@ -807,28 +835,27 @@ export default function ProductStudioForm({
               </div>
             </div>
             {demoClip?.media_url && (
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 10 }}>
                 {demoClip.isVideo ? (
-                  <video controls src={demoClip.media_url} style={{ width: '100%', maxHeight: 140, borderRadius: 6, background: '#000' }} />
+                  <video
+                    controls
+                    src={demoClip.media_url}
+                    style={{ width: '100%', maxHeight: 145, borderRadius: 7, background: '#000' }}
+                  />
                 ) : (
-                  <audio controls src={demoClip.media_url} style={{ width: '100%', height: 34 }} />
+                  <audio controls src={demoClip.media_url} style={{ width: '100%', height: 36 }} />
                 )}
               </div>
             )}
           </div>
 
-          <div
-            style={{
-              padding: '11px 12px',
-              borderRadius: 8,
-              background: 'var(--bg-panel)',
-              border: '1px solid var(--border)',
-            }}
-          >
+          <div className="surface-box">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12.4, color: '#d1d5db' }}>
-                <strong>Ảnh khách khen / Feedback thực tế (tùy chọn):</strong>
-                <div style={{ color: '#9ca3af', fontSize: 11.5 }}>
+              <div>
+                <div style={{ fontSize: 13.2, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Ảnh khách khen / Feedback thực tế (tùy chọn)
+                </div>
+                <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
                   Chèn 1–2 ảnh chụp tin nhắn khách phản hồi ở gần cuối video
                 </div>
               </div>
@@ -846,28 +873,35 @@ export default function ProductStudioForm({
               </label>
             </div>
             {feedbackPhotos.length > 0 && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                 {feedbackPhotos.map((fb, fIdx) => (
-                  <div key={fIdx} style={{ position: 'relative', width: 56, height: 56 }}>
+                  <div key={fIdx} style={{ position: 'relative', width: 60, height: 60 }}>
                     <img
                       src={fb.media_url}
                       alt="Feedback"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid #deb96e' }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        borderRadius: 7,
+                        border: '1.5px solid var(--gold-border)',
+                      }}
                     />
                     <button
                       type="button"
                       onClick={() => setFeedbackPhotos((prev) => prev.filter((_, i) => i !== fIdx))}
                       style={{
                         position: 'absolute',
-                        top: -4,
-                        right: -4,
-                        width: 18,
-                        height: 18,
+                        top: -5,
+                        right: -5,
+                        width: 19,
+                        height: 19,
                         borderRadius: 99,
                         border: 'none',
-                        background: '#ef4444',
+                        background: 'var(--danger)',
                         color: '#fff',
-                        fontSize: 10,
+                        fontSize: 11,
+                        fontWeight: 700,
                         cursor: 'pointer',
                       }}
                     >
@@ -947,7 +981,7 @@ export default function ProductStudioForm({
           <label className="form-label">Thông số sản phẩm, phụ kiện tặng kèm & quyền lợi khách hàng</label>
           <textarea
             className="textarea"
-            style={{ minHeight: 120 }}
+            style={{ minHeight: 124 }}
             value={rawDescription}
             onChange={(e) => {
               setRawDescription(e.target.value);
@@ -960,20 +994,20 @@ export default function ProductStudioForm({
           <div
             style={{
               marginTop: 8,
-              padding: '10px 12px',
-              borderRadius: 8,
+              padding: '11px 14px',
+              borderRadius: 9,
               background: complianceReport.is_safe
-                ? 'rgba(16, 185, 129, 0.1)'
-                : 'rgba(245, 158, 11, 0.12)',
+                ? 'rgba(16, 185, 129, 0.12)'
+                : 'var(--gold-soft)',
               border: complianceReport.is_safe
-                ? '1px solid rgba(16, 185, 129, 0.35)'
-                : '1px solid rgba(245, 158, 11, 0.45)',
-              fontSize: 12.6,
+                ? '1px solid rgba(16, 185, 129, 0.4)'
+                : '1px solid var(--gold-border)',
+              fontSize: 13,
             }}
           >
             {complianceReport.is_safe ? (
-              <div style={{ color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircle2 size={15} /> Đạt {complianceReport.safety_score}/100 điểm — Không có từ khóa vi phạm chính sách hiển thị.
+              <div style={{ color: 'var(--success-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7 }}>
+                <CheckCircle2 size={16} /> Đạt {complianceReport.safety_score}/100 điểm — Không có từ khóa vi phạm chính sách hiển thị.
               </div>
             ) : (
               <div>
@@ -984,9 +1018,10 @@ export default function ProductStudioForm({
                     alignItems: 'center',
                     gap: 8,
                     marginBottom: 6,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  <strong style={{ color: '#fcd34d' }}>
+                  <strong style={{ color: 'var(--gold-text)' }}>
                     Phát hiện {complianceReport.issues.length} cụm từ dễ bị hạn chế phân phối:
                   </strong>
                   <button
@@ -998,7 +1033,7 @@ export default function ProductStudioForm({
                   </button>
                 </div>
                 {complianceReport.issues.map((iss, i) => (
-                  <div key={i} style={{ color: '#fde68a', fontSize: 12, marginTop: 2 }}>
+                  <div key={i} className="text-sub" style={{ fontSize: 12.4, marginTop: 3 }}>
                     - &quot;{iss.phrase}&quot; → Đổi thành: <strong>&quot;{iss.suggestion}&quot;</strong>
                   </div>
                 ))}
@@ -1008,22 +1043,22 @@ export default function ProductStudioForm({
         )}
       </div>
 
-      {/* STEP 3: CAPCUT SMOOTH EDITING, STUDIO CUTOUT, A/B SPLIT & OVERLAY SWITCHES */}
+      {/* STEP 3: CAPCUT SMOOTH EDITING, STUDIO CUTOUT, A/B SPLIT & CLEAR SWITCH CARDS */}
       <div className="step-box">
         <div className="step-header">
           <span className="step-num">3</span>
           <div style={{ flex: 1 }}>
             <div className="step-title">
-              <Film size={15} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+              <Film size={15} style={{ verticalAlign: '-2px', marginRight: 6 }} />
               Dựng hình CapCut, Tách nền Studio, So sánh A/B & Công tắc hiển thị
             </div>
             <div className="step-desc">
-              Mặc định khung sạch sang trọng. Bật thêm Tách nền Studio hoặc So sánh chia đôi 2 phiên bản khi cần.
+              Mặc định giữ khung sạch sang trọng. Bấm trực tiếp các thẻ công tắc bên dưới để bật/tắt thành phần mong muốn.
             </div>
           </div>
         </div>
 
-        <div className="form-grid" style={{ marginBottom: 12 }}>
+        <div className="form-grid" style={{ marginBottom: 14 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Hiệu ứng chuyển cảnh mượt (Không rung giật)</label>
             <select
@@ -1041,7 +1076,7 @@ export default function ProductStudioForm({
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Kiểu nền & tỷ lệ khung xuất</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <select
                 className="select"
                 style={{ flex: 1 }}
@@ -1054,7 +1089,7 @@ export default function ProductStudioForm({
               </select>
               <select
                 className="select"
-                style={{ width: 124 }}
+                style={{ width: 132 }}
                 value={layoutConfig.aspect_ratio || '9:16'}
                 onChange={(e) => updateSalesLayout({ aspect_ratio: e.target.value })}
               >
@@ -1066,122 +1101,59 @@ export default function ProductStudioForm({
           </div>
         </div>
 
-        {/* Studio Cutout, Soundwave & Split-Screen A/B Switches */}
-        <div
-          style={{
-            background: 'var(--bg-panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: layoutConfig.comparison_split_enabled ? 10 : 0 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer', color: '#fde68a' }}>
-              <input
-                type="checkbox"
-                checked={Boolean(layoutConfig.studio_cutout_enabled)}
-                onChange={(e) => updateSalesLayout({ studio_cutout_enabled: e.target.checked })}
-              />
-              <Wand2 size={14} /> Tự động tách nền toàn bộ ảnh sang phông Studio Đen Nhung
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={Boolean(layoutConfig.comparison_split_enabled)}
-                onChange={(e) => updateSalesLayout({ comparison_split_enabled: e.target.checked })}
-              />
-              <Columns size={14} /> Chèn cảnh chia đôi so sánh 2 phiên bản (Ảnh 1 vs Ảnh 2)
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={layoutConfig.soundwave_enabled !== false}
-                onChange={(e) => updateSalesLayout({ soundwave_enabled: e.target.checked })}
-              />
-              Hiện sóng âm vàng kim khi phát tiếng đàn mộc
-            </label>
+        {/* Group A: Studio Processing Switches */}
+        <div className="form-group">
+          <label className="form-label">Xử lý hình ảnh & hiệu ứng âm thanh Studio</label>
+          <div className="toggle-grid">
+            <SwitchCard
+              icon={Wand2}
+              checked={Boolean(layoutConfig.studio_cutout_enabled)}
+              onChange={(val) => updateSalesLayout({ studio_cutout_enabled: val })}
+            >
+              Tự tách nền sang phông Đen Nhung
+            </SwitchCard>
+            <SwitchCard
+              icon={Columns}
+              checked={Boolean(layoutConfig.comparison_split_enabled)}
+              onChange={(val) => updateSalesLayout({ comparison_split_enabled: val })}
+            >
+              Chia đôi so sánh A/B (Ảnh 1 & 2)
+            </SwitchCard>
+            <SwitchCard
+              icon={Music2}
+              checked={layoutConfig.soundwave_enabled !== false}
+              onChange={(val) => updateSalesLayout({ soundwave_enabled: val })}
+            >
+              Vẽ sóng âm vàng kim theo tiếng đàn
+            </SwitchCard>
           </div>
-
-          {layoutConfig.comparison_split_enabled && (
-            <div className="form-grid">
-              <input
-                className="input"
-                placeholder="Nhãn cột trái (VD: Bản S2 • Giữ dây kim loại)"
-                value={layoutConfig.comparison_label_a || ''}
-                onChange={(e) => updateSalesLayout({ comparison_label_a: e.target.value })}
-              />
-              <input
-                className="input"
-                placeholder="Nhãn cột phải (VD: Bản S2S • Giữ dây gỗ)"
-                value={layoutConfig.comparison_label_b || ''}
-                onChange={(e) => updateSalesLayout({ comparison_label_b: e.target.value })}
-              />
-            </div>
-          )}
         </div>
 
-        {/* Independent Overlay Visibility Toggles */}
-        <div
-          style={{
-            background: 'var(--bg-panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 12,
-              marginBottom: layoutConfig.sales_badge_enabled ? 10 : 8,
-            }}
-          >
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={layoutConfig.show_top_banner !== false}
-                  onChange={(e) => updateSalesLayout({ show_top_banner: e.target.checked })}
-                />
-                Hiện tên sản phẩm đầu video
-              </label>
+        {layoutConfig.comparison_split_enabled && (
+          <div className="form-grid" style={{ marginBottom: 14 }}>
+            <input
+              className="input"
+              placeholder="Nhãn cột trái (VD: Bản S2 • Giữ dây kim loại)"
+              value={layoutConfig.comparison_label_a || ''}
+              onChange={(e) => updateSalesLayout({ comparison_label_a: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Nhãn cột phải (VD: Bản S2S • Giữ dây gỗ)"
+              value={layoutConfig.comparison_label_b || ''}
+              onChange={(e) => updateSalesLayout({ comparison_label_b: e.target.value })}
+            />
+          </div>
+        )}
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(layoutConfig.sales_badge_enabled)}
-                  onChange={(e) => updateSalesLayout({ sales_badge_enabled: e.target.checked })}
-                />
-                Hiện nhãn ưu đãi & địa chỉ
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(layoutConfig.show_photo_callouts)}
-                  onChange={(e) => updateSalesLayout({ show_photo_callouts: e.target.checked })}
-                />
-                Hiện nhãn ghi chú trên ảnh
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(layoutConfig.outro_card_enabled)}
-                  onChange={(e) => updateSalesLayout({ outro_card_enabled: e.target.checked })}
-                />
-                Thêm Thẻ kết 2.5s cuối video
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4 }}>
-              <span style={{ color: '#9ca3af' }}>Số bản A/B:</span>
+        {/* Group B: Clean Overlay Visibility Switches */}
+        <div className="form-group" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Thành phần chữ & thẻ hiển thị trên video
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+              <span className="text-sub">Số phiên bản kịch bản A/B:</span>
               {[1, 2, 3].map((n) => (
                 <button
                   key={n}
@@ -1195,43 +1167,72 @@ export default function ProductStudioForm({
             </div>
           </div>
 
-          {layoutConfig.sales_badge_enabled && (
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <input
-                className="input"
-                placeholder="Nhãn ưu đãi tinh tế (VD: Tặng trọn bộ phụ kiện)"
-                value={layoutConfig.sales_price_or_offer || ''}
-                onChange={(e) => updateSalesLayout({ sales_price_or_offer: e.target.value })}
-              />
-              <input
-                className="input"
-                placeholder="Địa chỉ / liên hệ (VD: Test đàn trực tiếp tại Hà Nội)"
-                value={layoutConfig.sales_contact_info || ''}
-                onChange={(e) => updateSalesLayout({ sales_contact_info: e.target.value })}
-              />
-            </div>
-          )}
+          <div className="toggle-grid">
+            <SwitchCard
+              checked={layoutConfig.show_top_banner !== false}
+              onChange={(val) => updateSalesLayout({ show_top_banner: val })}
+            >
+              Hiện tên sản phẩm đầu video
+            </SwitchCard>
+            <SwitchCard
+              checked={Boolean(layoutConfig.sales_badge_enabled)}
+              onChange={(val) => updateSalesLayout({ sales_badge_enabled: val })}
+            >
+              Hiện nhãn ưu đãi & địa chỉ
+            </SwitchCard>
+            <SwitchCard
+              checked={Boolean(layoutConfig.show_photo_callouts)}
+              onChange={(val) => updateSalesLayout({ show_photo_callouts: val })}
+            >
+              Hiện nhãn ghi chú trên từng ảnh
+            </SwitchCard>
+            <SwitchCard
+              checked={Boolean(layoutConfig.outro_card_enabled)}
+              onChange={(val) => updateSalesLayout({ outro_card_enabled: val })}
+            >
+              Thêm Thẻ kết 2.5s cuối video
+            </SwitchCard>
+          </div>
+        </div>
 
-          {layoutConfig.outro_card_enabled && (
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <input
-                className="input"
-                placeholder="Tên cửa hàng ở Thẻ kết 2.5s (VD: Sơn Music — Violin Tuyển Chọn)"
-                value={layoutConfig.outro_brand_title || ''}
-                onChange={(e) => updateSalesLayout({ outro_brand_title: e.target.value })}
-              />
-              <input
-                className="input"
-                placeholder="Địa chỉ & Website Thẻ kết (VD: Showroom Hà Nội • www.sonmusic.vn)"
-                value={layoutConfig.outro_contact_line || ''}
-                onChange={(e) => updateSalesLayout({ outro_contact_line: e.target.value })}
-              />
-            </div>
-          )}
+        {layoutConfig.sales_badge_enabled && (
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <input
+              className="input"
+              placeholder="Nhãn ưu đãi tinh tế (VD: Tặng trọn bộ phụ kiện)"
+              value={layoutConfig.sales_price_or_offer || ''}
+              onChange={(e) => updateSalesLayout({ sales_price_or_offer: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Địa chỉ / liên hệ (VD: Test đàn trực tiếp tại Hà Nội)"
+              value={layoutConfig.sales_contact_info || ''}
+              onChange={(e) => updateSalesLayout({ sales_contact_info: e.target.value })}
+            />
+          </div>
+        )}
 
+        {layoutConfig.outro_card_enabled && (
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <input
+              className="input"
+              placeholder="Tên cửa hàng ở Thẻ kết 2.5s (VD: Sơn Music — Violin Tuyển Chọn)"
+              value={layoutConfig.outro_brand_title || ''}
+              onChange={(e) => updateSalesLayout({ outro_brand_title: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Địa chỉ & Website Thẻ kết (VD: Showroom Hà Nội • www.sonmusic.vn)"
+              value={layoutConfig.outro_contact_line || ''}
+              onChange={(e) => updateSalesLayout({ outro_contact_line: e.target.value })}
+            />
+          </div>
+        )}
+
+        <div className="surface-box">
           <div className="form-grid">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <QrCode size={16} style={{ color: '#9ca3af', flexShrink: 0 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <QrCode size={17} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
               <input
                 className="input"
                 placeholder="Tùy chọn: Dán link tạo Mã QR góc màn hình (Để trống = Không hiện QR)"
@@ -1260,19 +1261,19 @@ export default function ProductStudioForm({
         </div>
       </div>
 
-      {/* STEP 4: 13 EXPRESSIVE AI VOICES (WITH SPEED/WARMTH SLIDERS) & VIOLIN BGM */}
+      {/* STEP 4: 13 EXPRESSIVE AI VOICES, VIOLIN BGM, DURATION & SUBTITLE STYLE */}
       <div className="step-box">
         <div className="step-header">
           <span className="step-num">4</span>
           <div>
-            <div className="step-title">Chọn trong 13 giọng đọc truyền cảm, chỉnh tốc độ/độ trầm & nhạc nền</div>
+            <div className="step-title">Giọng đọc truyền cảm (13 giọng), Nhạc nền Violin & Thời lượng xuất</div>
             <div className="step-desc">
-              Tinh chỉnh trực tiếp tốc độ đọc và độ trầm ấm ngay bên dưới (khi duyệt kịch bản còn có thể chỉnh riêng cho từng câu)
+              Tên giọng hiển thị đầy đủ không cắt chữ; tinh chỉnh trực tiếp tốc độ đọc, độ trầm ấm và thời lượng video
             </div>
           </div>
         </div>
 
-        <div className="form-grid">
+        <div className="form-grid" style={{ marginBottom: 14 }}>
           <InlineVoiceSelector
             voices={voices}
             voiceId={voiceId}
@@ -1297,21 +1298,10 @@ export default function ProductStudioForm({
             label="Nhạc nền Violin / Acoustic hoặc nhạc riêng"
           />
         </div>
-      </div>
 
-      <button
-        type="button"
-        className="adv-toggle"
-        onClick={() => setShowAdvanced((prev) => !prev)}
-      >
-        <span>Tùy chỉnh nâng cao (Thời lượng {durationSec} giây, kiểu chữ phụ đề, câu kết)</span>
-        {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-      </button>
-
-      {showAdvanced && (
-        <div className="adv-body">
+        <div className="surface-box">
           <div className="form-grid">
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 10 }}>
               <label className="form-label">
                 Thời lượng dự kiến mỗi video: <strong>{durationSec} giây</strong>
               </label>
@@ -1320,12 +1310,12 @@ export default function ProductStudioForm({
                 min="25"
                 max="110"
                 step="5"
-                style={{ width: '100%' }}
+                style={{ width: '100%', marginTop: 6 }}
                 value={durationSec}
                 onChange={(e) => setDurationSec(Number(e.target.value))}
               />
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 10 }}>
               <label className="form-label">Kiểu hiển thị chữ phụ đề dưới video</label>
               <select
                 className="select"
@@ -1338,8 +1328,9 @@ export default function ProductStudioForm({
               </select>
             </div>
           </div>
+
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Lời nhắn cuối video</label>
+            <label className="form-label">Lời nhắn kết cuối video</label>
             <input
               className="input"
               value={ctaText}
@@ -1347,12 +1338,12 @@ export default function ProductStudioForm({
             />
           </div>
         </div>
-      )}
+      </div>
 
       <div className="btn-row">
         <button
           className="btn btn-primary"
-          style={{ flex: 1, minWidth: 220, minHeight: 42 }}
+          style={{ flex: 1, minWidth: 230, minHeight: 44, fontSize: 14.2 }}
           disabled={submitting || uploadingPhotos || uploadingDemo}
           onClick={() => handleStart(true)}
         >
@@ -1360,7 +1351,7 @@ export default function ProductStudioForm({
         </button>
         <button
           className="btn btn-secondary"
-          style={{ minHeight: 42 }}
+          style={{ minHeight: 44 }}
           disabled={submitting || uploadingPhotos || uploadingDemo}
           onClick={() => handleStart(false)}
         >

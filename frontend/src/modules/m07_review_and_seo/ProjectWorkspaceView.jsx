@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Clock,
+  Columns,
   Copy,
   Download,
   Edit3,
@@ -21,6 +22,7 @@ import {
   Square,
   Trash2,
   Volume2,
+  Wand2,
   X,
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
@@ -30,7 +32,11 @@ import {
   formatSecondsVi,
   STAGE_LABELS,
 } from '../m00_core_contracts/constants';
-import { InlineBgmSelector, InlineVoiceSelector } from '../m00_core_contracts/StudioWidgets';
+import {
+  InlineBgmSelector,
+  InlineVoiceSelector,
+  SwitchCard,
+} from '../m00_core_contracts/StudioWidgets';
 
 const RUNNING_STATES = [
   'QUEUED',
@@ -42,10 +48,16 @@ const RUNNING_STATES = [
   'PACKAGING_SEO',
 ];
 
+const MODE_LABELS = {
+  MOVIE_CLIPPER: 'Cắt & Dịch Video',
+  PRODUCT_SHOWCASE: 'Video Bán Hàng',
+  TOPIC_TO_SHORTS: 'Tạo Từ Chủ Đề',
+};
+
 function ModeIcon({ mode }) {
-  if (mode === 'MOVIE_CLIPPER') return <Film size={15} strokeWidth={1.8} />;
-  if (mode === 'PRODUCT_SHOWCASE') return <ShoppingBag size={15} strokeWidth={1.8} />;
-  return <FileText size={15} strokeWidth={1.8} />;
+  if (mode === 'MOVIE_CLIPPER') return <Film size={15} strokeWidth={1.9} />;
+  if (mode === 'PRODUCT_SHOWCASE') return <ShoppingBag size={15} strokeWidth={1.9} />;
+  return <FileText size={15} strokeWidth={1.9} />;
 }
 
 export default function ProjectWorkspaceView({
@@ -450,9 +462,14 @@ export default function ProjectWorkspaceView({
     <div>
       {/* PROJECT LIST */}
       <div className="card">
-        <div className="page-header" style={{ marginBottom: 12 }}>
-          <div className="page-title">
-            <FolderKanban size={19} strokeWidth={1.9} /> Danh Sách Dự Án & Hàng Đợi
+        <div className="page-header" style={{ marginBottom: 14 }}>
+          <div>
+            <div className="page-title">
+              <FolderKanban size={20} strokeWidth={2} /> Danh Sách Dự Án & Hàng Đợi Kết Xuất
+            </div>
+            <div className="page-subtitle">
+              Theo dõi tiến độ thực tế, tạm dừng / tiếp tục bất kỳ lúc nào, tải trọn gói (.ZIP) và chỉnh sửa xuất lại nhanh
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
@@ -474,11 +491,13 @@ export default function ProjectWorkspaceView({
         </div>
 
         {filteredProjects.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#9ca3af' }}>
-            Chưa có dự án nào trong nhóm này.
-          </p>
+          <div className="step-box" style={{ marginBottom: 0, textAlign: 'center', padding: 24 }}>
+            <div className="text-sub" style={{ fontSize: 13.8 }}>
+              Chưa có dự án nào trong nhóm trạng thái này.
+            </div>
+          </div>
         ) : (
-          <div style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+          <div className="project-list-scroll">
             {filteredProjects.map((p) => {
               const activeSel = p.id === activeProjectId;
               const lp = p.live_progress;
@@ -486,29 +505,22 @@ export default function ProjectWorkspaceView({
                 <div
                   key={p.id}
                   onClick={() => onSelectProject(p.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 10,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: activeSel ? 'var(--brand-soft)' : 'var(--bg-input)',
-                    border: activeSel ? '1px solid #0ea5e9' : '1px solid var(--border)',
-                  }}
+                  className={`project-row-item ${activeSel ? 'active' : ''}`}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div
                       style={{
-                        fontWeight: 600,
-                        fontSize: 13.5,
+                        fontWeight: 700,
+                        fontSize: 14,
+                        color: 'var(--text-primary)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
                       }}
                     >
-                      <ModeIcon mode={p.mode} />
+                      <span style={{ color: 'var(--brand-text)', display: 'inline-flex', flexShrink: 0 }}>
+                        <ModeIcon mode={p.mode} />
+                      </span>
                       <span
                         style={{
                           whiteSpace: 'nowrap',
@@ -519,15 +531,28 @@ export default function ProjectWorkspaceView({
                         {p.name}
                       </span>
                     </div>
-                    {lp && RUNNING_STATES.includes(p.state) && (
-                      <div style={{ fontSize: 11.5, color: '#7dd3fc', marginTop: 2 }}>
-                        {lp.step_label ? `${lp.step_label} • ` : ''}
-                        {lp.percent || 0}%{' '}
-                        {lp.eta_sec !== null && lp.eta_sec !== undefined
-                          ? `• Còn ~${formatSecondsVi(lp.eta_sec)}`
-                          : ''}
-                      </div>
-                    )}
+                    <div
+                      className="text-muted"
+                      style={{
+                        fontSize: 12,
+                        marginTop: 3,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span>{MODE_LABELS[p.mode] || p.mode}</span>
+                      {lp && RUNNING_STATES.includes(p.state) && (
+                        <span style={{ color: 'var(--brand-text)', fontWeight: 600 }}>
+                          • {lp.step_label ? `${lp.step_label} • ` : ''}
+                          {lp.percent || 0}%{' '}
+                          {lp.eta_sec !== null && lp.eta_sec !== undefined
+                            ? `• Còn ~${formatSecondsVi(lp.eta_sec)}`
+                            : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span
                     className={`badge ${
@@ -553,7 +578,7 @@ export default function ProjectWorkspaceView({
           <div className="page-header">
             <div>
               <div className="page-title">{detail.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                 <span
                   className={`badge ${
                     detail.state === 'COMPLETED'
@@ -565,8 +590,9 @@ export default function ProjectWorkspaceView({
                 >
                   {STAGE_LABELS[detail.state] || detail.state}
                 </span>
+                <span className="badge">{MODE_LABELS[detail.mode] || detail.mode}</span>
                 {detail.clips?.length > 0 && (
-                  <span style={{ fontSize: 12.5, color: '#9ca3af' }}>
+                  <span className="text-sub" style={{ fontSize: 13 }}>
                     Đã xuất xong <strong>{completedClips.length}/{detail.clips.length}</strong> video
                   </span>
                 )}
@@ -577,7 +603,7 @@ export default function ProjectWorkspaceView({
               {completedClips.length > 0 && (
                 <a
                   href={studioApi.getProjectZipUrl(detail.id)}
-                  download={`ShortVideo_${detail.id}.zip`}
+                  download={`ChaosShortVideo_${detail.id}.zip`}
                   className="btn btn-primary btn-sm"
                   style={{ textDecoration: 'none' }}
                   title="Tải trọn gói 1 tệp .ZIP gồm toàn bộ Video MP4, Ảnh bìa & Nội dung SEO"
@@ -665,19 +691,19 @@ export default function ProjectWorkspaceView({
                   marginBottom: 6,
                 }}
               >
-                <div style={{ fontSize: 13.2, fontWeight: 500 }}>
+                <div style={{ fontSize: 13.6, fontWeight: 600, color: 'var(--text-primary)' }}>
                   {isInterruptedFromOldSession
                     ? 'Dự án tạm dừng từ phiên trước — bấm nút Tiếp tục để xuất nốt các phần còn thiếu.'
                     : liveProgress?.message || STAGE_LABELS[detail.state]}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12.2, color: '#d1d5db' }}>
+                <div className="text-sub" style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12.6, flexWrap: 'wrap' }}>
                   {liveProgress?.step_label && (
                     <span className="badge badge-info">{liveProgress.step_label}</span>
                   )}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     <Clock size={13} /> Đã chạy: <strong>{formatSecondsVi(liveProgress?.elapsed_sec || 0)}</strong>
                   </span>
-                  <span style={{ color: '#34d399' }}>
+                  <span style={{ color: 'var(--success-text)' }}>
                     Ước tính còn:{' '}
                     <strong>
                       {liveProgress?.eta_sec !== null && liveProgress?.eta_sec !== undefined
@@ -685,11 +711,11 @@ export default function ProjectWorkspaceView({
                         : 'Đang tính...'}
                     </strong>
                   </span>
-                  <strong>{pctVal}%</strong>
+                  <strong style={{ color: 'var(--text-primary)' }}>{pctVal}%</strong>
                 </div>
               </div>
 
-              <div className="progress-track" style={{ height: 9 }}>
+              <div className="progress-track" style={{ height: 10 }}>
                 <div
                   className={`progress-fill ${isPaused ? 'paused' : ''}`}
                   style={{ width: `${Math.max(4, pctVal)}%` }}
@@ -701,37 +727,40 @@ export default function ProjectWorkspaceView({
           {detail.state === 'FAILED' && (
             <div
               style={{
-                padding: 12,
-                borderRadius: 8,
-                background: 'rgba(239,68,68,0.12)',
-                border: '1px solid rgba(239,68,68,0.4)',
-                color: '#fca5a5',
-                marginBottom: 14,
+                padding: '12px 14px',
+                borderRadius: 9,
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.42)',
+                color: 'var(--danger)',
+                fontWeight: 600,
+                marginBottom: 16,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
               }}
             >
-              <AlertCircle size={16} />
+              <AlertCircle size={17} />
               <span>Chi tiết lỗi: {detail.error_message}</span>
             </div>
           )}
 
           {/* REVIEW & QUICK RE-EDIT STUDIO (WITH PER-LINE SPEED/PITCH TUNING) */}
           {(detail.state === 'AWAITING_REVIEW' || quickEditOpen) && editableClips.length > 0 && (
-            <div style={{ marginBottom: completedClips.length > 0 ? 16 : 0 }}>
-              <div className="step-box" style={{ borderColor: '#0ea5e9' }}>
+            <div style={{ marginBottom: completedClips.length > 0 ? 18 : 0 }}>
+              <div className="step-box" style={{ borderColor: 'var(--brand)' }}>
                 <div
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginBottom: 10,
+                    marginBottom: 12,
+                    paddingBottom: 10,
+                    borderBottom: '1px solid var(--border)',
                     flexWrap: 'wrap',
                     gap: 8,
                   }}
                 >
-                  <strong style={{ fontSize: 13.8, color: '#7dd3fc' }}>
+                  <strong style={{ fontSize: 14.5, color: 'var(--brand-text)' }}>
                     Biên tập kịch bản, chỉnh tốc độ/độ trầm từng câu, đổi chuyển cảnh & xuất lại nhanh
                   </strong>
                   {detail.state !== 'AWAITING_REVIEW' && (
@@ -746,7 +775,7 @@ export default function ProjectWorkspaceView({
                 </div>
 
                 {/* Quick Visual, Aspect & Overlay Switches */}
-                <div className="form-grid" style={{ marginBottom: 10 }}>
+                <div className="form-grid" style={{ marginBottom: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Chuyển cảnh mượt chuẩn CapCut</label>
                     <select
@@ -764,7 +793,7 @@ export default function ProjectWorkspaceView({
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Kiểu nền & tỷ lệ khung hình xuất</label>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
                       {detail.mode === 'PRODUCT_SHOWCASE' && (
                         <select
                           className="select"
@@ -779,7 +808,7 @@ export default function ProjectWorkspaceView({
                       )}
                       <select
                         className="select"
-                        style={{ width: detail.mode === 'PRODUCT_SHOWCASE' ? 126 : '100%' }}
+                        style={{ width: detail.mode === 'PRODUCT_SHOWCASE' ? 132 : '100%' }}
                         value={layoutConfig.aspect_ratio || '9:16'}
                         onChange={(e) => updateQuickLayout({ aspect_ratio: e.target.value })}
                       >
@@ -791,68 +820,49 @@ export default function ProjectWorkspaceView({
                   </div>
                 </div>
 
-                {/* Quick Overlay & Studio Switches */}
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 14,
-                    flexWrap: 'wrap',
-                    padding: '8px 10px',
-                    borderRadius: 7,
-                    background: 'var(--bg-panel)',
-                    border: '1px solid var(--border)',
-                    marginBottom: 12,
-                  }}
-                >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={layoutConfig.show_top_banner !== false}
-                      onChange={(e) => updateQuickLayout({ show_top_banner: e.target.checked })}
-                    />
+                {/* High-Clarity SwitchCard Grid */}
+                <div className="toggle-grid" style={{ marginBottom: 14 }}>
+                  <SwitchCard
+                    checked={layoutConfig.show_top_banner !== false}
+                    onChange={(val) => updateQuickLayout({ show_top_banner: val })}
+                  >
                     Hiện tiêu đề đầu
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(layoutConfig.sales_badge_enabled)}
-                      onChange={(e) => updateQuickLayout({ sales_badge_enabled: e.target.checked })}
-                    />
+                  </SwitchCard>
+                  <SwitchCard
+                    checked={Boolean(layoutConfig.sales_badge_enabled)}
+                    onChange={(val) => updateQuickLayout({ sales_badge_enabled: val })}
+                  >
                     Hiện nhãn giá/địa chỉ
-                  </label>
+                  </SwitchCard>
                   {detail.mode === 'PRODUCT_SHOWCASE' && (
                     <>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4, cursor: 'pointer', color: '#fde68a' }}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(layoutConfig.studio_cutout_enabled)}
-                          onChange={(e) => updateQuickLayout({ studio_cutout_enabled: e.target.checked })}
-                        />
+                      <SwitchCard
+                        icon={Wand2}
+                        checked={Boolean(layoutConfig.studio_cutout_enabled)}
+                        onChange={(val) => updateQuickLayout({ studio_cutout_enabled: val })}
+                      >
                         Tách nền Studio
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(layoutConfig.comparison_split_enabled)}
-                          onChange={(e) => updateQuickLayout({ comparison_split_enabled: e.target.checked })}
-                        />
+                      </SwitchCard>
+                      <SwitchCard
+                        icon={Columns}
+                        checked={Boolean(layoutConfig.comparison_split_enabled)}
+                        onChange={(val) => updateQuickLayout({ comparison_split_enabled: val })}
+                      >
                         Chia đôi so sánh A/B
-                      </label>
+                      </SwitchCard>
                     </>
                   )}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.4, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(layoutConfig.outro_card_enabled)}
-                      onChange={(e) => updateQuickLayout({ outro_card_enabled: e.target.checked })}
-                    />
+                  <SwitchCard
+                    checked={Boolean(layoutConfig.outro_card_enabled)}
+                    onChange={(val) => updateQuickLayout({ outro_card_enabled: val })}
+                  >
                     Thẻ kết 2.5s cuối
-                  </label>
+                  </SwitchCard>
                 </div>
 
                 {/* Reorder Product Media right inside Quick Re-Edit */}
                 {detail.mode === 'PRODUCT_SHOWCASE' && editablePhotoList.length > 1 && (
-                  <div style={{ marginBottom: 12 }}>
+                  <div style={{ marginBottom: 14 }}>
                     <div className="form-label">
                       Thứ tự trình chiếu ({editablePhotoList.length} mục — lên hình đủ 100%):
                     </div>
@@ -861,12 +871,12 @@ export default function ProjectWorkspaceView({
                         <div
                           key={`${ph.local_path}_${pIdx}`}
                           style={{
-                            width: 78,
+                            width: 82,
                             flexShrink: 0,
                             background: 'var(--bg-panel)',
                             border: '1px solid var(--border)',
-                            borderRadius: 6,
-                            padding: 4,
+                            borderRadius: 8,
+                            padding: 5,
                             textAlign: 'center',
                           }}
                         >
@@ -874,7 +884,13 @@ export default function ProjectWorkspaceView({
                             <video
                               src={ph.media_url}
                               muted
-                              style={{ width: '100%', height: 68, objectFit: 'contain', background: '#08090c', borderRadius: 4 }}
+                              style={{
+                                width: '100%',
+                                height: 70,
+                                objectFit: 'contain',
+                                background: '#08090c',
+                                borderRadius: 4,
+                              }}
                             />
                           ) : (
                             <img
@@ -882,21 +898,21 @@ export default function ProjectWorkspaceView({
                               alt={`Mục ${pIdx + 1}`}
                               style={{
                                 width: '100%',
-                                height: 68,
+                                height: 70,
                                 objectFit: 'contain',
                                 background: '#08090c',
                                 borderRadius: 4,
                               }}
                             />
                           )}
-                          <div style={{ fontSize: 10.5, color: '#d1d5db', margin: '2px 0' }}>
+                          <div className="text-sub" style={{ fontSize: 11, fontWeight: 600, margin: '3px 0' }}>
                             {ph.isVideo ? `Clip ${pIdx + 1}` : `Ảnh ${pIdx + 1}`}
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'center', gap: 3 }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
-                              style={{ padding: '1px 4px', minHeight: 20 }}
+                              style={{ padding: '1px 5px', minHeight: 22 }}
                               disabled={pIdx === 0}
                               onClick={() => moveEditablePhoto(pIdx, pIdx - 1)}
                             >
@@ -905,7 +921,7 @@ export default function ProjectWorkspaceView({
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
-                              style={{ padding: '1px 4px', minHeight: 20 }}
+                              style={{ padding: '1px 5px', minHeight: 22 }}
                               disabled={pIdx === editablePhotoList.length - 1}
                               onClick={() => moveEditablePhoto(pIdx, pIdx + 1)}
                             >
@@ -918,9 +934,11 @@ export default function ProjectWorkspaceView({
                   </div>
                 )}
 
-                <div className="form-grid" style={{ marginBottom: 12 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Hình thức âm thanh & phụ đề khi xuất</label>
+                <div className="form-grid" style={{ marginBottom: 14 }}>
+                  <div className="selector-card">
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Hình thức âm thanh & phụ đề khi xuất
+                    </label>
                     <select
                       className="select"
                       value={reviewAudioSubMode}
@@ -947,7 +965,7 @@ export default function ProjectWorkspaceView({
 
                 {(reviewAudioSubMode === 'VIET_DUB_AND_SUB' ||
                   reviewAudioSubMode === 'VIET_DUB_NO_SUB') && (
-                  <div style={{ marginBottom: 12 }}>
+                  <div style={{ marginBottom: 14 }}>
                     <InlineVoiceSelector
                       voices={voices}
                       voiceId={selectedVoice}
@@ -1004,28 +1022,41 @@ export default function ProjectWorkspaceView({
                     key={clip.clip_id}
                     className="step-box"
                     style={{
-                      borderColor: isChecked ? '#0ea5e9' : 'var(--border)',
-                      opacity: isChecked ? 1 : 0.65,
+                      borderColor: isChecked ? 'var(--brand)' : 'var(--border)',
+                      opacity: isChecked ? 1 : 0.68,
                     }}
                   >
                     <div
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
-                        marginBottom: 8,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 8,
+                        marginBottom: 10,
                       }}
                     >
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, cursor: 'pointer' }}>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer',
+                        }}
+                      >
                         <input
                           type="checkbox"
+                          style={{ width: 16, height: 16, accentColor: 'var(--brand)' }}
                           checked={isChecked}
                           onChange={() => togglePart(clip.part_number)}
                         />
                         Phần {clip.part_number} ({Math.round(clip.source_start_ms / 1000)}s –{' '}
                         {Math.round(clip.source_end_ms / 1000)}s)
                       </label>
-                      <span style={{ fontSize: 12, color: '#9ca3af' }}>
-                        {clip.lines.length} câu (có thể chỉnh tốc độ & độ trầm riêng từng câu)
+                      <span className="text-muted" style={{ fontSize: 12.2 }}>
+                        {clip.lines.length} câu • Có thể chỉnh tốc độ & độ trầm riêng từng câu
                       </span>
                     </div>
 
@@ -1040,7 +1071,7 @@ export default function ProjectWorkspaceView({
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gap: 8, maxHeight: 340, overflowY: 'auto' }}>
                       {clip.lines.map((ln, lIdx) => {
                         const lKey = `${cIdx}_${lIdx}`;
                         const isPlayingThis = previewingLineKey === lKey;
@@ -1049,16 +1080,19 @@ export default function ProjectWorkspaceView({
                             key={ln.seq_index}
                             style={{
                               display: 'flex',
-                              gap: 6,
+                              gap: 7,
                               alignItems: 'center',
                               flexWrap: 'wrap',
-                              padding: '6px 8px',
-                              borderRadius: 7,
+                              padding: '7px 10px',
+                              borderRadius: 8,
                               background: 'var(--bg-panel)',
                               border: '1px solid var(--border)',
                             }}
                           >
-                            <span style={{ fontSize: 11.2, color: '#9ca3af', minWidth: 40, fontWeight: 600 }}>
+                            <span
+                              className="text-sub"
+                              style={{ fontSize: 11.8, minWidth: 44, fontWeight: 700 }}
+                            >
                               Câu {lIdx + 1}
                             </span>
 
@@ -1069,7 +1103,7 @@ export default function ProjectWorkspaceView({
                                 detail.product_image_urls?.length > 0 && (
                                   <select
                                     className="select"
-                                    style={{ width: 92, minHeight: 32, padding: '3px 7px', fontSize: 11.8 }}
+                                    style={{ width: 96, minHeight: 34, padding: '4px 8px', fontSize: 12.2 }}
                                     value={ln.matched_image_index ?? 0}
                                     onChange={(e) =>
                                       handleLinePatch(cIdx, lIdx, {
@@ -1088,7 +1122,7 @@ export default function ProjectWorkspaceView({
 
                             <input
                               className="input"
-                              style={{ flex: 1, minWidth: 190, minHeight: 32, padding: '4px 9px' }}
+                              style={{ flex: 1, minWidth: 200, minHeight: 34, padding: '5px 10px' }}
                               value={ln.vi_text}
                               onChange={(e) =>
                                 handleLinePatch(cIdx, lIdx, { vi_text: e.target.value })
@@ -1100,7 +1134,7 @@ export default function ProjectWorkspaceView({
                                 <select
                                   className="select"
                                   title="Tốc độ đọc riêng cho câu này"
-                                  style={{ width: 92, minHeight: 32, padding: '3px 6px', fontSize: 11.5 }}
+                                  style={{ width: 100, minHeight: 34, padding: '4px 7px', fontSize: 12 }}
                                   value={ln.voice_speed_override === null ? '' : String(ln.voice_speed_override)}
                                   onChange={(e) =>
                                     handleLinePatch(cIdx, lIdx, {
@@ -1120,7 +1154,7 @@ export default function ProjectWorkspaceView({
                                 <select
                                   className="select"
                                   title="Độ trầm ấm riêng cho câu này"
-                                  style={{ width: 96, minHeight: 32, padding: '3px 6px', fontSize: 11.5 }}
+                                  style={{ width: 104, minHeight: 34, padding: '4px 7px', fontSize: 12 }}
                                   value={ln.voice_pitch_override === null ? '' : String(ln.voice_pitch_override)}
                                   onChange={(e) =>
                                     handleLinePatch(cIdx, lIdx, {
@@ -1139,7 +1173,7 @@ export default function ProjectWorkspaceView({
                                 <button
                                   type="button"
                                   className={`btn btn-sm ${isPlayingThis ? 'btn-primary' : 'btn-secondary'}`}
-                                  style={{ padding: '0 8px', minHeight: 32 }}
+                                  style={{ padding: '0 9px', minHeight: 34 }}
                                   title="Nghe thử riêng câu này"
                                   onClick={() => handlePreviewSingleLine(cIdx, lIdx, ln)}
                                 >
@@ -1159,7 +1193,7 @@ export default function ProjectWorkspaceView({
 
           {/* COMPLETED MULTIMEDIA PLAYERS & SEO */}
           {completedClips.length > 0 && (
-            <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
               {completedClips.map((clip) => {
                 let ytTags = [];
                 let ttTags = [];
@@ -1182,18 +1216,18 @@ export default function ProjectWorkspaceView({
                           poster={clip.cover_url || undefined}
                           style={{
                             width: '100%',
-                            borderRadius: 8,
-                            border: '1px solid var(--border)',
+                            borderRadius: 10,
+                            border: '1.5px solid var(--border-strong)',
                             aspectRatio: videoCssAspect,
                             background: '#000',
                           }}
                         />
                       )}
-                      <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                      <div style={{ display: 'grid', gap: 7, marginTop: 9 }}>
                         {clip.video_url && (
                           <a
                             href={clip.video_url}
-                            download={`Video_Part_${clip.part_number}.mp4`}
+                            download={`ChaosShortVideo_Part_${clip.part_number}.mp4`}
                             className="btn btn-primary btn-sm"
                             style={{ width: '100%', textDecoration: 'none' }}
                           >
@@ -1203,29 +1237,29 @@ export default function ProjectWorkspaceView({
                         {clip.cover_url && (
                           <a
                             href={clip.cover_url}
-                            download={`Anh_Bia_Part_${clip.part_number}.jpg`}
+                            download={`ChaosShortVideo_Cover_${clip.part_number}.jpg`}
                             className="btn btn-secondary btn-sm"
                             style={{ width: '100%', textDecoration: 'none' }}
                           >
-                            <Download size={14} /> Tải Ảnh Bìa
+                            <Download size={14} /> Tải Ảnh Bìa (.jpg)
                           </a>
                         )}
                       </div>
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <h4 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
+                      <h4 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                         Phần {clip.part_number}: {clip.hook_banner_title}
                       </h4>
                       <div
+                        className="text-muted"
                         style={{
-                          fontSize: 11.8,
-                          color: '#9ca3af',
+                          fontSize: 12,
                           marginBottom: 8,
                           wordBreak: 'break-all',
                         }}
                       >
-                        Đường dẫn: <code>{clip.output_mp4_path}</code>
+                        Đường dẫn tệp: <code>{clip.output_mp4_path}</code>
                       </div>
 
                       {clip.seo && (
@@ -1241,7 +1275,9 @@ export default function ProjectWorkspaceView({
                                 marginBottom: 6,
                               }}
                             >
-                              <strong style={{ fontSize: 12.8 }}>Nội dung đăng YouTube Shorts</strong>
+                              <strong style={{ fontSize: 13.2, color: 'var(--text-primary)' }}>
+                                Nội dung đăng YouTube Shorts
+                              </strong>
                               <div style={{ display: 'flex', gap: 6 }}>
                                 <button
                                   className="btn btn-secondary btn-sm"
@@ -1259,12 +1295,14 @@ export default function ProjectWorkspaceView({
                                 </button>
                               </div>
                             </div>
-                            <div style={{ fontWeight: 600 }}>{clip.seo.yt_shorts_title}</div>
-                            <div style={{ color: '#d1d5db', marginTop: 3, whiteSpace: 'pre-line' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {clip.seo.yt_shorts_title}
+                            </div>
+                            <div className="text-sub" style={{ marginTop: 4, whiteSpace: 'pre-line' }}>
                               {clip.seo.yt_shorts_desc}
                             </div>
                             {ytTags.length > 0 && (
-                              <div style={{ color: '#6b7280', marginTop: 4, fontSize: 11.5 }}>
+                              <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
                                 Từ khóa: {ytTags.join(', ')}
                               </div>
                             )}
@@ -1278,9 +1316,12 @@ export default function ProjectWorkspaceView({
                                 alignItems: 'center',
                                 gap: 8,
                                 marginBottom: 6,
+                                flexWrap: 'wrap',
                               }}
                             >
-                              <strong style={{ fontSize: 12.8 }}>Caption & Hashtag đăng TikTok</strong>
+                              <strong style={{ fontSize: 13.2, color: 'var(--text-primary)' }}>
+                                Caption & Hashtag đăng TikTok
+                              </strong>
                               <button
                                 className="btn btn-primary btn-sm"
                                 onClick={() => copyText(tiktokFull, 'nội dung đăng TikTok')}
@@ -1288,7 +1329,7 @@ export default function ProjectWorkspaceView({
                                 <Copy size={13} /> Sao chép đăng TikTok
                               </button>
                             </div>
-                            <div style={{ whiteSpace: 'pre-line', color: '#e5e7eb' }}>
+                            <div className="text-sub" style={{ whiteSpace: 'pre-line' }}>
                               {tiktokFull}
                             </div>
                           </div>
@@ -1302,9 +1343,10 @@ export default function ProjectWorkspaceView({
                                   alignItems: 'center',
                                   gap: 8,
                                   marginBottom: 6,
+                                  flexWrap: 'wrap',
                                 }}
                               >
-                                <strong style={{ fontSize: 12.8, color: '#34d399' }}>
+                                <strong style={{ fontSize: 13.2, color: 'var(--success-text)' }}>
                                   Bình luận đầu tiên gợi ý ghim dưới video
                                 </strong>
                                 <button
@@ -1316,7 +1358,7 @@ export default function ProjectWorkspaceView({
                                   <Copy size={13} /> Sao chép
                                 </button>
                               </div>
-                              <div style={{ whiteSpace: 'pre-line', color: '#d1fae5' }}>
+                              <div className="text-sub" style={{ whiteSpace: 'pre-line' }}>
                                 {clip.seo.pinned_comment}
                               </div>
                             </div>

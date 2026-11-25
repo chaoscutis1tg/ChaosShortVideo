@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title ShortVideo Studio AI - Local ^& LAN Web Studio (Port 8000)
+title ChaosShortVideo - Local ^& LAN Web Studio (Port 8000)
 
 echo ====================================================================
-echo   SHORTVIDEO STUDIO AI - KHOI DONG LOCAL ^& MANG LAN (PORT 8000)
-echo   - Tren may nay:        http://127.0.0.1:8000
+echo   CHAOSSHORTVIDEO - KHOI DONG HE THONG LOCAL ^& MANG LAN (PORT 8000)
+echo   - Tren may chu nay:    http://127.0.0.1:8000
 echo   - Dien thoai / LAN:    Xem dia chi IP LAN hien tren thanh tieu de Web
 echo ====================================================================
 

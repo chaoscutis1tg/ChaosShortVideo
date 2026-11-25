@@ -13,6 +13,7 @@ import {
   Film,
   FolderKanban,
   FolderOpen,
+  ImagePlus,
   Languages,
   Loader2,
   Pause,
@@ -51,6 +52,7 @@ const RUNNING_STATES = [
 const MODE_LABELS = {
   MOVIE_CLIPPER: 'Cắt & Dịch Video',
   PRODUCT_SHOWCASE: 'Video Bán Hàng',
+  TOPIC_VIDEO: 'Tạo Từ Chủ Đề',
   TOPIC_TO_SHORTS: 'Tạo Từ Chủ Đề',
 };
 
@@ -111,7 +113,13 @@ export default function ProjectWorkspaceView({
           original_text: ln.original_text || '',
           vi_text: ln.vi_narration_text || '',
           image_prompt: ln.image_prompt || '',
-          stock_keywords: [],
+          stock_keywords: (() => {
+            try {
+              return JSON.parse(ln.stock_keywords_json || '[]');
+            } catch {
+              return [];
+            }
+          })(),
           matched_image_index:
             ln.matched_image_index !== undefined ? ln.matched_image_index : null,
           is_real_demo_slot: Boolean(ln.is_real_demo_slot),
@@ -1145,12 +1153,58 @@ export default function ProjectWorkspaceView({
                                 )
                               ))}
 
+                            {detail.mode === 'TOPIC_VIDEO' && (
+                              ln.image_prompt?.startsWith('LOCAL_IMAGE:') ? (
+                                <span
+                                  className="badge badge-ok"
+                                  style={{ cursor: 'pointer' }}
+                                  title="Bấm để bỏ ảnh riêng và cho AI tự vẽ lại theo câu này"
+                                  onClick={() => handleLinePatch(cIdx, lIdx, { image_prompt: '' })}
+                                >
+                                  Ảnh riêng ×
+                                </span>
+                              ) : (
+                                <label
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '0 8px', minHeight: 34, cursor: 'pointer' }}
+                                  title="Mặc định AI tự vẽ cảnh khớp câu này • Bấm nếu muốn tải ảnh riêng"
+                                >
+                                  <ImagePlus size={13} />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    hidden
+                                    onChange={async (ev) => {
+                                      const f = ev.target.files?.[0];
+                                      ev.target.value = '';
+                                      if (!f) return;
+                                      try {
+                                        const up = await studioApi.uploadStudioFile(f, 'topic_scene');
+                                        handleLinePatch(cIdx, lIdx, {
+                                          image_prompt: `LOCAL_IMAGE:${up.local_path}`,
+                                        });
+                                        notify(`Đã gắn ảnh riêng cho Câu ${lIdx + 1}.`);
+                                      } catch (err) {
+                                        notify(`Lỗi tải ảnh cảnh: ${err.message}`);
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              )
+                            )}
+
                             <input
                               className="input"
                               style={{ flex: 1, minWidth: 200, minHeight: 34, padding: '5px 10px' }}
                               value={ln.vi_text}
                               onChange={(e) =>
-                                handleLinePatch(cIdx, lIdx, { vi_text: e.target.value })
+                                handleLinePatch(cIdx, lIdx, {
+                                  vi_text: e.target.value,
+                                  ...(detail.mode === 'TOPIC_VIDEO' &&
+                                  !ln.image_prompt?.startsWith('LOCAL_IMAGE:')
+                                    ? { image_prompt: '', stock_keywords: [] }
+                                    : {}),
+                                })
                               }
                             />
 

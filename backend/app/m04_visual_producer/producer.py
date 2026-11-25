@@ -1,5 +1,6 @@
 """Facade implementation of Module M04 (`IVisualProducer`) using Strategy Pattern."""
 
+import asyncio
 from pathlib import Path
 from typing import List, Optional
 
@@ -19,6 +20,8 @@ from app.m00_core_contracts import (
 from .ai_image_provider import AIImageKenBurnsProvider
 from .product_visual_provider import ProductPhotoShowcaseProvider
 from .stock_video_provider import StockVideoProvider
+
+SCENE_CONCURRENCY_LIMIT = 3
 
 
 class VisualProducerFacade(IVisualProducer):
@@ -45,28 +48,40 @@ class VisualProducerFacade(IVisualProducer):
         out_dir: Path,
         on_progress: Optional[ProgressCallback] = None,
     ) -> VisualAssetListDTO:
-        """Generate or download visual assets for every NarrationLineDTO in ClipSpecDTO."""
+        """Generate or download content-matched visual assets concurrently across scenes."""
         clip_dir = out_dir / clip.clip_id / "visuals"
         clip_dir.mkdir(parents=True, exist_ok=True)
 
-        items: List[SceneVisualItemDTO] = []
         total = max(len(clip.lines), 1)
+        ordered_items: List[Optional[SceneVisualItemDTO]] = [None] * len(clip.lines)
+        sem = asyncio.Semaphore(SCENE_CONCURRENCY_LIMIT)
+        done_count = 0
 
-        for idx, line in enumerate(clip.lines):
+        async def _build_one(idx: int, line) -> None:
+            nonlocal done_count
             dur_ms = max(500, line.rel_end_ms - line.rel_start_ms)
             provider = self._select_provider(visual_mode, idx)
-            try:
-                item = await provider.fetch_scene_visual(line, dur_ms, clip_dir)
-                items.append(item)
-            except Exception as exc:
-                raise VisualProducerError(
-                    f"Không thể tạo hình ảnh minh họa cho cảnh {idx + 1}: {exc}"
-                ) from exc
+            async with sem:
+                try:
+                    item = await provider.fetch_scene_visual(line, dur_ms, clip_dir)
+                    ordered_items[idx] = item
+                except Exception as exc:
+                    raise VisualProducerError(
+                        f"Không thể tạo hình ảnh minh họa cho cảnh {idx + 1}: {exc}"
+                    ) from exc
 
-            if on_progress:
-                pct = round(((idx + 1) / total) * 100.0, 1)
-                on_progress("GENERATING_ASSETS", pct, f"Đã tạo hình ảnh cảnh {idx + 1}/{total}")
+                done_count += 1
+                if on_progress:
+                    pct = round((done_count / total) * 100.0, 1)
+                    on_progress(
+                        "GENERATING_ASSETS",
+                        pct,
+                        f"Đã vẽ hình minh họa khớp nội dung cảnh {done_count}/{total}",
+                    )
 
+        await asyncio.gather(*(_build_one(idx, ln) for idx, ln in enumerate(clip.lines)))
+
+        items: List[SceneVisualItemDTO] = [it for it in ordered_items if it is not None]
         if not items:
             raise VisualProducerError(f"Danh sách hình ảnh rỗng cho đoạn '{clip.clip_id}'.")
 
@@ -116,4 +131,3 @@ class VisualProducerFacade(IVisualProducer):
             return self._stock_provider
         # HYBRID: Hook scene (idx 0) & alternating dramatic scenes use AI images; others use Stock
         return self._ai_provider if (scene_idx % 2 == 0) else self._stock_provider
-

@@ -1,0 +1,39 @@
+# Local secrets & environment variables (NEVER COMMIT!)
+.env
+.env.*
+!.env.example
+
+# Python bytecode & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Runtime databases, temp scratch files & rendered user outputs
+work_temp/
+outputs/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Frontend dependencies & build artifacts
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# Large local model weights & auto-generated runtime media assets
+assets/tts_models/*.onnx
+assets/tts_models/*.json
+assets/bgm/*.wav
+assets/voice_samples/*
+assets/logos/*
+assets/retention_videos/*
+
+# OS & Editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

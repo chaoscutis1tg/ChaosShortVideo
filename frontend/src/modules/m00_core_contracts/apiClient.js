@@ -22,6 +22,18 @@ export const studioApi = {
   cleanupTempStorage: () => requestJSON('/api/system/cleanup-temp', { method: 'POST' }),
   updateApiKeys: (payload) =>
     requestJSON('/api/system/settings', { method: 'POST', body: JSON.stringify(payload) }),
+  getLanQrImageUrl: (url) => `/api/system/lan-qr?url=${encodeURIComponent(url || '')}`,
+  getStoreBackupExportUrl: () => '/api/system/backup-export',
+  async importStoreBackupZip(file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/system/backup-import', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Khôi phục dữ liệu sao lưu thất bại');
+    }
+    return res.json();
+  },
 
   listBgmPresets: () => requestJSON('/api/bgm'),
   listVoices: () => requestJSON('/api/voices'),
@@ -70,6 +82,18 @@ export const studioApi = {
       body: JSON.stringify({ url }),
     }),
 
+  trimMediaSegment: (local_path, start_ms, end_ms) =>
+    requestJSON('/api/media/trim', {
+      method: 'POST',
+      body: JSON.stringify({ local_path, start_ms, end_ms }),
+    }),
+
+  renderTrueFrameSnapshot: (payload) =>
+    requestJSON('/api/preview/render-frame', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   startTopicProject: (payload) =>
     requestJSON('/api/topic/start', { method: 'POST', body: JSON.stringify(payload) }),
 
@@ -89,6 +113,12 @@ export const studioApi = {
     requestJSON('/api/product/scrape-url', {
       method: 'POST',
       body: JSON.stringify({ url }),
+    }),
+
+  startProductBatchUrls: (payload) =>
+    requestJSON('/api/product/batch-urls', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   previewPhotoCutout: (local_path) =>

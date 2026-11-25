@@ -2,14 +2,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Award,
   BookmarkCheck,
+  Camera,
   ChevronDown,
   ChevronUp,
   Cpu,
+  Download,
+  Eye,
   HardDrive,
   ImagePlus,
+  Loader2,
   Move,
   Smartphone,
   Trash2,
+  X,
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import { SwitchCard } from '../m00_core_contracts/StudioWidgets';
@@ -42,6 +47,8 @@ export default function Canvas916Designer({
   const [savingBrandKit, setSavingBrandKit] = useState(false);
   const [cleaningTemp, setCleaningTemp] = useState(false);
   const [switchingGpu, setSwitchingGpu] = useState(false);
+  const [renderingSnapshot, setRenderingSnapshot] = useState(false);
+  const [snapshotModal, setSnapshotModal] = useState(null);
 
   const phoneRef = useRef(null);
   const movieRegionRef = useRef(null);
@@ -198,6 +205,29 @@ export default function Canvas916Designer({
       notify(`Lỗi dọn bộ nhớ tạm: ${err.message}`);
     } finally {
       setCleaningTemp(false);
+    }
+  };
+
+  const handleRenderTrueSnapshot = async (asCover = false) => {
+    setRenderingSnapshot(true);
+    try {
+      const res = await studioApi.renderTrueFrameSnapshot({
+        active_tab: activeTab,
+        sample_media_url: previewFrameUrl || '',
+        banner_title:
+          layoutConfig.cover_headline ||
+          layoutConfig.outro_brand_title ||
+          'Đàn Violin Avaro Gỗ Thịt Tự Nhiên',
+        sample_subtitle:
+          'Mặt đàn gỗ thịt tự nhiên nguyên tấm cho tiếng đàn vang dày và ấm.',
+        preview_as_cover: asCover,
+        layout_config: layoutConfig,
+      });
+      setSnapshotModal({ ...res, asCover });
+    } catch (err) {
+      notify(`Lỗi kết xuất khung xem thử: ${err.message}`);
+    } finally {
+      setRenderingSnapshot(false);
     }
   };
 
@@ -617,6 +647,30 @@ export default function Canvas916Designer({
             )}
         </div>
 
+        {/* TRUE 1080P FRAME & COVER SNAPSHOT BUTTONS (ITEM 5) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{ fontSize: 11.8, padding: '6px 8px' }}
+            disabled={renderingSnapshot}
+            onClick={() => handleRenderTrueSnapshot(false)}
+            title="Xuất thử 1 bức ảnh Full HD qua đúng bộ dựng thật (tách nền, làm mờ, cỡ chữ phụ đề)"
+          >
+            {renderingSnapshot ? <Loader2 size={13} /> : <Eye size={13} />} Xem khung thật 1080p
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            style={{ fontSize: 11.8, padding: '6px 8px' }}
+            disabled={renderingSnapshot}
+            onClick={() => handleRenderTrueSnapshot(true)}
+            title="Xem trước Ảnh Bìa TikTok / Shorts thực tế"
+          >
+            <Camera size={13} /> Xem thử Ảnh bìa
+          </button>
+        </div>
+
         {/* Subtitle Size & Position Quick Control */}
         <div className="surface-box" style={{ padding: '9px 11px', marginBottom: 10 }}>
           <div
@@ -885,7 +939,11 @@ export default function Canvas916Designer({
             <Cpu size={16} strokeWidth={2} /> Phần cứng ({gpus.length} GPU)
           </span>
           <span className={`badge ${systemStatus?.cuda_available ? 'badge-ok' : 'badge-warn'}`}>
-            {systemStatus?.active_gpu_owner ? `Đang chạy: ${systemStatus.active_gpu_owner}` : 'Sẵn sàng'}
+            {systemStatus?.active_gpu_owner
+              ? `Đang chạy: ${systemStatus.active_gpu_owner}`
+              : systemStatus?.nvenc_available
+              ? 'NVENC GPU Sẵn sàng'
+              : 'Sẵn sàng'}
           </span>
         </div>
 
@@ -967,6 +1025,103 @@ export default function Canvas916Designer({
           </button>
         </div>
       </div>
+
+      {/* TRUE 1080P COMPOSITOR SNAPSHOT MODAL (ITEM 5) */}
+      {snapshotModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 130,
+            padding: 16,
+          }}
+          onClick={() => setSnapshotModal(null)}
+        >
+          <div
+            className="card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 480, marginBottom: 0 }}
+          >
+            <div className="page-header" style={{ marginBottom: 10 }}>
+              <div>
+                <div className="page-title" style={{ fontSize: 16 }}>
+                  <Camera size={18} />{' '}
+                  {snapshotModal.asCover
+                    ? 'Ảnh Bìa Kết Xuất Thật (Cover Studio)'
+                    : 'Khung Hình Kết Xuất Thật 100%'}
+                </div>
+                <div className="page-subtitle" style={{ fontSize: 12 }}>
+                  {snapshotModal.width}×{snapshotModal.height}px • Dựng trong{' '}
+                  {snapshotModal.elapsed_ms}ms •{' '}
+                  {snapshotModal.nvenc_active ? 'Tăng tốc GPU h264_nvenc' : 'CPU x264'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setSnapshotModal(null)}
+              >
+                <X size={14} /> Đóng
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: '#05070b',
+                borderRadius: 10,
+                border: '1px solid var(--border-strong)',
+                padding: 8,
+                textAlign: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <img
+                src={`${snapshotModal.image_url}?t=${Date.now()}`}
+                alt="True Frame Preview"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '64vh',
+                  borderRadius: 6,
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${!snapshotModal.asCover ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1 }}
+                disabled={renderingSnapshot}
+                onClick={() => handleRenderTrueSnapshot(false)}
+              >
+                <Eye size={14} /> Khung trong Video
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${snapshotModal.asCover ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1 }}
+                disabled={renderingSnapshot}
+                onClick={() => handleRenderTrueSnapshot(true)}
+              >
+                <Camera size={14} /> Khung Ảnh Bìa
+              </button>
+              <a
+                href={snapshotModal.image_url}
+                download={snapshotModal.asCover ? 'Anh_Bia_Thu.jpg' : 'Khung_Xem_Thu_1080p.jpg'}
+                className="btn btn-secondary btn-sm"
+                style={{ textDecoration: 'none' }}
+              >
+                <Download size={14} /> Tải ảnh
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

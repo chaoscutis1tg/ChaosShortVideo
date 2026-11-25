@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
-import { CheckCircle2, KeyRound, Save, X } from 'lucide-react';
+import { Archive, CheckCircle2, Download, KeyRound, Save, Upload, X } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 
-export default function SettingsModal({ systemStatus, onClose, onUpdated, notify }) {
+export default function SettingsModal({
+  systemStatus,
+  onClose,
+  onUpdated,
+  onBackupRestored,
+  notify,
+}) {
   const [geminiKey, setGeminiKey] = useState('');
   const [pexelsKey, setPexelsKey] = useState('');
   const [pixabayKey, setPixabayKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
   const [fptKey, setFptKey] = useState('');
   const [saving, setSaving] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -32,6 +39,26 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
     }
   };
 
+  const handleImportBackup = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRestoringBackup(true);
+    try {
+      const res = await studioApi.importStoreBackupZip(file);
+      if (onBackupRestored) await onBackupRestored();
+      notify(
+        `Đã khôi phục ${res.templates_restored || 0} mẫu sản phẩm, Bộ nhận diện thương hiệu & ${
+          res.voices_restored || 0
+        } giọng nhân bản.`
+      );
+    } catch (err) {
+      notify(`Lỗi khôi phục gói sao lưu: ${err.message}`);
+    } finally {
+      setRestoringBackup(false);
+      e.target.value = '';
+    }
+  };
+
   const keys = systemStatus?.keys_configured || {};
 
   return (
@@ -39,7 +66,7 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(2, 6, 23, 0.72)',
+        background: 'rgba(2, 6, 23, 0.74)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -52,15 +79,21 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
         className="card"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSave}
-        style={{ width: '100%', maxWidth: 600, marginBottom: 0 }}
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          maxHeight: '92vh',
+          overflowY: 'auto',
+          marginBottom: 0,
+        }}
       >
         <div className="page-header" style={{ marginBottom: 14 }}>
           <div>
             <div className="page-title">
-              <KeyRound size={19} /> Kết nối khóa API — ChaosShortVideo
+              <KeyRound size={19} /> Cài đặt Kết nối API & Sao lưu Cửa hàng
             </div>
             <div className="page-subtitle">
-              Khóa được bảo mật cục bộ trong tệp .env ngay trên máy của bạn
+              Quản lý khóa bảo mật cục bộ (.env) và đóng gói dữ liệu cửa hàng mang sang máy khác
             </div>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
@@ -68,8 +101,16 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
           </button>
         </div>
 
+        {/* SECTION 1: API KEYS */}
         <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+            }}
+          >
             <label className="form-label" style={{ marginBottom: 0 }}>
               Google Gemini API Key (Viết kịch bản, Nhìn ảnh sản phẩm & Dịch phim)
             </label>
@@ -146,12 +187,46 @@ export default function SettingsModal({ systemStatus, onClose, onUpdated, notify
           </div>
         </div>
 
+        {/* SECTION 2: STORE BACKUP & RESTORE (.ZIP) — ITEM 8 */}
+        <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <Archive size={16} style={{ color: 'var(--brand-text)' }} />
+            <strong style={{ fontSize: 13.8 }}>
+              Sao lưu & Khôi phục dữ liệu cửa hàng (Backup / Restore)
+            </strong>
+          </div>
+          <div className="text-sub" style={{ fontSize: 12.4, marginBottom: 10, lineHeight: 1.45 }}>
+            Đóng gói trọn bộ <strong>Kho mẫu sản phẩm</strong>, <strong>Bộ nhận diện thương hiệu (Brand Kit + Logo)</strong> và <strong>Giọng thu mẫu riêng</strong> ra 1 tệp <code>.ZIP</code> duy nhất để cất giữ an toàn hoặc chuyển sang máy tính khác.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a
+              href={studioApi.getStoreBackupExportUrl()}
+              download="ChaosShortVideo_StoreBackup.zip"
+              className="btn btn-secondary btn-sm"
+              style={{ textDecoration: 'none' }}
+            >
+              <Download size={14} /> Xuất gói Sao lưu (.ZIP)
+            </a>
+            <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+              <Upload size={14} />{' '}
+              {restoringBackup ? 'Đang khôi phục...' : 'Khôi phục từ tệp Sao lưu (.ZIP)'}
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                hidden
+                disabled={restoringBackup}
+                onChange={handleImportBackup}
+              />
+            </label>
+          </div>
+        </div>
+
         <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Hủy
+            Đóng
           </button>
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            <Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+            <Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu khóa API'}
           </button>
         </div>
       </form>

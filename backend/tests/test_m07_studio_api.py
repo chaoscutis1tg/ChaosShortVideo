@@ -679,6 +679,152 @@ def test_m07_uc14_scraper_brandkit_cutout_soundwave_outro_and_zip(tmp_path: Path
             assert "SEO_TikTok_YouTubeShorts.txt" in names
 
 
+def test_m07_uc15_nvenc_trimmer_cover_snapshot_lanqr_and_backup(tmp_path: Path) -> None:
+    """Verify UC-15: NVENC detection, Media Trimmer, True 1080p Snapshot, Cover Studio, LAN QR & Backup ZIP."""
+    from io import BytesIO
+    import wave
+    import zipfile
+    from PIL import Image
+
+    # Prepare sample photo + 4.0s acoustic WAV
+    sample_jpg = tmp_path / "violin_hero.jpg"
+    im = Image.new("RGB", (900, 1200), (225, 220, 210))
+    im.paste((165, 88, 32), (240, 180, 660, 1020))
+    im.save(sample_jpg, format="JPEG")
+
+    raw_wav = tmp_path / "long_acoustic.wav"
+    with wave.open(str(raw_wav), "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(44100)
+        wf.writeframes(b"\x18\x0e\x18\x0e" * (44100 * 4))
+
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_uc15.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=True,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+
+    with TestClient(studio_app) as client:
+        # 1. Verify Hardware NVENC Status & LAN QR PNG endpoint (Items 1 & 7)
+        st = client.get("/api/system/status").json()
+        assert "nvenc_available" in st
+
+        qr_res = client.get("/api/system/lan-qr?url=http://192.168.1.200:8000")
+        assert qr_res.status_code == 200
+        assert qr_res.headers["content-type"] == "image/png"
+        assert len(qr_res.content) > 200
+
+        # 2. Upload WAV & Trim best highlight 1.0s -> 2.8s (Item 3)
+        with open(raw_wav, "rb") as f_wav:
+            up_res = client.post(
+                "/api/uploads/file",
+                data={"category": "product_demo"},
+                files={"file": ("long_acoustic.wav", f_wav, "audio/wav")},
+            )
+        assert up_res.status_code == 200
+        up_json = up_res.json()
+        assert up_json["duration_ms"] >= 3800
+
+        trim_res = client.post(
+            "/api/media/trim",
+            json={"local_path": up_json["local_path"], "start_ms": 1000, "end_ms": 2800},
+        )
+        assert trim_res.status_code == 200
+        trim_json = trim_res.json()
+        assert 1500 <= trim_json["duration_ms"] <= 2100
+        assert Path(trim_json["local_path"]).exists()
+
+        # 3. True 1080p Frame Snapshot & Cover Studio Preview (Items 4 & 5)
+        with open(sample_jpg, "rb") as f_img:
+            img_up = client.post(
+                "/api/uploads/file",
+                data={"category": "product_photo"},
+                files={"file": ("violin_hero.jpg", f_img, "image/jpeg")},
+            ).json()
+
+        snap_video = client.post(
+            "/api/preview/render-frame",
+            json={
+                "active_tab": "product",
+                "sample_media_url": img_up["media_url"],
+                "banner_title": "Violin Gỗ Thịt S2S",
+                "sample_subtitle": "Âm vang dày ấm tự nhiên.",
+                "preview_as_cover": False,
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "product_framing": "VELVET_DARK_LUXURY",
+                    "subtitle_pos_y": 0.80,
+                    "subtitle_font_size": 50,
+                },
+            },
+        )
+        assert snap_video.status_code == 200
+        assert snap_video.json()["width"] == 1080
+        assert snap_video.json()["height"] == 1920
+
+        snap_cover = client.post(
+            "/api/preview/render-frame",
+            json={
+                "active_tab": "product",
+                "sample_media_url": img_up["media_url"],
+                "banner_title": "Test Âm Violin S2S",
+                "preview_as_cover": True,
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "cover_style": "BOLD_HOOK",
+                    "cover_headline": "Test Âm Violin S2S",
+                    "cover_badge_text": "Nghe Thử Âm Mộc",
+                },
+            },
+        )
+        assert snap_cover.status_code == 200
+        assert snap_cover.json()["image_url"].endswith(".jpg")
+
+        # 4. Store Backup Export & Restore .ZIP (Item 8)
+        client.post(
+            "/api/brand-kit",
+            json={
+                "brand_name": "Chaos Luthier Studio",
+                "showroom_address": "Hà Nội",
+                "hotline_or_web": "www.sonmusic.vn",
+                "outro_card_enabled": True,
+            },
+        )
+        client.post(
+            "/api/product/templates",
+            json={
+                "template_id": "tpl_custom_s2s",
+                "product_name": "Đàn Violin Avaro S2S Tuyển Chọn",
+                "product_category": "MUSICAL_INSTRUMENT",
+                "raw_description": "Gỗ thịt tự nhiên lâu năm.",
+            },
+        )
+        exp_res = client.get("/api/system/backup-export")
+        assert exp_res.status_code == 200
+        assert "ChaosShortVideo_StoreBackup.zip" in exp_res.headers.get("content-disposition", "")
+
+        with zipfile.ZipFile(BytesIO(exp_res.content), "r") as zf:
+            assert "manifest.json" in zf.namelist()
+
+        # Delete template, then restore from backup ZIP and confirm it comes back!
+        client.delete("/api/product/templates/tpl_custom_s2s")
+        imp_res = client.post(
+            "/api/system/backup-import",
+            files={"file": ("ChaosShortVideo_StoreBackup.zip", exp_res.content, "application/zip")},
+        )
+        assert imp_res.status_code == 200
+        assert imp_res.json()["templates_restored"] >= 1
+        assert imp_res.json()["brand_kit_restored"] == 1
+        tpl_ids = {t["template_id"] for t in client.get("/api/product/templates").json()}
+        assert "tpl_custom_s2s" in tpl_ids
+
+
 
 
 

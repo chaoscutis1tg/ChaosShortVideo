@@ -15,6 +15,7 @@ import numpy as np
 
 from app.m00_core_contracts import (
     AssetType,
+    CoverTemplateStyle,
     GPUResourceManager,
     HardsubMaskMode,
     IVideoCompositor,
@@ -370,26 +371,39 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         est_frames = (final_dur_ms / 1000.0) * TARGET_FPS
         avg_fps = round(est_frames / elapsed, 1)
 
-        # 5. Generate clean Product Cover Poster or extract cover frame
+        # 5. Generate Cover Studio Poster (supports custom photo index + TikTok grid headline)
+        eff_cover_head = cfg_l.cover_headline.strip()
+        if not eff_cover_head and cfg_l.cover_style != CoverTemplateStyle.CLEAN_POSTER:
+            eff_cover_head = spec.clip.hook_banner_title
+
         poster_done = False
-        if (
-            is_topic_mode
-            and spec.visual_assets is not None
-            and spec.visual_assets.items
-            and spec.visual_assets.items[0].asset_type == AssetType.IMAGE
-        ):
-            poster_done = (
-                StudioOverlayArtist.create_product_poster_cover(
-                    base_plate_png=spec.visual_assets.items[0].asset_path,
-                    static_overlay_png=static_ovr,
-                    out_cover_jpg=cover_jpg,
-                    canvas_w=canvas_w,
-                    canvas_h=canvas_h,
+        if is_topic_mode and spec.visual_assets is not None and spec.visual_assets.items:
+            img_items = [
+                it for it in spec.visual_assets.items if it.asset_type == AssetType.IMAGE
+            ]
+            if img_items:
+                chosen_cov_it = img_items[min(cfg_l.cover_photo_index, len(img_items) - 1)]
+                poster_done = (
+                    StudioOverlayArtist.create_product_poster_cover(
+                        base_plate_png=chosen_cov_it.asset_path,
+                        static_overlay_png=static_ovr,
+                        out_cover_jpg=cover_jpg,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                        cover_style=cfg_l.cover_style,
+                        cover_headline=eff_cover_head,
+                        cover_badge_text=cfg_l.cover_badge_text,
+                    )
+                    is not None
                 )
-                is not None
-            )
         if not poster_done:
             self._extract_cover_jpg(out_mp4, cover_jpg)
+            StudioOverlayArtist.decorate_existing_cover_jpg(
+                cover_jpg=cover_jpg,
+                cover_style=cfg_l.cover_style,
+                cover_headline=eff_cover_head,
+                cover_badge_text=cfg_l.cover_badge_text,
+            )
 
         if on_progress:
             on_progress(

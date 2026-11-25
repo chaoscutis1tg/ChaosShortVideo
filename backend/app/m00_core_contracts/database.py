@@ -757,3 +757,102 @@ class SQLiteRepository:
             )
         return kit
 
+    def export_store_catalog_bundle(self) -> Dict[str, Any]:
+        """Export Brand Kit, saved Product Templates, and custom cloned Voices as JSON-serializable dict."""
+        bk = self.get_brand_kit()
+        bk_dict = json.loads(bk.model_dump_json())
+        if bk.logo_path:
+            bk_dict["logo_filename"] = bk.logo_path.name
+
+        custom_voices: List[Dict[str, Any]] = []
+        for vp in self.list_voice_profiles():
+            if vp.tier == VoiceTier.LOCAL_F5_CLONE:
+                vd = vp.model_dump()
+                sp = Path(vp.voice_id_or_sample_path)
+                vd["sample_filename"] = sp.name
+                custom_voices.append(vd)
+
+        return {
+            "app": "ChaosShortVideo",
+            "schema_version": "3.1",
+            "exported_at": _utc_now_iso(),
+            "brand_kit": bk_dict,
+            "product_templates": [t.model_dump() for t in self.list_product_templates()],
+            "custom_voices": custom_voices,
+        }
+
+    def import_store_catalog_bundle(
+        self, bundle: Dict[str, Any], assets_dir: Path
+    ) -> Dict[str, int]:
+        """Restore Brand Kit, Product Templates, and custom cloned Voices with remapped local asset paths."""
+        tpl_count = 0
+        for raw_t in bundle.get("product_templates") or []:
+            if not isinstance(raw_t, dict) or not raw_t.get("product_name"):
+                continue
+            try:
+                dto_t = SavedProductTemplateDTO(
+                    template_id=str(raw_t.get("template_id") or f"tpl_{tpl_count + 1}"),
+                    product_name=str(raw_t["product_name"]),
+                    product_category=ProductCategory(
+                        raw_t.get("product_category") or ProductCategory.MUSICAL_INSTRUMENT.value
+                    ),
+                    raw_description=str(raw_t.get("raw_description") or ""),
+                    call_to_action=str(raw_t.get("call_to_action") or ""),
+                    offer_badge=str(raw_t.get("offer_badge") or ""),
+                    contact_badge=str(raw_t.get("contact_badge") or ""),
+                    qr_code_content=str(raw_t.get("qr_code_content") or ""),
+                )
+                self.upsert_product_template(dto_t)
+                tpl_count += 1
+            except Exception:
+                continue
+
+        voice_count = 0
+        for raw_v in bundle.get("custom_voices") or []:
+            if not isinstance(raw_v, dict) or not raw_v.get("profile_id"):
+                continue
+            try:
+                sample_fname = str(raw_v.get("sample_filename") or "")
+                remapped_sample = str(raw_v.get("voice_id_or_sample_path") or "")
+                if sample_fname:
+                    candidate_wav = assets_dir / "voice_samples" / Path(sample_fname).name
+                    if candidate_wav.exists():
+                        remapped_sample = str(candidate_wav)
+                vp_dto = VoiceProfileDTO(
+                    profile_id=str(raw_v["profile_id"]),
+                    display_name=str(raw_v.get("display_name") or "Giọng Nhân Bản"),
+                    tier=VoiceTier.LOCAL_F5_CLONE,
+                    voice_id_or_sample_path=remapped_sample,
+                    sample_ref_text=str(raw_v.get("sample_ref_text") or ""),
+                    speed_rate=float(raw_v.get("speed_rate") or 1.04),
+                    pitch_hz=float(raw_v.get("pitch_hz") or 0.0),
+                    emotion_prompt=str(raw_v.get("emotion_prompt") or ""),
+                    dsp_preset=str(raw_v.get("dsp_preset") or "artisan_warm_studio"),
+                )
+                self.upsert_voice_profile(vp_dto)
+                voice_count += 1
+            except Exception:
+                continue
+
+        bk_restored = 0
+        raw_bk = bundle.get("brand_kit")
+        if isinstance(raw_bk, dict):
+            try:
+                bk_copy = dict(raw_bk)
+                logo_fname = str(bk_copy.pop("logo_filename", "") or "")
+                if logo_fname:
+                    candidate_logo = assets_dir / "logos" / Path(logo_fname).name
+                    bk_copy["logo_path"] = str(candidate_logo) if candidate_logo.exists() else None
+                elif bk_copy.get("logo_path") and not Path(str(bk_copy["logo_path"])).exists():
+                    bk_copy["logo_path"] = None
+                self.save_brand_kit(BrandKitDTO(**bk_copy))
+                bk_restored = 1
+            except Exception:
+                pass
+
+        return {
+            "templates_restored": tpl_count,
+            "voices_restored": voice_count,
+            "brand_kit_restored": bk_restored,
+        }
+

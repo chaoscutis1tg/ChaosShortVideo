@@ -860,6 +860,31 @@ export default function ProjectWorkspaceView({
                   </SwitchCard>
                 </div>
 
+                {/* Cover Thumbnail Studio inside Quick Re-Edit (Item 4) */}
+                <div className="form-grid" style={{ marginBottom: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Kiểu Ảnh Bìa TikTok / Shorts</label>
+                    <select
+                      className="select"
+                      value={layoutConfig.cover_style || 'CLEAN_POSTER'}
+                      onChange={(e) => updateQuickLayout({ cover_style: e.target.value })}
+                    >
+                      <option value="CLEAN_POSTER">Bìa sạch tự nhiên</option>
+                      <option value="BOLD_HOOK">Chữ lớn nổi bật trên lưới 3 cột TikTok</option>
+                      <option value="LUXURY_MAGAZINE">Khung tạp chí Đen Nhung & Vàng Champagne</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Tiêu đề lớn trên Ảnh Bìa (tùy chọn)</label>
+                    <input
+                      className="input"
+                      placeholder="VD: Test Âm Thực Tế • Gỗ Thịt Nguyên Tấm"
+                      value={layoutConfig.cover_headline || ''}
+                      onChange={(e) => updateQuickLayout({ cover_headline: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 {/* Reorder Product Media right inside Quick Re-Edit */}
                 {detail.mode === 'PRODUCT_SHOWCASE' && editablePhotoList.length > 1 && (
                   <div style={{ marginBottom: 14 }}>

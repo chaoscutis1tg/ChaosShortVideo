@@ -2,12 +2,14 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import shutil
 import socket
 import subprocess
+import time
 from typing import Any, Dict, List, Optional
 import uuid
 import zipfile
@@ -22,8 +24,9 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageDraw, ImageFilter
 from pydantic import BaseModel, Field
 
 from app.m00_core_contracts import (
@@ -31,9 +34,11 @@ from app.m00_core_contracts import (
     BrandKitDTO,
     ClipSpecDTO,
     CopywritingTone,
+    CoverTemplateStyle,
     CutConfigDTO,
     CutPlanDTO,
     GPUResourceManager,
+    HardsubMaskMode,
     IngestRequestDTO,
     JobState,
     LayoutAndAntiCopyConfigDTO,
@@ -46,6 +51,7 @@ from app.m00_core_contracts import (
     SavedProductTemplateDTO,
     SourceType,
     SQLiteRepository,
+    SUPPORTED_VIDEO_EXTENSIONS,
     StudioSettings,
     SubtitleStyle,
     TopicPromptDTO,
@@ -54,9 +60,11 @@ from app.m00_core_contracts import (
     VoiceProfileDTO,
     VoiceTier,
     get_settings,
+    resolve_aspect_dimensions,
 )
 from app.m01_media_ingest import (
     FFmpegMediaIngestor,
+    FFmpegMediaTrimmer,
     ProductWebScraper,
     YtDlpDownloader,
     normalize_video_url,
@@ -74,7 +82,7 @@ from app.m05_voice_audio_mixer import (
     StudioBGMLibrary,
     TTSProviderFactory,
 )
-from app.m06_nvenc_compositor import FFmpegNVENCCompositor
+from app.m06_nvenc_compositor import FFmpegNVENCCompositor, StudioOverlayArtist
 
 from .job_manager import JobExecutionManager
 from .orchestrator import PipelineOrchestrator
@@ -249,6 +257,46 @@ class BrandKitSaveRequest(BaseModel):
     preferred_transition: TransitionStyle = TransitionStyle.CAPCUT_DISSOLVE
     preferred_voice_id: str = "edge_nam_nghe_nhan"
     preferred_bgm_id: Optional[str] = "bgm_luxury_acoustic"
+
+
+class MediaTrimRequest(BaseModel):
+    local_path: str = Field(min_length=2)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(gt=0)
+
+
+class TrueFrameSnapshotRequest(BaseModel):
+    active_tab: str = "product"
+    sample_media_path: Optional[str] = None
+    sample_media_url: Optional[str] = None
+    banner_title: str = "Đàn Violin Gỗ Thịt Tự Nhiên"
+    sample_subtitle: str = "Mặt đàn gỗ thịt tự nhiên nguyên tấm cho âm vang dày và ấm."
+    preview_as_cover: bool = False
+    layout_config: LayoutAndAntiCopyConfigDTO = Field(
+        default_factory=LayoutAndAntiCopyConfigDTO
+    )
+
+
+class ProductBatchUrlsRequest(BaseModel):
+    urls: List[str] = Field(min_length=1, max_length=20)
+    product_category: ProductCategory = ProductCategory.MUSICAL_INSTRUMENT
+    copywriting_tone: CopywritingTone = CopywritingTone.ARTISAN_STORYTELLER
+    diversify_angles: bool = True
+    target_duration_sec: int = Field(default=55, ge=15, le=180)
+    call_to_action: str = (
+        "Nhắn trực tiếp cho cửa hàng hoặc để lại bình luận để nhận video test thực tế và ưu đãi hôm nay."
+    )
+    voice_profile_id: str = "edge_nam_nghe_nhan"
+    voice_speed_global: Optional[float] = None
+    voice_pitch_global: Optional[float] = None
+    subtitle_style: SubtitleStyle = SubtitleStyle.CINEMA
+    bgm_preset_id: Optional[str] = "bgm_luxury_acoustic"
+    custom_bgm_path: Optional[str] = None
+    bgm_volume: float = 0.06
+    layout_config: LayoutAndAntiCopyConfigDTO = Field(
+        default_factory=LayoutAndAntiCopyConfigDTO
+    )
+    auto_one_click: bool = True
 
 
 # ============================================================================
@@ -517,7 +565,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
     async def upload_studio_file(
         category: str = Form(default="video"),
         file: UploadFile = File(...),
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Upload local video, .srt subtitle, BGM, or channel watermark PNG."""
         target_folder = (
             settings.assets_dir / "logos"
@@ -535,17 +583,18 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             "local_path": str(dest),
             "original_name": orig_name,
             "media_url": _to_media_url(str(dest)),
+            "duration_ms": await asyncio.to_thread(FFmpegMediaTrimmer.probe_duration_ms, dest),
         }
 
     @app.post("/api/uploads/batch")
     async def upload_batch_studio_files(
         category: str = Form(default="product_photo"),
         files: List[UploadFile] = File(...),
-    ) -> List[Dict[str, str]]:
-        """Upload multiple product photos at once (e.g. 10 Zalo Violin / Apparel photos)."""
+    ) -> List[Dict[str, Any]]:
+        """Upload multiple product photos or close-up clips at once."""
         target_folder = settings.work_dir / "_uploads" / category
         target_folder.mkdir(parents=True, exist_ok=True)
-        uploaded: List[Dict[str, str]] = []
+        uploaded: List[Dict[str, Any]] = []
         for idx, up_f in enumerate(files):
             orig_name = Path(up_f.filename or f"photo_{idx + 1}.jpg").name
             ext = Path(orig_name).suffix.lower() or ".jpg"
@@ -553,14 +602,416 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             dest = target_folder / safe_name
             with open(dest, "wb") as f_out:
                 shutil.copyfileobj(up_f.file, f_out)
+            dur_ms = await asyncio.to_thread(FFmpegMediaTrimmer.probe_duration_ms, dest)
             uploaded.append(
                 {
                     "local_path": str(dest),
                     "original_name": orig_name,
                     "media_url": _to_media_url(str(dest)),
+                    "duration_ms": dur_ms,
                 }
             )
         return uploaded
+
+    def _resolve_media_ref(url_or_path: Optional[str]) -> Optional[Path]:
+        if not url_or_path:
+            return None
+        clean = url_or_path.split("?", 1)[0].strip()
+        if not clean:
+            return None
+        for prefix, root in (
+            ("/media/outputs/", settings.outputs_dir.resolve()),
+            ("/media/work/", settings.work_dir.resolve()),
+            ("/media/assets/", settings.assets_dir.resolve()),
+        ):
+            if clean.startswith(prefix):
+                rel = clean[len(prefix) :].lstrip("/")
+                cand = (root / rel).resolve()
+                if cand.exists() and cand.is_file():
+                    return cand
+        direct = Path(clean)
+        if direct.exists() and direct.is_file():
+            return direct
+        return None
+
+    @app.post("/api/media/trim")
+    async def trim_uploaded_media_highlight(req: MediaTrimRequest) -> Dict[str, Any]:
+        """Trim `[start_ms, end_ms]` highlight segment from an uploaded demo audio or video clip."""
+        src_p = _resolve_media_ref(req.local_path)
+        if src_p is None or not src_p.exists():
+            raise HTTPException(status_code=404, detail="Không tìm thấy tệp gốc để cắt đoạn.")
+        trim_dir = settings.work_dir / "_uploads" / "trimmed"
+        try:
+            use_nvenc = settings.prefer_nvenc_gpu and gpu_mgr.is_nvenc_available()
+            res = await asyncio.to_thread(
+                FFmpegMediaTrimmer.trim_segment,
+                src_p,
+                trim_dir,
+                req.start_ms,
+                req.end_ms,
+                use_nvenc,
+            )
+            return {
+                "local_path": str(res.output_path),
+                "original_name": res.output_path.name,
+                "media_url": _to_media_url(str(res.output_path)),
+                "duration_ms": res.duration_ms,
+                "start_ms": res.start_ms,
+                "end_ms": res.end_ms,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/lan-qr")
+    async def get_lan_mobile_qr_png(url: Optional[str] = None) -> Response:
+        """Generate a high-contrast PNG QR code so phones on Wi-Fi open ChaosShortVideo instantly."""
+        import qrcode  # type: ignore
+
+        lan_list = _discover_lan_urls(8000)
+        target_url = (url or "").strip() or (
+            lan_list[0] if lan_list else "http://127.0.0.1:8000"
+        )
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(target_url)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="#0f172a", back_color="#ffffff").convert("RGB")
+        buf = BytesIO()
+        qr_img.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+
+    @app.get("/api/system/backup-export")
+    async def export_store_backup_zip() -> FileResponse:
+        """Package Brand Kit, Logo, Product Templates & Cloned Voices into a portable .zip backup."""
+        backup_dir = settings.work_dir / "_backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        zip_path = backup_dir / "ChaosShortVideo_StoreBackup.zip"
+        manifest = repo.export_store_catalog_bundle()
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            logos_dir = settings.assets_dir / "logos"
+            if logos_dir.exists():
+                for lg in logos_dir.iterdir():
+                    if lg.is_file():
+                        zf.write(lg, arcname=f"logos/{lg.name}")
+            samples_dir = settings.assets_dir / "voice_samples"
+            if samples_dir.exists():
+                for vs in samples_dir.iterdir():
+                    if vs.is_file():
+                        zf.write(vs, arcname=f"voice_samples/{vs.name}")
+
+        return FileResponse(
+            path=str(zip_path),
+            media_type="application/zip",
+            filename="ChaosShortVideo_StoreBackup.zip",
+        )
+
+    @app.post("/api/system/backup-import")
+    async def import_store_backup_zip(file: UploadFile = File(...)) -> Dict[str, Any]:
+        """Restore Brand Kit, Logo, Product Templates & Cloned Voices from a .zip backup."""
+        raw_bytes = await file.read()
+        try:
+            with zipfile.ZipFile(BytesIO(raw_bytes), "r") as zf:
+                if "manifest.json" not in zf.namelist():
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Tệp sao lưu không hợp lệ (thiếu manifest.json).",
+                    )
+                for member in zf.namelist():
+                    if member.startswith("logos/") and not member.endswith("/"):
+                        safe_name = Path(member).name
+                        if safe_name:
+                            dst = settings.assets_dir / "logos" / safe_name
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            dst.write_bytes(zf.read(member))
+                    elif member.startswith("voice_samples/") and not member.endswith("/"):
+                        safe_name = Path(member).name
+                        if safe_name:
+                            dst = settings.assets_dir / "voice_samples" / safe_name
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            dst.write_bytes(zf.read(member))
+                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Lỗi đọc tệp sao lưu: {exc}") from exc
+
+        counts = repo.import_store_catalog_bundle(manifest, settings.assets_dir)
+        return {"status": "ok", **counts}
+
+    @app.post("/api/preview/render-frame")
+    async def render_true_compositor_frame_snapshot(req: TrueFrameSnapshotRequest) -> Dict[str, Any]:
+        """Render a true 1080p still snapshot through M04 + M06 (cutout, blur, overlays, ASS subtitle or Cover)."""
+        t0 = time.perf_counter()
+        cfg = req.layout_config
+        canvas_w, canvas_h = resolve_aspect_dimensions(cfg.aspect_ratio)
+        snap_dir = settings.work_dir / "_frame_previews"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        uid = uuid.uuid4().hex[:10]
+        plate_png = snap_dir / f"plate_{uid}.png"
+        ovr_png = snap_dir / f"ovr_{uid}.png"
+        out_jpg = snap_dir / f"true_frame_{uid}.jpg"
+
+        src_media = _resolve_media_ref(req.sample_media_path or req.sample_media_url)
+
+        def _build_snapshot_sync() -> None:
+            # 1. Build base visual plate
+            if (
+                src_media is not None
+                and src_media.exists()
+                and src_media.suffix.lower() not in SUPPORTED_VIDEO_EXTENSIONS
+            ):
+                if req.active_tab == "movie":
+                    with Image.open(src_media) as im_raw:
+                        rgb_m = im_raw.convert("RGB")
+                        if cfg.hardsub_mask_enabled:
+                            r = cfg.hardsub_rect
+                            mx0 = int(rgb_m.width * r.x)
+                            my0 = int(rgb_m.height * r.y)
+                            mx1 = min(rgb_m.width, int(rgb_m.width * (r.x + r.w)))
+                            my1 = min(rgb_m.height, int(rgb_m.height * (r.y + r.h)))
+                            if mx1 > mx0 + 4 and my1 > my0 + 4:
+                                if r.mode == HardsubMaskMode.DARK_BOX:
+                                    md = ImageDraw.Draw(rgb_m)
+                                    md.rectangle([(mx0, my0), (mx1, my1)], fill=(8, 10, 14))
+                                else:
+                                    crop = rgb_m.crop((mx0, my0, mx1, my1)).filter(
+                                        ImageFilter.GaussianBlur(radius=14)
+                                    )
+                                    rgb_m.paste(crop, (mx0, my0))
+                        bg = rgb_m.resize((canvas_w, canvas_h)).filter(
+                            ImageFilter.GaussianBlur(radius=24)
+                        )
+                        dark = Image.new("RGBA", (canvas_w, canvas_h), (6, 9, 15, 115))
+                        base_c = Image.alpha_composite(bg.convert("RGBA"), dark)
+                        sc = min(canvas_w / max(rgb_m.width, 1), (canvas_h * 0.62) / max(rgb_m.height, 1))
+                        fw = max(1, int(rgb_m.width * sc))
+                        fh = max(1, int(rgb_m.height * sc))
+                        fg_m = rgb_m.resize((fw, fh), Image.Resampling.LANCZOS).convert("RGBA")
+                        base_c.alpha_composite(fg_m, ((canvas_w - fw) // 2, (canvas_h - fh) // 2))
+                        base_c.save(plate_png, format="PNG")
+                else:
+                    ProductPhotoShowcaseProvider.compose_uncropped_plate(
+                        src_img=src_media,
+                        dst_png=plate_png,
+                        callout_label="Gỗ thịt tự nhiên" if cfg.show_photo_callouts else "",
+                        framing_style=cfg.product_framing,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                        studio_cutout_enabled=cfg.studio_cutout_enabled,
+                    )
+            else:
+                # Sample studio card when no photo is uploaded yet
+                sample = Image.new("RGBA", (canvas_w, canvas_h), (14, 18, 26, 255))
+                glow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+                gd = ImageDraw.Draw(glow)
+                r_g = int(min(canvas_w, canvas_h) * 0.42)
+                gd.ellipse(
+                    [
+                        (canvas_w // 2 - r_g, canvas_h // 2 - r_g),
+                        (canvas_w // 2 + r_g, canvas_h // 2 + r_g),
+                    ],
+                    fill=(146, 92, 38, 110),
+                )
+                sample = Image.alpha_composite(sample, glow.filter(ImageFilter.GaussianBlur(radius=85)))
+                sd = ImageDraw.Draw(sample)
+                cw_card = int(canvas_w * 0.72)
+                ch_card = int(canvas_h * 0.50)
+                cx0 = (canvas_w - cw_card) // 2
+                cy0 = (canvas_h - ch_card) // 2 - 20
+                sd.rounded_rectangle(
+                    [(cx0, cy0), (cx0 + cw_card, cy0 + ch_card)],
+                    radius=32,
+                    fill=(30, 41, 59, 235),
+                    outline=(212, 175, 55, 180),
+                    width=3,
+                )
+                sample.save(plate_png, format="PNG")
+
+            # 2. Render true static overlay
+            StudioOverlayArtist.create_static_overlay(
+                out_png=ovr_png,
+                banner_text=req.banner_title,
+                show_top_banner=cfg.show_top_banner,
+                logo_path=cfg.logo_path,
+                logo_pos_x=cfg.logo_pos_x,
+                logo_pos_y=cfg.logo_pos_y,
+                sales_badge_enabled=cfg.sales_badge_enabled,
+                sales_price_or_offer=cfg.sales_price_or_offer,
+                sales_contact_info=cfg.sales_contact_info,
+                qr_code_content=cfg.qr_code_content,
+                qr_code_label=cfg.qr_code_label,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+            )
+
+            with Image.open(plate_png) as bp, Image.open(ovr_png) as ov:
+                composed = Image.alpha_composite(bp.convert("RGBA"), ov.convert("RGBA"))
+
+            if req.preview_as_cover:
+                eff_head = cfg.cover_headline.strip() or req.banner_title
+                composed = StudioOverlayArtist.apply_cover_studio_typography(
+                    composed,
+                    cover_style=(
+                        CoverTemplateStyle.BOLD_HOOK
+                        if cfg.cover_style == CoverTemplateStyle.CLEAN_POSTER
+                        and not cfg.cover_headline.strip()
+                        else cfg.cover_style
+                    ),
+                    headline=eff_head,
+                    badge_text=cfg.cover_badge_text,
+                )
+            else:
+                composed = StudioOverlayArtist.render_sample_subtitle_line(
+                    composed,
+                    subtitle_text=req.sample_subtitle,
+                    pos_y=cfg.subtitle_pos_y,
+                    font_size=cfg.subtitle_font_size,
+                )
+
+            composed.convert("RGB").save(out_jpg, format="JPEG", quality=93)
+            plate_png.unlink(missing_ok=True)
+            ovr_png.unlink(missing_ok=True)
+
+        await asyncio.to_thread(_build_snapshot_sync)
+        elapsed_ms = int(round((time.perf_counter() - t0) * 1000.0))
+        return {
+            "image_url": _to_media_url(str(out_jpg)),
+            "width": canvas_w,
+            "height": canvas_h,
+            "elapsed_ms": elapsed_ms,
+            "nvenc_active": gpu_mgr.is_nvenc_available(),
+        }
+
+    @app.post("/api/product/batch-urls")
+    async def start_batch_product_projects_from_urls(
+        req: ProductBatchUrlsRequest,
+    ) -> Dict[str, Any]:
+        """Auto-scrape multiple store product URLs, diversify angles, and enqueue batch rendering."""
+        clean_urls: List[str] = []
+        seen_u: set[str] = set()
+        for raw_u in req.urls:
+            u = raw_u.strip()
+            if u.startswith(("http://", "https://")) and u not in seen_u:
+                seen_u.add(u)
+                clean_urls.append(u)
+
+        if not clean_urls:
+            raise HTTPException(
+                status_code=400,
+                detail="Vui lòng dán ít nhất 1 đường dẫn sản phẩm hợp lệ (bắt đầu bằng https://).",
+            )
+
+        angle_cycle = [
+            SalesScriptAngle.EXPERT_SPEC_REVIEW,
+            SalesScriptAngle.BEGINNER_CONSULT,
+            SalesScriptAngle.UNBOXING_AND_GIFT,
+            SalesScriptAngle.PRICE_COMPARISON_DEAL,
+        ]
+        created_projects: List[Dict[str, str]] = []
+        failed_urls: List[Dict[str, str]] = []
+
+        for idx, url in enumerate(clean_urls):
+            batch_sub = settings.work_dir / "_uploads" / f"batch_{uuid.uuid4().hex[:8]}"
+            try:
+                scraped = await ProductWebScraper.scrape_url(url, batch_sub, max_images=10)
+                valid_imgs = [p for p in scraped.downloaded_image_paths if p.exists()]
+                if not valid_imgs:
+                    failed_urls.append({"url": url, "reason": "Không tìm thấy ảnh sản phẩm trên trang."})
+                    continue
+
+                p_name = (scraped.product_name or f"Sản phẩm #{idx + 1}").strip()[:180]
+                chosen_angle = (
+                    angle_cycle[idx % len(angle_cycle)]
+                    if req.diversify_angles
+                    else SalesScriptAngle.EXPERT_SPEC_REVIEW
+                )
+                project_id = f"prd_{uuid.uuid4().hex[:8]}"
+
+                single_req = ProductStartRequest(
+                    product_name=p_name,
+                    product_category=req.product_category,
+                    sales_angle=chosen_angle,
+                    copywriting_tone=req.copywriting_tone,
+                    variant_count=1,
+                    raw_description=scraped.raw_description or p_name,
+                    image_paths=[str(p) for p in valid_imgs],
+                    target_duration_sec=req.target_duration_sec,
+                    call_to_action=req.call_to_action,
+                    voice_profile_id=req.voice_profile_id,
+                    voice_speed_global=req.voice_speed_global,
+                    voice_pitch_global=req.voice_pitch_global,
+                    subtitle_style=req.subtitle_style,
+                    bgm_preset_id=req.bgm_preset_id,
+                    custom_bgm_path=req.custom_bgm_path,
+                    bgm_volume=req.bgm_volume,
+                    layout_config=req.layout_config,
+                    auto_one_click=req.auto_one_click,
+                )
+                repo.create_project(
+                    project_id=project_id,
+                    name=p_name,
+                    mode=ProjectMode.PRODUCT_SHOWCASE,
+                    target_min_sec=max(15, req.target_duration_sec - 15),
+                    target_max_sec=min(180, req.target_duration_sec + 20),
+                    request_payload_json=single_req.model_dump_json(),
+                )
+                prompt_dto = ProductReviewPromptDTO(
+                    project_id=project_id,
+                    product_name=p_name,
+                    product_category=req.product_category,
+                    sales_angle=chosen_angle,
+                    copywriting_tone=req.copywriting_tone,
+                    variant_count=1,
+                    raw_description=scraped.raw_description or p_name,
+                    image_paths=valid_imgs,
+                    target_duration_sec=req.target_duration_sec,
+                    call_to_action=req.call_to_action,
+                )
+                audio_cfg = _resolve_bgm_into_audio_cfg(
+                    AudioSubConfigDTO(
+                        enable_narration=True,
+                        keep_original_audio=False,
+                        bgm_volume=req.bgm_volume,
+                        subtitle_style=req.subtitle_style,
+                        subtitle_pos_y=req.layout_config.subtitle_pos_y,
+                        subtitle_font_size=req.layout_config.subtitle_font_size,
+                        voice_speed_global=req.voice_speed_global,
+                        voice_pitch_global=req.voice_pitch_global,
+                    ),
+                    req.bgm_preset_id,
+                    req.custom_bgm_path,
+                )
+                st = job_mgr.enqueue_job(
+                    project_id=project_id,
+                    mode=ProjectMode.PRODUCT_SHOWCASE,
+                    is_render_only=False,
+                    coro_factory=lambda p_dto=prompt_dto, a_cfg=audio_cfg: orchestrator.execute_product_pipeline(
+                        p_dto,
+                        req.voice_profile_id,
+                        a_cfg,
+                        req.layout_config,
+                        req.auto_one_click,
+                    ),
+                )
+                created_projects.append(
+                    {"project_id": project_id, "product_name": p_name, "state": st}
+                )
+            except Exception as exc:
+                failed_urls.append({"url": url, "reason": str(exc)})
+
+        if not created_projects:
+            first_err = failed_urls[0]["reason"] if failed_urls else "Lỗi không xác định"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Không tạo được dự án nào từ danh sách link ({first_err}).",
+            )
+
+        return {
+            "created_count": len(created_projects),
+            "created_projects": created_projects,
+            "failed_urls": failed_urls,
+        }
 
     @app.post("/api/product/compliance-check")
     async def check_product_script_compliance(req: ComplianceCheckRequest) -> Dict[str, Any]:

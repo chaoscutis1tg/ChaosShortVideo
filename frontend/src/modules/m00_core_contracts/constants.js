@@ -44,6 +44,10 @@ export const DEFAULT_LAYOUT_CONFIG = {
   outro_subtitle: '',
   outro_contact_line: '',
   outro_duration_ms: 2500,
+  cover_style: 'CLEAN_POSTER',
+  cover_headline: '',
+  cover_badge_text: '',
+  cover_photo_index: 0,
 };
 
 export const DEFAULT_AUDIO_CONFIG = {

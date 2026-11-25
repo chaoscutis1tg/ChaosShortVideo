@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Clapperboard,
+  Copy,
   Cpu,
   FileText,
   Film,
@@ -9,6 +10,7 @@ import {
   Moon,
   Pause,
   Play,
+  QrCode,
   ShoppingBag,
   SlidersHorizontal,
   Smartphone,
@@ -58,6 +60,8 @@ export default function App() {
     workspace: '',
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [showLanQrModal, setShowLanQrModal] = useState(false);
+  const [selectedLanUrl, setSelectedLanUrl] = useState('');
   const [showMobilePreviewDrawer, setShowMobilePreviewDrawer] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
 
@@ -84,6 +88,9 @@ export default function App() {
         studioApi.listBgmPresets(),
       ]);
       setSystemStatus(st);
+      if (st?.lan_urls?.[0] && !selectedLanUrl) {
+        setSelectedLanUrl(st.lan_urls[0]);
+      }
       setVoices(vList);
       setProjects(pList);
       setBgmPresets(bList);
@@ -124,6 +131,8 @@ export default function App() {
   };
 
   const primaryGpu = systemStatus?.gpus?.[0];
+  const lanUrls = systemStatus?.lan_urls || [];
+  const activeLanUrl = selectedLanUrl || lanUrls[0] || window.location.origin;
   const runningProjects = projects.filter((p) => ACTIVE_OR_PAUSED.includes(p.state));
   const pinnedJob = runningProjects[0] || null;
   const queuedCount = projects.filter((p) => p.state === 'QUEUED').length;
@@ -175,7 +184,7 @@ export default function App() {
           <div style={{ minWidth: 0 }}>
             <div className="brand-title">
               ChaosShortVideo
-              <span className="brand-version-pill">Studio v3</span>
+              <span className="brand-version-pill">Studio v3.1</span>
             </div>
             <div className="brand-sub">
               Hệ thống dựng video bán hàng, cắt dịch phim & sáng tạo nội dung ngắn đa nền tảng
@@ -184,25 +193,24 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          {systemStatus?.lan_urls?.[0] && (
+          {lanUrls.length > 0 && (
             <button
               type="button"
               className="badge badge-info hide-on-mobile"
               style={{ cursor: 'pointer' }}
-              title="Bấm để sao chép liên kết mở trên điện thoại hoặc máy tính cùng mạng Wi-Fi"
-              onClick={() => {
-                copyTextSafe(systemStatus.lan_urls[0]);
-                notify(`Đã sao chép địa chỉ mạng LAN: ${systemStatus.lan_urls[0]}`);
-              }}
+              title="Bấm để mở Mã QR quét bằng điện thoại cùng mạng Wi-Fi"
+              onClick={() => setShowLanQrModal(true)}
             >
-              <Wifi size={13} /> LAN: {systemStatus.lan_urls[0].replace('http://', '')}
+              <QrCode size={13} /> Điện thoại LAN: {lanUrls[0].replace('http://', '')}
             </button>
           )}
 
           <span className={`badge ${primaryGpu ? 'badge-ok' : 'badge-warn'} hide-on-mobile`}>
             <Cpu size={13} />{' '}
             {primaryGpu
-              ? `${primaryGpu.name} (${Math.round(primaryGpu.vram_total_mb / 1024)}GB)`
+              ? `${primaryGpu.name} (${Math.round(primaryGpu.vram_total_mb / 1024)}GB${
+                  systemStatus?.nvenc_available ? ' • NVENC' : ''
+                })`
               : 'Chế độ CPU'}
           </span>
 
@@ -224,7 +232,8 @@ export default function App() {
           </button>
 
           <button className="btn btn-secondary btn-sm" onClick={() => setShowSettings(true)}>
-            <SlidersHorizontal size={14} /> <span className="hide-on-mobile">Kết nối API</span>
+            <SlidersHorizontal size={14} />{' '}
+            <span className="hide-on-mobile">API & Sao lưu</span>
           </button>
         </div>
       </header>
@@ -512,11 +521,121 @@ export default function App() {
         })}
       </nav>
 
+      {/* LAN WI-FI MOBILE QR MODAL (ITEM 7) */}
+      {showLanQrModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.76)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 120,
+            padding: 16,
+          }}
+          onClick={() => setShowLanQrModal(false)}
+        >
+          <div
+            className="card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 460, marginBottom: 0, textAlign: 'center' }}
+          >
+            <div className="page-header" style={{ marginBottom: 14, textAlign: 'left' }}>
+              <div>
+                <div className="page-title">
+                  <Wifi size={19} /> Mở ChaosShortVideo trên Điện thoại
+                </div>
+                <div className="page-subtitle">
+                  Tải thẳng ảnh & video gốc vừa chụp từ iPhone / Android vào máy chủ qua Wi-Fi
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowLanQrModal(false)}
+              >
+                <X size={15} /> Đóng
+              </button>
+            </div>
+
+            {lanUrls.length > 1 && (
+              <div className="form-group" style={{ textAlign: 'left' }}>
+                <label className="form-label">Chọn địa chỉ mạng nội bộ:</label>
+                <select
+                  className="select"
+                  value={activeLanUrl}
+                  onChange={(e) => setSelectedLanUrl(e.target.value)}
+                >
+                  {lanUrls.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'inline-block',
+                padding: 14,
+                borderRadius: 16,
+                background: '#ffffff',
+                border: '2px solid var(--brand)',
+                marginBottom: 12,
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              <img
+                src={studioApi.getLanQrImageUrl(activeLanUrl)}
+                alt="LAN Wi-Fi QR Code"
+                style={{ width: 220, height: 220, display: 'block' }}
+              />
+            </div>
+
+            <div
+              className="step-box"
+              style={{ textAlign: 'left', padding: '12px 14px', marginBottom: 12 }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+                Hướng dẫn kết nối nhanh (Không cần gửi vòng qua Zalo):
+              </div>
+              <div className="text-sub" style={{ fontSize: 12.6, lineHeight: 1.5 }}>
+                1. Đảm bảo điện thoại bắt <strong>cùng mạng Wi-Fi</strong> với máy tính này.
+                <br />
+                2. Mở <strong>Camera điện thoại</strong> (hoặc trình quét mã QR) hướng vào hình trên để mở thẳng giao diện Studio trên điện thoại.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                readOnly
+                value={activeLanUrl}
+                style={{ flex: 1, fontWeight: 700, textAlign: 'center' }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  copyTextSafe(activeLanUrl);
+                  notify(`Đã sao chép địa chỉ LAN: ${activeLanUrl}`);
+                }}
+              >
+                <Copy size={15} /> Sao chép
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSettings && (
         <SettingsModal
           systemStatus={systemStatus}
           onClose={() => setShowSettings(false)}
           onUpdated={setSystemStatus}
+          onBackupRestored={refreshAllData}
           notify={notify}
         />
       )}

@@ -22,6 +22,7 @@ from .config import (
 from .enums import (
     AssetType,
     CopywritingTone,
+    CoverTemplateStyle,
     CutStrategy,
     ExportAspectRatio,
     HardsubMaskMode,
@@ -408,6 +409,12 @@ class LayoutAndAntiCopyConfigDTO(BaseContractDTO):
     outro_contact_line: str = Field(default="", max_length=140)
     outro_duration_ms: int = Field(default=2500, ge=1500, le=5000)
 
+    # UC-15: Cover Thumbnail Studio (TikTok / Shorts / Reels 3-column grid optimization)
+    cover_style: CoverTemplateStyle = CoverTemplateStyle.CLEAN_POSTER
+    cover_headline: str = Field(default="", max_length=90)
+    cover_badge_text: str = Field(default="", max_length=50)
+    cover_photo_index: int = Field(default=0, ge=0, le=50)
+
     @field_validator("top_banner_template")
     @classmethod
     def _clean_banner(cls, val: str) -> str:
@@ -545,5 +552,14 @@ class ScrapedProductInfoDTO(BaseContractDTO):
     raw_description: str = ""
     price_hint: str = ""
     downloaded_image_paths: List[Path] = Field(default_factory=list)
+
+
+class MediaTrimResultDTO(BaseContractDTO):
+    """Output contract of interactive clip/audio highlight trimmer (`UC-15`)."""
+
+    output_path: Path
+    duration_ms: int = Field(gt=0)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(gt=0)
 
 

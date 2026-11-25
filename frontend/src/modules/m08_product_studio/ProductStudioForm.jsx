@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   Award,
   BookmarkPlus,
+  Camera,
   CheckCircle2,
   ClipboardPaste,
   Columns,
@@ -14,6 +15,7 @@ import {
   Globe,
   HelpCircle,
   Images,
+  Layers,
   MessageSquareHeart,
   MessageSquarePlus,
   Music2,
@@ -21,6 +23,7 @@ import {
   Play,
   QrCode,
   Scale,
+  Scissors,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -40,6 +43,152 @@ import {
 } from '../m00_core_contracts/StudioWidgets';
 
 const VIDEO_EXT_RE = /\.(mp4|mov|mkv|webm|avi|flv|ts)$/i;
+
+/**
+ * Interactive Trim In / Out bar for picking the exact best segment of a demo audio or video clip (`Item 3`).
+ */
+function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
+  const totalSecRaw = Math.max(2, Number(((mediaItem?.duration_ms || 20000) / 1000).toFixed(1)));
+  const [totalSec, setTotalSec] = useState(totalSecRaw);
+  const [startSec, setStartSec] = useState(0);
+  const [endSec, setEndSec] = useState(Math.min(totalSecRaw, 15));
+  const [trimming, setTrimming] = useState(false);
+
+  useEffect(() => {
+    const nextTot = Math.max(2, Number(((mediaItem?.duration_ms || 20000) / 1000).toFixed(1)));
+    setTotalSec(nextTot);
+    setStartSec(0);
+    setEndSec(Math.min(nextTot, 18));
+  }, [mediaItem?.local_path, mediaItem?.duration_ms]);
+
+  const handlePreviewSlice = () => {
+    const el = playerRef?.current;
+    if (!el) return;
+    el.currentTime = startSec;
+    const onTimeUpdate = () => {
+      if (el.currentTime >= endSec) {
+        el.pause();
+        el.removeEventListener('timeupdate', onTimeUpdate);
+      }
+    };
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.play().catch(() => {});
+  };
+
+  const handleApplyTrim = async () => {
+    if (endSec - startSec < 0.8) {
+      notify('Đoạn cắt cần dài tối thiểu 1 giây.');
+      return;
+    }
+    setTrimming(true);
+    try {
+      const res = await studioApi.trimMediaSegment(
+        mediaItem.local_path,
+        Math.round(startSec * 1000),
+        Math.round(endSec * 1000)
+      );
+      onTrimApplied(res);
+      notify(
+        `Đã cắt gọn đoạn hay nhất (${startSec.toFixed(1)}s – ${endSec.toFixed(1)}s, dài ${(
+          res.duration_ms / 1000
+        ).toFixed(1)}s).`
+      );
+    } catch (err) {
+      notify(`Lỗi cắt đoạn: ${err.message}`);
+    } finally {
+      setTrimming(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: '9px 11px',
+        borderRadius: 8,
+        background: 'var(--bg-step)',
+        border: '1px solid var(--brand-border)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand-text)' }}>
+          <Scissors size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+          Chọn đoạn hay nhất: {startSec.toFixed(1)}s → {endSec.toFixed(1)}s (Lấy{' '}
+          {Math.max(0, endSec - startSec).toFixed(1)}s / {totalSec.toFixed(1)}s)
+        </span>
+        {mediaItem?.trimmedDone && (
+          <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 7px' }}>
+            Đã cắt chuẩn
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
+        <div>
+          <div className="text-sub" style={{ fontSize: 11.2 }}>
+            Bắt đầu từ: <strong>{startSec.toFixed(1)} giây</strong>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max={Math.max(0.5, totalSec - 0.8)}
+            step="0.5"
+            style={{ width: '100%' }}
+            value={startSec}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setStartSec(v);
+              if (endSec <= v + 0.5) setEndSec(Math.min(totalSec, v + 1.0));
+            }}
+          />
+        </div>
+        <div>
+          <div className="text-sub" style={{ fontSize: 11.2 }}>
+            Kết thúc tại: <strong>{endSec.toFixed(1)} giây</strong>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max={totalSec}
+            step="0.5"
+            style={{ width: '100%' }}
+            value={endSec}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setEndSec(v);
+              if (startSec >= v - 0.5) setStartSec(Math.max(0, v - 1.0));
+            }}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {playerRef && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handlePreviewSlice}>
+            <Play size={12} /> Nghe / Xem thử đoạn chọn
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={trimming}
+          onClick={handleApplyTrim}
+        >
+          <Scissors size={12} /> {trimming ? 'Đang cắt...' : 'Cắt lấy đúng đoạn này'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const TONE_CHOICES = [
   {
@@ -102,6 +251,12 @@ export default function ProductStudioForm({
   const [selectedTplId, setSelectedTplId] = useState('');
   const [scrapeUrl, setScrapeUrl] = useState('');
   const [scrapingUrl, setScrapingUrl] = useState(false);
+  const [showBatchPanel, setShowBatchPanel] = useState(false);
+  const [batchUrlsText, setBatchUrlsText] = useState('');
+  const [batchDiversify, setBatchDiversify] = useState(true);
+  const [startingBatch, setStartingBatch] = useState(false);
+  const [trimOpenIdx, setTrimOpenIdx] = useState(null);
+  const demoPlayerRef = useRef(null);
 
   const [productName, setProductName] = useState('Đàn Violin Avaro S2 & S2S Gỗ Thịt Tự Nhiên');
   const [category, setCategory] = useState('MUSICAL_INSTRUMENT');
@@ -217,6 +372,47 @@ export default function ProductStudioForm({
       notify(`Không thể hút dữ liệu từ link: ${err.message}`);
     } finally {
       setScrapingUrl(false);
+    }
+  };
+
+  const handleStartBatchFromUrls = async () => {
+    const urls = batchUrlsText
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.startsWith('http://') || s.startsWith('https://'));
+    if (urls.length === 0) {
+      notify('Vui lòng dán ít nhất 1 đường dẫn sản phẩm hợp lệ (mỗi dòng 1 link https://...).');
+      return;
+    }
+    setStartingBatch(true);
+    try {
+      const res = await studioApi.startProductBatchUrls({
+        urls,
+        product_category: category,
+        copywriting_tone: copywritingTone,
+        diversify_angles: batchDiversify,
+        target_duration_sec: Number(durationSec),
+        call_to_action: ctaText.trim(),
+        voice_profile_id: voiceId,
+        voice_speed_global: Number(voiceSpeed),
+        voice_pitch_global: Number(voicePitch),
+        subtitle_style: subtitleStyle,
+        bgm_preset_id: bgmPresetId,
+        custom_bgm_path: customBgmPath,
+        bgm_volume: bgmVolume,
+        layout_config: layoutConfig,
+        auto_one_click: true,
+      });
+      notify(
+        `Đã tự động hút dữ liệu & xếp hàng tạo ${res.created_count} dự án video bán hàng!`
+      );
+      if (res.created_projects?.[0]) {
+        onProjectStarted(res.created_projects[0].project_id, res.created_projects[0].state);
+      }
+    } catch (err) {
+      notify(`Lỗi chạy hàng loạt: ${err.message}`);
+    } finally {
+      setStartingBatch(false);
     }
   };
 
@@ -504,9 +700,50 @@ export default function ProductStudioForm({
             disabled={scrapingUrl}
             onClick={handleScrapeProductUrl}
           >
-            <Globe size={14} /> {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút ảnh & thông số'}
+            <Globe size={14} /> {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút 1 link'}
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${showBatchPanel ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ minHeight: 37 }}
+            onClick={() => setShowBatchPanel((p) => !p)}
+          >
+            <Layers size={14} /> Tạo hàng loạt (Nhiều link)
           </button>
         </div>
+
+        {/* ITEM 6: BATCH STORE URL PRODUCER */}
+        {showBatchPanel && (
+          <div className="surface-box" style={{ borderColor: 'var(--brand)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <strong style={{ fontSize: 13.2, color: 'var(--brand-text)' }}>
+                Sản xuất hàng loạt từ danh sách Link sản phẩm trên Website (2 – 20 sản phẩm/lần)
+              </strong>
+              <span className="badge badge-info">Tự động xếp hàng đợi chạy lần lượt</span>
+            </div>
+            <textarea
+              className="textarea"
+              style={{ minHeight: 92, marginBottom: 10, fontSize: 13 }}
+              placeholder={`Dán mỗi dòng 1 đường dẫn sản phẩm:\nhttps://www.sonmusic.vn/dan-violin-avaro-s2\nhttps://www.sonmusic.vn/dan-violin-avaro-s2s\n...`}
+              value={batchUrlsText}
+              onChange={(e) => setBatchUrlsText(e.target.value)}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <SwitchCard checked={batchDiversify} onChange={setBatchDiversify}>
+                Tự xoay vòng 4 góc kịch bản để các video không lặp câu chữ
+              </SwitchCard>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={startingBatch}
+                onClick={handleStartBatchFromUrls}
+              >
+                <Layers size={15} />{' '}
+                {startingBatch ? 'Đang hút danh sách sản phẩm...' : 'Hút & Xếp hàng xuất loạt Video'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div
           style={{
@@ -688,7 +925,7 @@ export default function ProductStudioForm({
                     {ph.isVideo ? `Cảnh ${idx + 1} • Video` : idx === 0 ? 'Mục 1 • Mở màn' : `Ảnh ${idx + 1}`}
                   </span>
 
-                  {!ph.isVideo && (
+                  {!ph.isVideo ? (
                     <button
                       type="button"
                       disabled={cutoutBusyIdx === idx}
@@ -718,6 +955,36 @@ export default function ProductStudioForm({
                       }}
                     >
                       <Wand2 size={10} /> {cutoutBusyIdx === idx ? '...' : ph.cutoutDone ? 'Đã tách' : 'Tách nền'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      title="Cắt chọn đúng đoạn giây đẹp nhất của clip này"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setTrimOpenIdx((prev) => (prev === idx ? null : idx));
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: 5,
+                        left: 5,
+                        height: 22,
+                        padding: '0 7px',
+                        borderRadius: 5,
+                        border: '1px solid rgba(56, 189, 248, 0.75)',
+                        background: ph.trimmedDone
+                          ? 'rgba(5, 150, 105, 0.92)'
+                          : 'rgba(15, 23, 42, 0.9)',
+                        color: '#e0f2fe',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Scissors size={10} /> {ph.trimmedDone ? 'Đã cắt' : 'Cắt đoạn'}
                     </button>
                   )}
 
@@ -803,6 +1070,31 @@ export default function ProductStudioForm({
           </div>
         )}
 
+        {/* Inline Video Clip Trimmer when user clicks "Cắt đoạn" on any timeline video */}
+        {trimOpenIdx !== null && uploadedPhotos[trimOpenIdx]?.isVideo && (
+          <InlineClipTrimmer
+            mediaItem={uploadedPhotos[trimOpenIdx]}
+            playerRef={null}
+            notify={notify}
+            onTrimApplied={(trimmedRes) => {
+              setUploadedPhotos((prev) =>
+                prev.map((it, idx) =>
+                  idx !== trimOpenIdx
+                    ? it
+                    : {
+                        ...it,
+                        local_path: trimmedRes.local_path,
+                        media_url: trimmedRes.media_url,
+                        duration_ms: trimmedRes.duration_ms,
+                        trimmedDone: true,
+                      }
+                )
+              );
+              setTrimOpenIdx(null);
+            }}
+          />
+        )}
+
         {/* Real Acoustic Sound / Demo + Customer Feedback Social Proof Row */}
         <div className="form-grid" style={{ marginTop: 14 }}>
           <div className="surface-box">
@@ -838,13 +1130,49 @@ export default function ProductStudioForm({
               <div style={{ marginTop: 10 }}>
                 {demoClip.isVideo ? (
                   <video
+                    ref={demoPlayerRef}
                     controls
                     src={demoClip.media_url}
+                    onLoadedMetadata={(e) => {
+                      const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
+                      if (dMs > 500 && !demoClip.duration_ms) {
+                        setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
+                      }
+                    }}
                     style={{ width: '100%', maxHeight: 145, borderRadius: 7, background: '#000' }}
                   />
                 ) : (
-                  <audio controls src={demoClip.media_url} style={{ width: '100%', height: 36 }} />
+                  <audio
+                    ref={demoPlayerRef}
+                    controls
+                    src={demoClip.media_url}
+                    onLoadedMetadata={(e) => {
+                      const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
+                      if (dMs > 500 && !demoClip.duration_ms) {
+                        setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
+                      }
+                    }}
+                    style={{ width: '100%', height: 36 }}
+                  />
                 )}
+                <InlineClipTrimmer
+                  mediaItem={demoClip}
+                  playerRef={demoPlayerRef}
+                  notify={notify}
+                  onTrimApplied={(trimmedRes) =>
+                    setDemoClip((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            local_path: trimmedRes.local_path,
+                            media_url: trimmedRes.media_url,
+                            duration_ms: trimmedRes.duration_ms,
+                            trimmedDone: true,
+                          }
+                        : prev
+                    )
+                  }
+                />
               </div>
             )}
           </div>
@@ -1228,6 +1556,76 @@ export default function ProductStudioForm({
             />
           </div>
         )}
+
+        <div className="surface-box" style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: 8,
+            }}
+          >
+            <strong style={{ fontSize: 13.2, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Camera size={15} style={{ color: 'var(--brand-text)' }} /> Thiết kế Ảnh Bìa TikTok / Shorts / Facebook (Cover Thumbnail)
+            </strong>
+            <span className="badge badge-info">Xuất kèm tự động trong gói .ZIP</span>
+          </div>
+
+          <div className="form-grid" style={{ marginBottom: layoutConfig.cover_style !== 'CLEAN_POSTER' ? 10 : 0 }}>
+            <div>
+              <label className="form-label">Kiểu trình bày Ảnh Bìa</label>
+              <select
+                className="select"
+                value={layoutConfig.cover_style || 'CLEAN_POSTER'}
+                onChange={(e) => updateSalesLayout({ cover_style: e.target.value })}
+              >
+                <option value="CLEAN_POSTER">Bìa sạch tinh tế (Không chèn chữ lớn)</option>
+                <option value="BOLD_HOOK">Chữ lớn nổi bật dễ đọc trên lưới 3 cột TikTok</option>
+                <option value="LUXURY_MAGAZINE">Khung tạp chí Đen Nhung & Vàng Champagne</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Chọn tấm ảnh đẹp nhất làm nền Ảnh Bìa</label>
+              <select
+                className="select"
+                value={layoutConfig.cover_photo_index || 0}
+                onChange={(e) => updateSalesLayout({ cover_photo_index: Number(e.target.value) })}
+              >
+                {uploadedPhotos.filter((p) => !p.isVideo).length === 0 ? (
+                  <option value={0}>Mặc định lấy Ảnh mở màn đầu tiên</option>
+                ) : (
+                  uploadedPhotos
+                    .filter((p) => !p.isVideo)
+                    .map((ph, idx) => (
+                      <option key={`${ph.local_path}_cov_${idx}`} value={idx}>
+                        Ảnh {idx + 1} — {ph.original_name}
+                      </option>
+                    ))
+                )}
+              </select>
+            </div>
+          </div>
+
+          {layoutConfig.cover_style !== 'CLEAN_POSTER' && (
+            <div className="form-grid">
+              <input
+                className="input"
+                placeholder="Tiêu đề lớn trên Ảnh Bìa (VD: Test Âm Violin S2S Gỗ Thịt)"
+                value={layoutConfig.cover_headline || ''}
+                onChange={(e) => updateSalesLayout({ cover_headline: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Nhãn điểm nhấn trên bìa (VD: Nghe Thử Âm Mộc)"
+                value={layoutConfig.cover_badge_text || ''}
+                onChange={(e) => updateSalesLayout({ cover_badge_text: e.target.value })}
+              />
+            </div>
+          )}
+        </div>
 
         <div className="surface-box">
           <div className="form-grid">

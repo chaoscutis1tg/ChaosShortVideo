@@ -68,6 +68,12 @@ class GPUResourceManager:
 
         added: List[str] = []
         current_path = os.environ.get("PATH", "")
+        bundled_bin = Path(__file__).resolve().parents[3] / "assets" / "bin"
+        if bundled_bin.exists() and str(bundled_bin) not in current_path:
+            os.environ["PATH"] = str(bundled_bin) + os.pathsep + current_path
+            current_path = os.environ["PATH"]
+            added.append(str(bundled_bin))
+
         for root in candidate_roots:
             for sub in rel_subdirs:
                 dll_dir = root / sub
@@ -98,6 +104,7 @@ class GPUResourceManager:
         """Switch active compute target at runtime."""
         cleaned = (device_id or "auto").strip().lower()
         self._preferred_device = cleaned
+        self._nvenc_checked = False
         os.environ["STUDIO_GPU_DEVICE"] = cleaned
         return self._preferred_device
 

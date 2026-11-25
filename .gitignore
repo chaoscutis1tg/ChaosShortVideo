@@ -25,6 +25,7 @@ frontend/dist/
 node_modules/
 
 # Large local model weights & auto-generated runtime media assets
+assets/bin/
 assets/tts_models/*.onnx
 assets/tts_models/*.json
 assets/bgm/*.wav

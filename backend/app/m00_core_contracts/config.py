@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(WORKSPACE_ROOT / ".env")
 
+# Prepend bundled NVENC-compatible FFmpeg (`assets/bin`) to PATH automatically if present
+_BUNDLED_BIN_DIR = WORKSPACE_ROOT / "assets" / "bin"
+if _BUNDLED_BIN_DIR.exists() and str(_BUNDLED_BIN_DIR) not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = str(_BUNDLED_BIN_DIR) + os.pathsep + os.environ.get("PATH", "")
+
 # Domain Constants (Shared across M01..M07)
 CANVAS_WIDTH: int = 1080
 CANVAS_HEIGHT: int = 1920
@@ -36,6 +41,7 @@ NVENC_PRESET: str = "p4"
 NVENC_CQ: int = 21
 
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".ts"}
+SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 SUPPORTED_SUBTITLE_EXTENSIONS = {".srt", ".vtt", ".ass"}
 
 
@@ -67,6 +73,7 @@ class StudioSettings:
     def ensure_directories(self) -> None:
         """Create all required runtime and asset folders if they do not exist."""
         for folder in (
+            self.assets_dir / "bin",
             self.assets_dir / "fonts",
             self.assets_dir / "bgm",
             self.assets_dir / "retention_videos",

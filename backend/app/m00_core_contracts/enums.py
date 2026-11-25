@@ -62,6 +62,14 @@ class ExportAspectRatio(str, Enum):
     RATIO_1_1 = "1:1"
 
 
+class CoverTemplateStyle(str, Enum):
+    """Cover thumbnail typography templates optimized for 3-column TikTok/Shorts profile grids."""
+
+    CLEAN_POSTER = "CLEAN_POSTER"
+    BOLD_HOOK = "BOLD_HOOK"
+    LUXURY_MAGAZINE = "LUXURY_MAGAZINE"
+
+
 class JobState(str, Enum):
     """Lifecycle states of a video generation/clipping job."""
 

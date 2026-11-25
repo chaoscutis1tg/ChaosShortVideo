@@ -177,7 +177,7 @@ class EdgeTTSProvider(ITTSProvider):
 
     DRAGON_FALLBACKS = {
         "vi-vn-namminhneural": "en-US-BrianMultilingualNeural",
-        "vi-vn-hoaimyneural": "en-US-AvaMultilingualNeural",
+        "de-de-seraphinamultilingualneural": "vi-VN-HoaiMyNeural",
     }
 
     def __init__(

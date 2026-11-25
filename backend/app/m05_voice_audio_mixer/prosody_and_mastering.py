@@ -43,6 +43,61 @@ def _probe_wav_ms(wav_path: Path) -> int:
         return max(1, int(round((wf.getnframes() / float(wf.getframerate())) * 1000.0)))
 
 
+_VN_DIGITS = ("không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín")
+
+
+def _int_to_vietnamese_words(n: int) -> str:
+    """Convert non-negative integer `0..9999` into natural spoken Vietnamese words."""
+    if n < 0 or n > 9999:
+        return str(n)
+    if n < 10:
+        return _VN_DIGITS[n]
+    if n < 100:
+        tens, unit = divmod(n, 10)
+        prefix = "mười" if tens == 1 else f"{_VN_DIGITS[tens]} mươi"
+        if unit == 0:
+            return prefix
+        if unit == 1 and tens > 1:
+            return f"{prefix} mốt"
+        if unit == 4 and tens > 1:
+            return f"{prefix} tư"
+        if unit == 5:
+            return f"{prefix} lăm"
+        return f"{prefix} {_VN_DIGITS[unit]}"
+    if n < 1000:
+        hundreds, rem = divmod(n, 100)
+        head = f"{_VN_DIGITS[hundreds]} trăm"
+        if rem == 0:
+            return head
+        if rem < 10:
+            return f"{head} lẻ {_VN_DIGITS[rem]}"
+        return f"{head} {_int_to_vietnamese_words(rem)}"
+    thousands, rem = divmod(n, 1000)
+    head = f"{_VN_DIGITS[thousands]} nghìn"
+    if rem == 0:
+        return head
+    if rem < 10:
+        return f"{head} không trăm lẻ {_VN_DIGITS[rem]}"
+    if rem < 100:
+        return f"{head} không trăm {_int_to_vietnamese_words(rem)}"
+    return f"{head} {_int_to_vietnamese_words(rem)}"
+
+
+def _verbalize_numbers_for_vietnamese_tts(text: str) -> str:
+    """Convert standalone numbers & percentages into Vietnamese words so Multilingual TTS never reads English digits."""
+    text = re.sub(
+        r"\b(\d{1,4})\s*%",
+        lambda m: f"{_int_to_vietnamese_words(int(m.group(1)))} phần trăm",
+        text,
+    )
+    text = re.sub(
+        r"(?<![A-Za-zÀ-ỹ\d])(\d{1,4})(?![A-Za-zÀ-ỹ\d])",
+        lambda m: _int_to_vietnamese_words(int(m.group(1))),
+        text,
+    )
+    return text
+
+
 class DramaticProsodyEnhancer:
     """Injects natural human breath pauses and dramatic emphasis cues into Vietnamese lines."""
 
@@ -50,6 +105,7 @@ class DramaticProsodyEnhancer:
     def enhance(cls, raw_text: str) -> str:
         """Format Vietnamese narration text with expressive punctuation for neural TTS."""
         text = re.sub(r"[♪♫]+", " ", raw_text)
+        text = _verbalize_numbers_for_vietnamese_tts(text)
         text = " ".join(text.split()).strip()
         if not text:
             return ""

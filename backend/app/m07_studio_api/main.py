@@ -1399,6 +1399,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                             original_text=s["original_text"] or "",
                             vi_text=s["vi_narration_text"],
                             image_prompt=s["image_prompt"] or "",
+                            stock_keywords=json.loads(s.get("stock_keywords_json") or "[]"),
                             matched_image_index=(
                                 int(s["matched_image_index"])
                                 if s.get("matched_image_index") is not None

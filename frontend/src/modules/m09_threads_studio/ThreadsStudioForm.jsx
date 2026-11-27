@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpWideNarrow,
   BookmarkPlus,
+  BookOpen,
   CheckCircle2,
   Edit3,
   EyeOff,
@@ -67,6 +69,12 @@ const VIBE_CHOICES = [
     icon: Smile,
   },
   {
+    value: 'LONG_STORY',
+    title: 'Kể chuyện dài & Tâm sự sâu',
+    subtitle: 'Săn các bình luận dài nhiều câu, kể chuyện đầu-cuối chi tiết nhất',
+    icon: BookOpen,
+  },
+  {
     value: 'EMPATHY_STORY',
     title: 'Tâm sự & Đồng cảm',
     subtitle: 'Chia sẻ câu chuyện đời thực sâu sắc, chạm cảm xúc người nghe',
@@ -81,8 +89,29 @@ const VIBE_CHOICES = [
   {
     value: 'TOP_LIKED',
     title: 'Nhiều lượt thích nhất',
-    subtitle: 'Ưu tiên các phản hồi súc tích có lượng tương tác cao nhất',
+    subtitle: 'Ưu tiên các phản hồi có lượng tương tác cao nhất',
     icon: ThumbsUp,
+  },
+];
+
+const COMMENT_LENGTH_MODES = [
+  {
+    id: 'ALL',
+    label: 'Mọi độ dài (Ngắn & Dài)',
+    preferLong: false,
+    minChars: 0,
+  },
+  {
+    id: 'MEDIUM_LONG',
+    label: 'Ưu tiên bình luận vừa & dài (≥ 65 ký tự)',
+    preferLong: true,
+    minChars: 65,
+  },
+  {
+    id: 'DEEP_STORY',
+    label: 'Chuyên săn bình luận dài kể chuyện (≥ 105 ký tự)',
+    preferLong: true,
+    minChars: 105,
   },
 ];
 
@@ -164,6 +193,9 @@ export default function ThreadsStudioForm({
   const [rawPastedText, setRawPastedText] = useState(savedDraft.rawPastedText || '');
   const [maxComments, setMaxComments] = useState(savedDraft.maxComments || 6);
   const [filterVibe, setFilterVibe] = useState(savedDraft.filterVibe || 'FUNNY_VIRAL');
+  const [commentLengthMode, setCommentLengthMode] = useState(
+    savedDraft.commentLengthMode || 'ALL'
+  );
   const [expandSlang, setExpandSlang] = useState(savedDraft.expandSlang !== false);
   const [multiVoiceCast, setMultiVoiceCast] = useState(savedDraft.multiVoiceCast !== false);
 
@@ -300,6 +332,7 @@ export default function ThreadsStudioForm({
           rawPastedText,
           maxComments,
           filterVibe,
+          commentLengthMode,
           expandSlang,
           multiVoiceCast,
           femaleVoiceId,
@@ -323,6 +356,7 @@ export default function ThreadsStudioForm({
     rawPastedText,
     maxComments,
     filterVibe,
+    commentLengthMode,
     expandSlang,
     multiVoiceCast,
     femaleVoiceId,
@@ -388,11 +422,16 @@ export default function ThreadsStudioForm({
 
     setExtracting(true);
     try {
+      const lengthCfg =
+        COMMENT_LENGTH_MODES.find((m) => m.id === commentLengthMode) || COMMENT_LENGTH_MODES[0];
       const res = await studioApi.extractThreadsPost({
         post_url: cleanUrl,
         raw_pasted_text: cleanRaw,
         max_comments: safeMax,
         filter_vibe: filterVibe,
+        prefer_long_comments: Boolean(lengthCfg.preferLong || filterVibe === 'LONG_STORY'),
+        min_comment_chars:
+          filterVibe === 'LONG_STORY' ? Math.max(95, lengthCfg.minChars) : lengthCfg.minChars,
         expand_slang_and_translate: expandSlang,
         anonymize_handles: Boolean(layoutConfig.threads_anonymize_handles),
         multi_voice_cast: multiVoiceCast,
@@ -404,8 +443,13 @@ export default function ThreadsStudioForm({
       const imgCount =
         (res.op_image_path ? 1 : 0) +
         (res.comments || []).filter((c) => Boolean(c.attached_image_path)).length;
+      const longCount = (res.comments || []).filter(
+        (c) => (c.display_text || '').trim().length >= 95
+      ).length;
       notify(
-        imgCount > 0
+        longCount > 0
+          ? `Đã hút thành công ${res.comments?.length || 0} bình luận (có ${longCount} bình luận kể chuyện dài giữ nguyên văn${imgCount > 0 ? ` + ${imgCount} ảnh` : ''})!`
+          : imgCount > 0
           ? `Đã hút thành công bài viết + ${res.comments?.length || 0} bình luận (lấy được ${imgCount} ảnh đính kèm thực tế)!`
           : `Đã lọc ${res.comments?.length || 0} bình luận tiêu biểu & gán đúng 2 giọng chính Nam/Nữ!`
       );
@@ -1089,7 +1133,64 @@ export default function ThreadsStudioForm({
 
         <div className="form-group">
           <label className="form-label">Tiêu chí AI chọn lọc bình luận tiêu biểu</label>
-          <ModeChoiceGrid options={VIBE_CHOICES} value={filterVibe} onChange={setFilterVibe} />
+          <ModeChoiceGrid
+            options={VIBE_CHOICES}
+            value={filterVibe}
+            onChange={(nextVibe) => {
+              setFilterVibe(nextVibe);
+              if (nextVibe === 'LONG_STORY' && commentLengthMode === 'ALL') {
+                setCommentLengthMode('DEEP_STORY');
+              }
+            }}
+          />
+        </div>
+
+        {/* COMMENT LENGTH PREFERENCE SELECTOR */}
+        <div
+          className="surface-box"
+          style={{
+            marginBottom: 14,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 13.1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                color: 'var(--text-primary)',
+              }}
+            >
+              <BookOpen size={15} style={{ color: 'var(--brand-text)' }} />
+              Độ dài bình luận muốn lấy (Săn các bình luận dài kể chuyện đầu – cuối)
+            </div>
+            <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
+              Giữ nguyên 100% câu chuyện dài không bị tóm tắt; thẻ Threads tự co giãn cỡ chữ &amp; chia nhịp đọc mượt mà
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {COMMENT_LENGTH_MODES.map((m) => {
+              const active = commentLengthMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setCommentLengthMode(m.id)}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="toggle-grid" style={{ marginBottom: 14 }}>
@@ -1193,13 +1294,42 @@ export default function ThreadsStudioForm({
                   <CheckCircle2 size={16} />
                   {bundle.extraction_note || 'Đã sẵn sàng danh sách bài đăng gốc & bình luận tiêu biểu'}
                 </span>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={addCustomComment}
-                >
-                  <MessageSquarePlus size={13} /> + Thêm 1 bình luận riêng
-                </button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(bundle.comments || []).length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      title="Đưa các bình luận dài nhiều chữ nhất lên đầu danh sách"
+                      onClick={() => {
+                        setBundle((prev) => {
+                          if (!prev) return prev;
+                          const sorted = [...(prev.comments || [])].sort(
+                            (a, b) =>
+                              (b.display_text || '').trim().length -
+                              (a.display_text || '').trim().length
+                          );
+                          return applyTwoMainVoicesToBundle(
+                            { ...prev, comments: sorted },
+                            hostVoiceId,
+                            maleVoiceId,
+                            femaleVoiceId,
+                            multiVoiceCast
+                          );
+                        });
+                        notify('Đã sắp xếp các bình luận dài nhất lên đầu danh sách!');
+                      }}
+                    >
+                      <ArrowUpWideNarrow size={13} /> Xếp bình luận dài lên đầu
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={addCustomComment}
+                  >
+                    <MessageSquarePlus size={13} /> + Thêm 1 bình luận riêng
+                  </button>
+                </div>
               </div>
 
               {/* OP MAIN THREAD CARD EDITOR */}
@@ -1421,11 +1551,20 @@ export default function ThreadsStudioForm({
 
               {/* COMMENTS LIST */}
               <FieldError message={errors.comments} />
-              <div style={{ display: 'grid', gap: 9, maxHeight: 500, overflowY: 'auto', paddingRight: 3 }}>
+              <div style={{ display: 'grid', gap: 10, maxHeight: 620, overflowY: 'auto', paddingRight: 4 }}>
                 {(bundle.comments || []).map((cmt, idx) => {
                   const pKey = `cmt_${idx}`;
                   const isMaleLine = (cmt.voice_profile_id || hostVoiceId) === maleVoiceId;
                   const hasCmtImg = Boolean(cmt.attached_image_media_url || cmt.attached_image_path);
+                  const dispLen = (cmt.display_text || '').trim().length;
+                  const estReadSec = Math.max(
+                    2,
+                    Math.round(
+                      ((cmt.spoken_vi_text || cmt.display_text || '').trim().split(/\s+/).length || 1) /
+                        (2.85 * Math.max(1.0, Number(voiceSpeed) || 1.25))
+                    )
+                  );
+                  const boxMinH = dispLen > 200 ? 112 : dispLen > 95 ? 82 : 56;
                   return (
                     <div
                       key={cmt.comment_id || idx}
@@ -1479,6 +1618,18 @@ export default function ThreadsStudioForm({
                             />
                           )}
                           <span>Thẻ trả lời {idx + 1}</span>
+                          {dispLen >= 95 ? (
+                            <span
+                              className="badge badge-info"
+                              style={{ fontSize: 10.5, padding: '1px 7px' }}
+                            >
+                              Bình luận dài • {dispLen} ký tự (~{estReadSec}s)
+                            </span>
+                          ) : (
+                            <span className="text-muted" style={{ fontSize: 11.2, fontWeight: 500 }}>
+                              {dispLen} ký tự (~{estReadSec}s)
+                            </span>
+                          )}
                           {hasCmtImg && (
                             <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 6px' }}>
                               Có ảnh bình luận
@@ -1592,25 +1743,41 @@ export default function ThreadsStudioForm({
                       </div>
 
                       <div className="form-grid">
-                        <input
-                          className="input"
-                          style={{ minHeight: 34, fontSize: 12.8 }}
-                          placeholder="Chữ hiển thị trên thẻ..."
-                          value={cmt.display_text}
-                          onChange={(e) =>
-                            patchComment(idx, {
-                              display_text: e.target.value,
-                              raw_text: e.target.value,
-                            })
-                          }
-                        />
-                        <input
-                          className="input"
-                          style={{ minHeight: 34, fontSize: 12.8 }}
-                          placeholder="Lời đọc giọng Việt (đã bung viết tắt)..."
-                          value={cmt.spoken_vi_text}
-                          onChange={(e) => patchComment(idx, { spoken_vi_text: e.target.value })}
-                        />
+                        <div>
+                          <div
+                            className="text-muted"
+                            style={{ fontSize: 11.2, marginBottom: 3, fontWeight: 600 }}
+                          >
+                            Chữ hiển thị trên thẻ Threads
+                          </div>
+                          <textarea
+                            className="textarea"
+                            style={{ minHeight: boxMinH, fontSize: 12.8, lineHeight: 1.45 }}
+                            placeholder="Chữ hiển thị đầy đủ trên thẻ bình luận..."
+                            value={cmt.display_text}
+                            onChange={(e) =>
+                              patchComment(idx, {
+                                display_text: e.target.value,
+                                raw_text: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <div
+                            className="text-muted"
+                            style={{ fontSize: 11.2, marginBottom: 3, fontWeight: 600 }}
+                          >
+                            Lời đọc giọng Việt (đã bung viết tắt)
+                          </div>
+                          <textarea
+                            className="textarea"
+                            style={{ minHeight: boxMinH, fontSize: 12.8, lineHeight: 1.45 }}
+                            placeholder="Lời đọc giọng Việt đầy đủ..."
+                            value={cmt.spoken_vi_text}
+                            onChange={(e) => patchComment(idx, { spoken_vi_text: e.target.value })}
+                          />
+                        </div>
                       </div>
 
                       {hasCmtImg && (

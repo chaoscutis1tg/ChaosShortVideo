@@ -362,9 +362,11 @@ class ProductBatchUrlsRequest(BaseModel):
 
 class ThreadsExtractAPIRequest(BaseModel):
     post_url: str = Field(default="", max_length=1000)
-    raw_pasted_text: str = Field(default="", max_length=12000)
+    raw_pasted_text: str = Field(default="", max_length=20000)
     max_comments: int = Field(default=6, ge=1, le=20)
     filter_vibe: ThreadFilterVibe = ThreadFilterVibe.FUNNY_VIRAL
+    prefer_long_comments: bool = False
+    min_comment_chars: int = Field(default=0, ge=0, le=800)
     expand_slang_and_translate: bool = True
     anonymize_handles: bool = False
     multi_voice_cast: bool = True
@@ -1561,6 +1563,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 raw_pasted_text=req.raw_pasted_text,
                 max_comments=req.max_comments,
                 filter_vibe=req.filter_vibe,
+                prefer_long_comments=req.prefer_long_comments,
+                min_comment_chars=req.min_comment_chars,
                 expand_slang_and_translate=req.expand_slang_and_translate,
                 anonymize_handles=req.anonymize_handles,
                 multi_voice_cast=req.multi_voice_cast,

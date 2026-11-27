@@ -91,6 +91,10 @@ def _wrap_pixel_lines(
 
     if len(lines) > max_lines:
         lines = lines[:max_lines]
+        if lines and lines[-1] and not lines[-1].endswith("…"):
+            lines[-1] = lines[-1].rstrip(" .,;:-") + "…"
+    elif cur and len(lines) == max_lines and lines[-1] and not lines[-1].endswith("…"):
+        lines[-1] = lines[-1].rstrip(" .,;:-") + "…"
     return lines
 
 
@@ -203,10 +207,27 @@ class ThreadsCardVisualRenderer:
         has_card_img = bool(line.card_image_path and Path(line.card_image_path).exists())
         body_text = (line.display_card_text or line.original_text or line.vi_text).strip()
         char_len = len(body_text)
-        body_font_px = (
-            35 if has_card_img and char_len > 80 else (39 if char_len <= 95 else (34 if char_len <= 210 else 29))
-        )
-        line_spacing = int(round(body_font_px * 1.40))
+        if has_card_img:
+            if char_len <= 95:
+                body_font_px, max_allowed_lines = 35, 6
+            elif char_len <= 240:
+                body_font_px, max_allowed_lines = 31, 9
+            elif char_len <= 420:
+                body_font_px, max_allowed_lines = 27, 13
+            else:
+                body_font_px, max_allowed_lines = 24, 16
+        else:
+            if char_len <= 95:
+                body_font_px, max_allowed_lines = 39, 8
+            elif char_len <= 210:
+                body_font_px, max_allowed_lines = 34, 11
+            elif char_len <= 370:
+                body_font_px, max_allowed_lines = 30, 15
+            elif char_len <= 560:
+                body_font_px, max_allowed_lines = 27, 20
+            else:
+                body_font_px, max_allowed_lines = 24, 25
+        line_spacing = int(round(body_font_px * 1.38))
 
         f_handle = _load_card_font(31, bold=True)
         f_time = _load_card_font(24, bold=False)
@@ -220,7 +241,6 @@ class ThreadsCardVisualRenderer:
         text_right_pad = 44
         max_text_w = card_w - text_left_pad - text_right_pad
 
-        max_allowed_lines = 6 if has_card_img else 11
         wrapped_lines = _wrap_pixel_lines(
             probe_draw, body_text, f_body, max_text_w, max_lines=max_allowed_lines
         )
@@ -266,8 +286,8 @@ class ThreadsCardVisualRenderer:
 
         header_h = 96
         footer_h = 82
-        card_h = min(int(canvas_h * 0.78), header_h + body_h + photo_block_h + footer_h + 20)
-        card_y = max(int(canvas_h * 0.11), (canvas_h - card_h) // 2 - int(canvas_h * 0.03))
+        card_h = min(int(canvas_h * 0.85), header_h + body_h + photo_block_h + footer_h + 20)
+        card_y = max(int(canvas_h * 0.075), (canvas_h - card_h) // 2 - int(canvas_h * 0.02))
 
         # 1. Soft Ambient Drop Shadow
         shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))

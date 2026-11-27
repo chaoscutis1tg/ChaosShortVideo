@@ -24,7 +24,7 @@ from app.m00_core_contracts import (
 )
 
 SCRIPT_JSON_RE = re.compile(
-    r"<script[^>]*type=[\"']application/(?:ld\+)?json[\"'][^>]*>([\s\S]*?)</script>",
+    r"<script[^>]*(?:type=[\"']application/(?:ld\+)?json[\"']|data-sjs)[^>]*>([\s\S]*?)</script>",
     re.IGNORECASE,
 )
 META_TAG_RE = re.compile(
@@ -102,6 +102,38 @@ VN_SLANG_MAP: Dict[str, str] = {
     "ng": "người",
     "ngta": "người ta",
     "nta": "người ta",
+    "t": "tôi",
+    "tui": "tôi",
+    "toi": "tôi",
+    "hx": "hàng xóm",
+    "nm": "nhưng mà",
+    "nma": "nhưng mà",
+    "nhma": "nhưng mà",
+    "bả": "bà ấy",
+    "ổng": "ông ấy",
+    "xg": "xong",
+    "xog": "xong",
+    "r": "rồi",
+    "rùi": "rồi",
+    "s": "sao",
+    "v": "vậy",
+    "trg": "trường",
+    "c1": "cấp một",
+    "c2": "cấp hai",
+    "c3": "cấp ba",
+    "thk": "thằng",
+    "ctay": "chia tay",
+    "xl": "xin lỗi",
+    "dth": "dễ thương",
+    "cr": "người thương",
+    "lm": "làm",
+    "iar": "đi vệ sinh",
+    "ỉa": "đi vệ sinh",
+    "đái": "đi tiểu",
+    "cứt": "chất bẩn",
+    "deo": "chẳng",
+    "đéo": "chẳng",
+    "đếch": "chẳng",
     "vl": "thật sự",
     "vcl": "thật sự",
     "kb": "kết bạn",
@@ -175,8 +207,17 @@ def _extract_node_best_image(node: Dict[str, Any]) -> str:
     return ""
 
 
+SKIP_RELAY_SUBTREE_KEYS = {
+    "related_threads",
+    "related_posts",
+    "injected",
+    "suggested_users",
+    "repost_restricted_reason",
+}
+
+
 def _walk_threads_posts(node: Any, collected: List[Dict[str, Any]], seen_keys: set[str]) -> None:
-    """Recursively inspect Threads Relay SJS JSON structures for `post` items & media."""
+    """Recursively inspect Threads Relay SJS JSON structures for `post` items & media (excluding related_threads)."""
     if isinstance(node, dict):
         caption = node.get("caption")
         user = node.get("user")
@@ -184,16 +225,18 @@ def _walk_threads_posts(node: Any, collected: List[Dict[str, Any]], seen_keys: s
         cap_txt = caption.get("text").strip() if (isinstance(caption, dict) and isinstance(caption.get("text"), str)) else ""
         if (len(cap_txt) >= 2 or attached_img) and isinstance(user, dict) and user.get("username"):
             uname = str(user.get("username") or "").strip()
-            dedup_key = f"{uname}:{cap_txt[:120]}:{attached_img[:80]}"
+            dedup_key = f"{uname}:{cap_txt[:140]}:{attached_img[:80]}"
             if dedup_key not in seen_keys:
                 seen_keys.add(dedup_key)
                 verified = bool(user.get("is_verified"))
                 av_url = str(user.get("profile_pic_url") or "")
                 like_cnt = int(node.get("like_count") or 0)
                 reply_cnt = 0
+                is_reply = False
                 t_info = node.get("text_post_app_info")
                 if isinstance(t_info, dict):
                     reply_cnt = int(t_info.get("direct_reply_count") or 0)
+                    is_reply = bool(t_info.get("is_reply"))
                 collected.append(
                     {
                         "username": f"@{uname.lstrip('@')}",
@@ -201,11 +244,15 @@ def _walk_threads_posts(node: Any, collected: List[Dict[str, Any]], seen_keys: s
                         "likes": max(0, like_cnt),
                         "replies": max(0, reply_cnt),
                         "is_verified": verified,
+                        "is_reply": is_reply,
+                        "code": str(node.get("code") or ""),
                         "image_url": attached_img,
                         "avatar_url": av_url,
                     }
                 )
-        for val in node.values():
+        for key_name, val in node.items():
+            if key_name in SKIP_RELAY_SUBTREE_KEYS:
+                continue
             if isinstance(val, (dict, list)):
                 _walk_threads_posts(val, collected, seen_keys)
     elif isinstance(node, list):
@@ -285,6 +332,14 @@ def _parse_jina_threads_markdown(md_text: str) -> List[Dict[str, Any]]:
         s = raw_ln.strip()
         if not s:
             continue
+
+        s_low = s.lower()
+        # Stop immediately before "Related threads" or page legal footer so unrelated copycat posts never leak in!
+        if (
+            s_low in {"related threads", "chủ đề liên quan", "more threads", "threads terms"}
+            or s_low.startswith(("*   © 202", "© 202", "*   threads terms"))
+        ):
+            break
 
         # Check Markdown images (either profile picture or attached post/comment photo!)
         img_matches = MD_IMG_ANY_RE.findall(s)
@@ -373,8 +428,12 @@ class ThreadsScraperService:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
     }
 
     @classmethod
@@ -563,7 +622,7 @@ class ThreadsScraperService:
     @classmethod
     async def _scrape_reddit_json(cls, url: str) -> Optional[ScrapedThreadBundleDTO]:
         clean = url.split("?")[0].rstrip("/")
-        json_url = f"{clean}.json?limit=35&raw_json=1"
+        json_url = f"{clean}.json?limit=80&raw_json=1"
         try:
             async with httpx.AsyncClient(
                 headers={**cls.DEFAULT_HEADERS, "User-Agent": "ChaosShortVideoStudio/3.3"},
@@ -610,15 +669,15 @@ class ThreadsScraperService:
                         ThreadCommentItemDTO(
                             comment_id=f"rd_{uuid.uuid4().hex[:8]}",
                             author_handle=f"@{c_author}",
-                            raw_text=clean_disp[:1200],
-                            display_text=clean_disp[:1200],
-                            spoken_vi_text=normalize_vn_social_slang(clean_disp[:1200]) or "Cùng xem bức ảnh này nhé",
+                            raw_text=clean_disp[:3500],
+                            display_text=clean_disp[:3500],
+                            spoken_vi_text=normalize_vn_social_slang(clean_disp[:3500]) or "Cùng xem bức ảnh này nhé",
                             attached_image_url=c_img,
                             likes_count=c_ups,
                             likes_display=format_compact_likes(c_ups) or "42",
                         )
                     )
-                    if len(comments) >= 26:
+                    if len(comments) >= 65:
                         break
 
             img_count = sum(1 for c in comments if c.attached_image_url) + (1 if op_img else 0)
@@ -737,27 +796,67 @@ class ThreadsScraperService:
             extracted_posts = jina_posts if len(jina_posts) > len(relay_posts) else relay_posts
 
         if extracted_posts:
-            op = extracted_posts[0]
+            # Ensure the true OP post (matching URL post code or non-reply OP handle) is at index 0
+            m_code = re.search(r"/post/([A-Za-z0-9_-]+)", url)
+            target_code = m_code.group(1) if m_code else ""
+            op_idx = 0
+            for cand_i, cand_p in enumerate(extracted_posts):
+                if target_code and cand_p.get("code") == target_code:
+                    op_idx = cand_i
+                    break
+                if (
+                    url_handle != "@chuthot"
+                    and (cand_p.get("username") or "").lower() == url_handle.lower()
+                    and not cand_p.get("is_reply")
+                ):
+                    op_idx = cand_i
+                    break
+
+            op = extracted_posts[op_idx]
+            raw_replies = [p for i, p in enumerate(extracted_posts) if i != op_idx]
             op_text = op["text"]
             op_handle = op["username"] or url_handle
+            op_handle_low = op_handle.lstrip("@").lower()
+            op_text_norm = re.sub(r"\s+", " ", op_text.strip().lower())
             op_img = op.get("image_url") or ""
-            # Prioritize replies that include attached images first so visual comments are never sliced off!
+
+            filtered_replies: List[Dict[str, Any]] = []
+            for rep in raw_replies:
+                rep_txt = (rep.get("text") or "").strip()
+                rep_img = rep.get("image_url") or ""
+                rep_user_low = (rep.get("username") or "").lstrip("@").lower()
+                # Skip short OP banter sub-replies ("t cũng bị", "t méc bả nè m") unless OP wrote a long story continuation or attached an image
+                if rep_user_low == op_handle_low and len(rep_txt) < 85 and not rep_img:
+                    continue
+                # Skip copycat duplicate topic titles
+                rep_norm = re.sub(r"\s+", " ", rep_txt.lower())
+                if op_text_norm and len(op_text_norm) >= 15 and rep_norm == op_text_norm:
+                    continue
+                if rep_norm.startswith("topic:") or rep_norm.startswith("topic :"):
+                    if len(rep_txt) < 95 and not rep_img:
+                        continue
+                filtered_replies.append(rep)
+
+            # Prioritize attached-image comments AND detailed/long story comments while keeping rich variety
             ordered_replies = sorted(
-                extracted_posts[1:],
-                key=lambda it: (0 if it.get("image_url") else 1),
+                filtered_replies,
+                key=lambda it: (
+                    0 if it.get("image_url") else (1 if len((it.get("text") or "").strip()) >= 95 else 2),
+                    -len((it.get("text") or "").strip()),
+                ),
             )
             comments: List[ThreadCommentItemDTO] = []
-            for idx, item in enumerate(ordered_replies[:50], start=1):
-                c_txt = item["text"]
+            for idx, item in enumerate(ordered_replies[:80], start=1):
+                c_txt = item["text"].strip()
                 c_img = item.get("image_url") or ""
                 likes_n = int(item.get("likes") or 0)
                 comments.append(
                     ThreadCommentItemDTO(
                         comment_id=f"th_{uuid.uuid4().hex[:8]}",
                         author_handle=item.get("username") or f"@thanhvien_{idx:02d}",
-                        raw_text=c_txt[:1200],
-                        display_text=c_txt[:1200],
-                        spoken_vi_text=normalize_vn_social_slang(c_txt[:1200]) or c_txt[:300],
+                        raw_text=c_txt[:3500],
+                        display_text=c_txt[:3500],
+                        spoken_vi_text=normalize_vn_social_slang(c_txt[:3500]) or c_txt[:500],
                         attached_image_url=c_img,
                         avatar_url=item.get("avatar_url") or "",
                         likes_count=likes_n,
@@ -884,7 +983,7 @@ class ThreadsScraperService:
             op_body = re.sub(r"^[-•*]\s*", "", first_no_img).strip()
 
         comments: List[ThreadCommentItemDTO] = []
-        for idx, blk in enumerate(blocks[1:25], start=1):
+        for idx, blk in enumerate(blocks[1:40], start=1):
             cleaned_blk = re.sub(r"^(?:[-•*]|\d+[.)])\s*", "", blk).strip()
             if len(cleaned_blk) < 2:
                 continue
@@ -900,9 +999,9 @@ class ThreadsScraperService:
                 ThreadCommentItemDTO(
                     comment_id=f"pst_{uuid.uuid4().hex[:8]}",
                     author_handle=c_handle,
-                    raw_text=c_body[:1200],
-                    display_text=c_body[:1200],
-                    spoken_vi_text=normalize_vn_social_slang(c_body[:1200]) or c_body[:300],
+                    raw_text=c_body[:3500],
+                    display_text=c_body[:3500],
+                    spoken_vi_text=normalize_vn_social_slang(c_body[:3500]) or c_body[:500],
                     attached_image_url=c_img_url,
                     likes_count=likes_val,
                     likes_display=format_compact_likes(likes_val),

@@ -642,9 +642,9 @@ class ThreadCommentItemDTO(BaseContractDTO):
     comment_id: str = Field(min_length=1)
     author_handle: str = Field(default="@nguoidung", max_length=90)
     display_name: str = Field(default="", max_length=90)
-    raw_text: str = Field(min_length=1, max_length=2500)
-    display_text: str = Field(default="", max_length=2500)
-    spoken_vi_text: str = Field(default="", max_length=2500)
+    raw_text: str = Field(min_length=1, max_length=4500)
+    display_text: str = Field(default="", max_length=4500)
+    spoken_vi_text: str = Field(default="", max_length=4500)
     likes_count: int = Field(default=0, ge=0)
     likes_display: str = Field(default="", max_length=32)
     attached_image_url: str = ""
@@ -689,9 +689,11 @@ class ThreadsExtractRequestDTO(BaseContractDTO):
     """Input contract for scraping & AI-curating a Threads/Reddit post and top replies."""
 
     post_url: str = Field(default="", max_length=1000)
-    raw_pasted_text: str = Field(default="", max_length=12000)
+    raw_pasted_text: str = Field(default="", max_length=20000)
     max_comments: int = Field(default=6, ge=1, le=20)
     filter_vibe: ThreadFilterVibe = ThreadFilterVibe.FUNNY_VIRAL
+    prefer_long_comments: bool = False
+    min_comment_chars: int = Field(default=0, ge=0, le=800)
     expand_slang_and_translate: bool = True
     anonymize_handles: bool = False
     multi_voice_cast: bool = True

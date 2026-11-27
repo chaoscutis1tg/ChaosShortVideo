@@ -175,3 +175,34 @@ def test_sqlite_repository_crud_and_seeded_voices(tmp_path: Path) -> None:
     assert loaded["clips"][0]["lines"][0]["vi_narration_text"] == "Xin chào đại ca"
     assert loaded["clips"][0]["seo"]["yt_shorts_title"] == "Cái kết bất ngờ #Shorts"
 
+
+def test_threads_long_story_extract_contract() -> None:
+    """Verify LONG_STORY filter vibe, prefer_long_comments, and extended 4500-char comment capacity."""
+    from app.m00_core_contracts import (
+        ThreadCommentItemDTO,
+        ThreadFilterVibe,
+        ThreadsExtractRequestDTO,
+    )
+
+    req = ThreadsExtractRequestDTO(
+        post_url="https://www.threads.com/@nhonaytennhi/post/DU8UhpTgT6a",
+        max_comments=8,
+        filter_vibe=ThreadFilterVibe.LONG_STORY,
+        prefer_long_comments=True,
+        min_comment_chars=105,
+    )
+    assert req.filter_vibe == ThreadFilterVibe.LONG_STORY
+    assert req.prefer_long_comments is True
+    assert req.min_comment_chars == 105
+
+    long_story = "Ngày bé cả vườn cây dọc mùng bà hàng xóm là tôi làm trụi. " * 40
+    item = ThreadCommentItemDTO(
+        comment_id="long_01",
+        author_handle="@tongcucba",
+        raw_text=long_story,
+        display_text=long_story,
+        spoken_vi_text=long_story,
+    )
+    assert len(item.display_text) > 1500
+
+

@@ -848,6 +848,40 @@ class GeminiContentBrainService(ILLMService):
             "cmt": "bình luận",
             "rep": "trả lời",
             "ib": "nhắn tin",
+            "t": "tôi",
+            "tui": "tôi",
+            "toi": "tôi",
+            "hx": "hàng xóm",
+            "nm": "nhưng mà",
+            "nma": "nhưng mà",
+            "nhma": "nhưng mà",
+            "bả": "bà ấy",
+            "ổng": "ông ấy",
+            "xg": "xong",
+            "xog": "xong",
+            "r": "rồi",
+            "rùi": "rồi",
+            "s": "sao",
+            "v": "vậy",
+            "trg": "trường",
+            "c1": "cấp một",
+            "c2": "cấp hai",
+            "c3": "cấp ba",
+            "thk": "thằng",
+            "ctay": "chia tay",
+            "xl": "xin lỗi",
+            "dth": "dễ thương",
+            "cr": "người thương",
+            "lm": "làm",
+            "iar": "đi vệ sinh",
+            "ỉa": "đi vệ sinh",
+            "đái": "đi tiểu",
+            "cứt": "chất bẩn",
+            "deo": "chẳng",
+            "đéo": "chẳng",
+            "đếch": "chẳng",
+            "vl": "thật sự",
+            "vcl": "thật sự",
         }
         cleaned = re.sub(r"https?://\S+", "", text or "")
         cleaned = re.sub(r"(?:[:;=xX][\-^']*[)DdpPvV3/(|]+|=\)+|\^\^|-_-|T_T)", " ", cleaned)
@@ -928,42 +962,85 @@ class GeminiContentBrainService(ILLMService):
         req: ThreadsExtractRequestDTO,
         available_voice_ids: List[str],
     ) -> ScrapedThreadBundleDTO:
-        """Curate top N replies by vibe, expand teen-code / translate to Vietnamese & cast voices."""
+        """Curate top N replies by vibe & length mode, preserve full long stories, expand teen-code & cast 2 voices."""
         vibe_desc_map = {
             ThreadFilterVibe.FUNNY_VIRAL: "Hài hước, mặn mòi, duyên dáng, bất ngờ chuẩn viral TikTok",
+            ThreadFilterVibe.LONG_STORY: "Kể chuyện dài, tâm sự chi tiết có đầu có cuối, nhiều tình tiết lôi cuốn người nghe",
             ThreadFilterVibe.EMPATHY_STORY: "Đồng cảm, tâm sự chân thật, sâu sắc, chạm cảm xúc người nghe",
             ThreadFilterVibe.DEBATE_SPICY: "Tranh luận đa chiều, phản biện sắc sảo, nhiều góc nhìn trái ngược",
-            ThreadFilterVibe.TOP_LIKED: "Tương tác cao nhất, súc tích, đại diện đúng tâm lý số đông",
+            ThreadFilterVibe.TOP_LIKED: "Tương tác cao nhất, đại diện đúng tâm lý số đông",
         }
         vibe_desc = vibe_desc_map.get(req.filter_vibe, "Cuốn hút, tự nhiên")
         target_n = max(1, min(20, int(req.max_comments)))
+        eff_min_chars = max(
+            int(req.min_comment_chars or 0),
+            95 if req.filter_vibe == ThreadFilterVibe.LONG_STORY else (65 if req.prefer_long_comments else 0),
+        )
+        wants_long = bool(
+            req.prefer_long_comments
+            or req.filter_vibe == ThreadFilterVibe.LONG_STORY
+            or eff_min_chars >= 55
+        )
+
+        # Pre-rank raw comments: when `wants_long` is active, sort longest real stories to the top!
+        if wants_long:
+            long_enough = [
+                c
+                for c in raw_bundle.comments
+                if len(c.raw_text.strip()) >= eff_min_chars
+                or bool(c.attached_image_url or c.attached_image_path)
+            ]
+            shorter_rest = [
+                c
+                for c in raw_bundle.comments
+                if c not in long_enough
+            ]
+            long_enough.sort(key=lambda it: -len(it.raw_text.strip()))
+            shorter_rest.sort(key=lambda it: -len(it.raw_text.strip()))
+            ranked_pool = [*long_enough, *shorter_rest]
+        else:
+            ranked_pool = sorted(
+                raw_bundle.comments,
+                key=lambda it: (
+                    0 if (it.attached_image_url or it.attached_image_path) else 1,
+                    0 if len(it.raw_text.strip()) >= 45 else 1,
+                ),
+            )
 
         if self.api_key:
             raw_cmts_dump = [
                 {
                     "source_index": i,
                     "author": c.author_handle,
-                    "text": c.raw_text[:500],
+                    "char_length": len(c.raw_text.strip()),
+                    "text": c.raw_text[:2500],
                     "likes": c.likes_display or str(c.likes_count),
                     "has_attached_image": bool(c.attached_image_url or c.attached_image_path),
                 }
-                for i, c in enumerate(raw_bundle.comments[:26])
+                for i, c in enumerate(ranked_pool[:40])
             ]
+            long_rule_txt = (
+                f"\n- CHẾ ĐỘ SĂN BÌNH LUẬN DÀI ĐANG BẬT (ưu tiên >= {eff_min_chars} ký tự): BẮT BUỘC chọn các bình luận có `char_length` DÀI NHẤT, kể câu chuyện chi tiết nhiều câu từ đầu đến cuối; loại bỏ các bình luận cụt 2-5 chữ nếu trong danh sách có bình luận dài hơn!"
+                if wants_long
+                else ""
+            )
             prompt = (
                 "Bạn là đạo diễn sản xuất video ngắn 'Chủ đề Threads & Bình luận cộng đồng' triệu view trên TikTok/Shorts.\n"
                 f"Bài đăng gốc ({raw_bundle.op_author_handle}, có ảnh đính kèm={bool(raw_bundle.op_image_url or raw_bundle.op_image_path)}): {raw_bundle.op_display_text}\n"
                 f"Danh sách bình luận thô thu thập được ({len(raw_cmts_dump)} mục): {json.dumps(raw_cmts_dump, ensure_ascii=False)}\n"
                 f"Số lượng bình luận tiêu biểu cần lấy: ĐÚNG {target_n} bình luận.\n"
-                f"Gu chọn lọc mong muốn: {vibe_desc}.\n"
+                f"Gu chọn lọc mong muốn: {vibe_desc}.{long_rule_txt}\n"
                 f"Bung viết tắt teen-code & dịch sang tiếng Việt tự nhiên: {'CÓ' if req.expand_slang_and_translate else 'KHÔNG'}.\n\n"
                 "Yêu cầu bắt buộc:\n"
                 "1. Nếu bài gốc hoặc bình luận bằng tiếng nước ngoài (Anh/Trung...), hãy dịch mượt sang tiếng Việt đời thường chuẩn văn phong Threads.\n"
-                f"2. ƯU TIÊN SỐ 1 giữ lại các bình luận thật có `has_attached_image: true` (vì bình luận kèm ảnh thực tế cực kỳ cuốn hút), kèm các bình luận hay nhất khớp gu '{vibe_desc}' cho đủ ĐÚNG {target_n} bình luận. "
+                f"2. Chọn ra ĐÚNG {target_n} bình luận xuất sắc nhất khớp gu '{vibe_desc}' "
+                f"{'(ưu tiên số 1 các câu chuyện DÀI nhiều tình tiết có char_length cao nhất, kế đến là bình luận có ảnh đính kèm)' if wants_long else '(ưu tiên giữ lại bình luận thật có has_attached_image: true kèm các bình luận mặn mòi nhất)'}. "
                 "Nếu lấy từ danh sách thô, BẮT BUỘC giữ đúng `source_index` (0..N-1) của bình luận đó và đặt `is_ai_suggested: false`. "
-                f"Chỉ khi danh sách thô ít hơn {target_n} câu thì mới viết bổ sung cho đủ {target_n} câu (`source_index: -1`, `is_ai_suggested: true`).\n"
-                "3. Với cả bài gốc và mỗi bình luận, trả về 2 phiên bản:\n"
-                "   - display_text: Văn bản hiển thị đẹp trên Thẻ Bình Luận (tự nhiên, giữ cảm xúc gốc).\n"
-                "   - spoken_vi_text: Lời đọc cho diễn viên giọng Việt bản ngữ tốc độ nhanh — TUYỆT ĐỐI bung hết viết tắt (ko->không, đc->được, ny->người yêu, cty->công ty, mn->mọi người...), xóa sạch emoji/ký hiệu (=)), :)), 🤣, 🙂), đặt dấu phẩy ngắt nhịp tự nhiên để đọc cuốn hút không hời hợt.\n"
+                f"Chỉ khi danh sách thô ít hơn {target_n} câu thì mới viết bổ sung cho đủ {target_n} câu (`source_index: -1`, `is_ai_suggested: true` — nếu ở chế độ bình luận dài thì câu bổ sung cũng phải là một câu chuyện dài 3–5 câu sinh động).\n"
+                "3. CẤM TÓM TẮT HAY CẮT BỚT NỘI DUNG BÌNH LUẬN DÀI! Với các bình luận kể chuyện dài (100 - 1500 ký tự), BẮT BUỘC giữ TRỌN VẸN 100% độ dài và mọi tình tiết từ đầu đến cuối ở cả `display_text` lẫn `spoken_vi_text`.\n"
+                "4. Với cả bài gốc và mỗi bình luận, trả về 2 phiên bản:\n"
+                "   - display_text: Văn bản đầy đủ hiển thị đẹp trên Thẻ Bình Luận (giữ nguyên độ dài & cảm xúc gốc).\n"
+                "   - spoken_vi_text: Lời đọc đầy đủ cho diễn viên giọng Việt bản ngữ tốc độ nhanh — TUYỆT ĐỐI bung hết viết tắt (ko->không, đc->được, t->tôi, hx->hàng xóm, nm->nhưng mà, xog->xong, trg->trường, c3->cấp ba...), nói giảm nhẹ từ thô tục nhạy cảm cho an toàn TikTok, xóa sạch emoji/ký hiệu (=)), :)), 🤣), đặt dấu phẩy/chấm ngắt nhịp tự nhiên.\n"
                 "Trả về JSON hợp lệ:\n"
                 "{\n"
                 '  "topic_title": "Tiêu đề ngắn gọn giật tít <= 85 ký tự",\n'
@@ -974,8 +1051,8 @@ class GeminiContentBrainService(ILLMService):
                 "    {\n"
                 '      "source_index": 0,\n'
                 '      "author_handle": "@nickname_tu_nhien",\n'
-                '      "display_text": "Nội dung bình luận trên thẻ",\n'
-                '      "spoken_vi_text": "Lời đọc bình luận mượt mà không có icon",\n'
+                '      "display_text": "Toàn bộ nội dung bình luận không cắt bớt",\n'
+                '      "spoken_vi_text": "Toàn bộ lời đọc bình luận mượt mà không có icon",\n'
                 '      "likes_display": "1,4K",\n'
                 '      "is_ai_suggested": false\n'
                 "    }\n"
@@ -989,7 +1066,7 @@ class GeminiContentBrainService(ILLMService):
                 used_raw_indices: set[int] = set()
 
                 raw_avatar_lookup: Dict[str, str] = {}
-                for rc_item in raw_bundle.comments:
+                for rc_item in ranked_pool:
                     norm_h = re.sub(r"[^a-z0-9]", "", rc_item.author_handle.lower())
                     if norm_h and rc_item.avatar_url and norm_h not in raw_avatar_lookup:
                         raw_avatar_lookup[norm_h] = rc_item.avatar_url
@@ -1000,12 +1077,12 @@ class GeminiContentBrainService(ILLMService):
                         s_int = int(s_idx) if s_idx is not None and not isinstance(s_idx, bool) else -1
                     except (TypeError, ValueError):
                         s_int = -1
-                    if 0 <= s_int < len(raw_bundle.comments):
+                    if 0 <= s_int < len(ranked_pool):
                         used_raw_indices.add(s_int)
-                        return raw_bundle.comments[s_int]
+                        return ranked_pool[s_int]
                     h_cand = re.sub(r"[^a-z0-9]", "", str(item_dict.get("author_handle") or "").lower())
                     d_cand = str(item_dict.get("display_text") or "").strip().lower()[:32]
-                    for r_i, rc in enumerate(raw_bundle.comments):
+                    for r_i, rc in enumerate(ranked_pool):
                         if r_i in used_raw_indices:
                             continue
                         rc_h = re.sub(r"[^a-z0-9]", "", rc.author_handle.lower())
@@ -1024,6 +1101,14 @@ class GeminiContentBrainService(ILLMService):
                     if not disp:
                         continue
                     matched_rc = _match_raw_comment(item)
+                    # Anti-truncation guardrail: NEVER let LLM shorten a real long story comment!
+                    if matched_rc is not None:
+                        orig_full = (matched_rc.display_text or matched_rc.raw_text).strip()
+                        if len(orig_full) >= 85 and len(disp) < int(len(orig_full) * 0.78):
+                            disp = orig_full
+                        if len(orig_full) >= 85 and len(spoken) < int(len(orig_full) * 0.75):
+                            spoken = self._expand_slang_vi(orig_full) or orig_full
+
                     h_raw = str(
                         item.get("author_handle")
                         or (matched_rc.author_handle if matched_rc else f"@thanhvien_{idx:02d}")
@@ -1036,11 +1121,11 @@ class GeminiContentBrainService(ILLMService):
                         ThreadCommentItemDTO(
                             comment_id=f"cur_{idx:02d}",
                             author_handle=h_raw[:60],
-                            raw_text=disp[:1500],
-                            display_text=disp[:1500],
-                            spoken_vi_text=self._expand_slang_vi(spoken)[:1500]
+                            raw_text=disp[:4000],
+                            display_text=disp[:4000],
+                            spoken_vi_text=self._expand_slang_vi(spoken)[:4000]
                             if req.expand_slang_and_translate
-                            else spoken[:1500],
+                            else spoken[:4000],
                             likes_display=str(
                                 item.get("likes_display")
                                 or (matched_rc.likes_display if matched_rc else f"{max(24, 680 - idx * 53)}")
@@ -1058,11 +1143,59 @@ class GeminiContentBrainService(ILLMService):
                         )
                     )
 
-                # Ensure real comments with attached images are never accidentally left behind
+                # When `wants_long` is active, ensure real long story comments (>= 95 chars) were not skipped in favor of tiny 1-liners!
+                if wants_long:
+                    missed_long = [
+                        (r_i, rc)
+                        for r_i, rc in enumerate(ranked_pool)
+                        if r_i not in used_raw_indices and len(rc.raw_text.strip()) >= max(90, eff_min_chars)
+                    ]
+                    for r_i, long_rc in missed_long:
+                        if len(curated_list) < target_n:
+                            used_raw_indices.add(r_i)
+                            curated_list.append(
+                                long_rc.model_copy(
+                                    update={
+                                        "author_handle": f"@nguoila_{len(curated_list) + 1:02d}"
+                                        if req.anonymize_handles
+                                        else long_rc.author_handle,
+                                        "spoken_vi_text": self._expand_slang_vi(
+                                            long_rc.spoken_vi_text or long_rc.display_text
+                                        ),
+                                        "selected": True,
+                                    }
+                                )
+                            )
+                        else:
+                            # Replace shortest item in curated_list if that item is much shorter (< 75 chars)
+                            shortest_idx = min(
+                                range(len(curated_list)),
+                                key=lambda k: len(curated_list[k].display_text.strip()),
+                            )
+                            if len(curated_list[shortest_idx].display_text.strip()) < 75:
+                                used_raw_indices.add(r_i)
+                                curated_list[shortest_idx] = long_rc.model_copy(
+                                    update={
+                                        "comment_id": f"cur_{shortest_idx + 1:02d}",
+                                        "author_handle": f"@nguoila_{shortest_idx + 1:02d}"
+                                        if req.anonymize_handles
+                                        else long_rc.author_handle,
+                                        "spoken_vi_text": self._expand_slang_vi(
+                                            long_rc.spoken_vi_text or long_rc.display_text
+                                        ),
+                                        "selected": True,
+                                    }
+                                )
+                    # Sort final curated list longest-first when in Long Story mode so best stories lead the video!
+                    curated_list.sort(key=lambda c_it: -len(c_it.display_text.strip()))
+
+                # Ensure real comments with attached images are never accidentally left behind (unless strict min_comment_chars excluded tiny captions)
                 missed_img_cmts = [
                     (r_i, rc)
-                    for r_i, rc in enumerate(raw_bundle.comments)
-                    if r_i not in used_raw_indices and (rc.attached_image_url or rc.attached_image_path)
+                    for r_i, rc in enumerate(ranked_pool)
+                    if r_i not in used_raw_indices
+                    and (rc.attached_image_url or rc.attached_image_path)
+                    and (not wants_long or len(rc.raw_text.strip()) >= max(35, eff_min_chars // 2))
                 ]
                 for _, img_rc in missed_img_cmts:
                     if len(curated_list) < target_n:
@@ -1079,8 +1212,9 @@ class GeminiContentBrainService(ILLMService):
                                 }
                             )
                         )
-                    elif any(not c.attached_image_url and not c.attached_image_path for c in curated_list):
-                        # Swap into last non-image slot so user gets the real comment photo!
+                    elif not wants_long and any(
+                        not c.attached_image_url and not c.attached_image_path for c in curated_list
+                    ):
                         for rep_idx in range(len(curated_list) - 1, -1, -1):
                             if not curated_list[rep_idx].attached_image_url and not curated_list[rep_idx].attached_image_path:
                                 curated_list[rep_idx] = img_rc.model_copy(
@@ -1107,6 +1241,8 @@ class GeminiContentBrainService(ILLMService):
                         req.female_voice_id,
                     )
                     op_disp = str(data.get("op_display_text") or raw_bundle.op_display_text).strip()
+                    if len(raw_bundle.op_display_text.strip()) >= 85 and len(op_disp) < int(len(raw_bundle.op_display_text.strip()) * 0.78):
+                        op_disp = raw_bundle.op_display_text.strip()
                     op_sp = str(data.get("op_spoken_vi_text") or op_disp).strip()
                     if req.expand_slang_and_translate:
                         op_sp = self._expand_slang_vi(op_sp) or op_sp
@@ -1120,14 +1256,20 @@ class GeminiContentBrainService(ILLMService):
                     img_cnt = sum(1 for c in voiced_cmts if c.attached_image_url or c.attached_image_path) + (
                         1 if (raw_bundle.op_image_url or raw_bundle.op_image_path) else 0
                     )
-                    img_note = f" (kèm {img_cnt} ảnh bài đăng/bình luận)" if img_cnt > 0 else ""
+                    long_cnt = sum(1 for c in voiced_cmts if len(c.display_text.strip()) >= 95)
+                    extra_tags: List[str] = []
+                    if long_cnt > 0:
+                        extra_tags.append(f"{long_cnt} bình luận kể chuyện dài")
+                    if img_cnt > 0:
+                        extra_tags.append(f"{img_cnt} ảnh đính kèm")
+                    tag_note = f" ({', '.join(extra_tags)})" if extra_tags else ""
                     return ScrapedThreadBundleDTO(
                         source_url=raw_bundle.source_url,
                         platform=raw_bundle.platform,
                         topic_title=str(data.get("topic_title") or raw_bundle.topic_title)[:180],
                         op_author_handle=op_h[:60],
-                        op_display_text=op_disp[:2200],
-                        op_spoken_vi_text=op_sp[:2200],
+                        op_display_text=op_disp[:3000],
+                        op_spoken_vi_text=op_sp[:3000],
                         op_image_url=raw_bundle.op_image_url,
                         op_image_path=raw_bundle.op_image_path,
                         op_avatar_url=raw_bundle.op_avatar_url,
@@ -1140,26 +1282,42 @@ class GeminiContentBrainService(ILLMService):
                         female_voice_id=req.female_voice_id,
                         comments=voiced_cmts,
                         used_api_key=True,
-                        extraction_note=f"AI đã chọn lọc {len(voiced_cmts)} bình luận tiêu biểu{img_note} & phân vai 2 giọng Nam/Nữ!",
+                        extraction_note=f"AI đã chọn lọc {len(voiced_cmts)} bình luận tiêu biểu{tag_note} & giữ trọn vẹn câu chuyện gốc!",
                     )
             except Exception:
                 if not self.allow_offline_fallback:
                     raise
 
-        # Deterministic offline fallback curation (prioritizing comments with real attached images!)
-        ordered_raw = sorted(
-            raw_bundle.comments,
-            key=lambda item: (0 if (item.attached_image_url or item.attached_image_path) else 1),
+        # Deterministic offline fallback curation (respecting `wants_long` sorting!)
+        base_cmts = list(ranked_pool[:target_n])
+        fallback_templates = (
+            [
+                (
+                    "@minhkhoi.story",
+                    "Kể thật với mọi người, hồi mới ra trường mình từng giấu cả nhà chuyện nghỉ việc ở công ty lớn suốt hai tháng trời. Sáng nào cũng mặc sơ mi xách cặp ra quán cà phê ngồi tự học lại từ đầu, áp lực tới mức không dám gọi điện về quê, may sao cuối cùng cũng xin được đúng công việc mình mê.",
+                    "842",
+                ),
+                (
+                    "@linhchi.daily",
+                    "Hồi nhỏ mình từng lỡ làm vỡ chiếc bình gốm quý của bố nhưng sợ bị phạt nên đổ thừa cho con mèo hàng xóm chạy qua làm đổ. Mãi tới tận mười năm sau trong bữa cơm Tết mình mới dám thú nhận thì bố chỉ cười bảo bố biết thừa từ hôm đó rồi nhưng thấy mặt con tái mét nên thôi không mắng.",
+                    "519",
+                ),
+                (
+                    "@hoangnam.official",
+                    "Có một bí mật mình giữ trong lòng suốt ba năm đi làm là người hay để phần hộp sữa chua trên bàn cho cô lao công mỗi chiều tăng ca chính là mình. Cô cứ tưởng phòng nhân sự phát thêm nên hôm nào gặp cũng khoe công ty tâm lý lắm, nhìn nụ cười của cô mà thấy ấm lòng thực sự.",
+                    "376",
+                ),
+            ]
+            if wants_long
+            else [
+                ("@minhkhoi.98", "Đọc xong thấy đúng tâm lý số đông thật sự, ai trải qua rồi mới hiểu cảm giác này.", "842"),
+                ("@linhchi.daily", "Mình từng rơi vào đúng hoàn cảnh y hệt chủ thớt luôn, mất gần nửa năm mới rút ra bài học.", "519"),
+                ("@hoangnam.official", "Thực ra nhìn ở góc độ ngược lại thì chuyện này cũng có hai mặt, quan trọng là cách mình ứng xử thôi.", "376"),
+                ("@thao.vy.genz", "lướt Threads lúc nửa đêm mà gặp đúng bài chạm trúng tim đen thế này sao ngủ nổi trời.", "264"),
+                ("@anhduc.work", "Chuẩn không cần chỉnh! Lưu lại ngay để thỉnh thoảng mở ra tự nhắc bản thân.", "195"),
+                ("@ngocanh.story", "Bình luận trên Threads lúc nào cũng mặn mà thực tế hơn hẳn, đọc cuốn thật.", "148"),
+            ]
         )
-        base_cmts = list(ordered_raw[:target_n])
-        fallback_templates = [
-            ("@minhkhoi.98", "Đọc xong thấy đúng tâm lý số đông thật sự, ai trải qua rồi mới hiểu cảm giác này.", "842"),
-            ("@linhchi.daily", "Mình từng rơi vào đúng hoàn cảnh y hệt chủ thớt luôn, mất gần nửa năm mới rút ra bài học.", "519"),
-            ("@hoangnam.official", "Thực ra nhìn ở góc độ ngược lại thì chuyện này cũng có hai mặt, quan trọng là cách mình ứng xử thôi.", "376"),
-            ("@thao.vy.genz", "lướt Threads lúc nửa đêm mà gặp đúng bài chạm trúng tim đen thế này sao ngủ nổi trời.", "264"),
-            ("@anhduc.work", "Chuẩn không cần chỉnh! Lưu lại ngay để thỉnh thoảng mở ra tự nhắc bản thân.", "195"),
-            ("@ngocanh.story", "Bình luận trên Threads lúc nào cũng mặn mà thực tế hơn hẳn, đọc cuốn thật.", "148"),
-        ]
         while len(base_cmts) < target_n:
             idx = len(base_cmts)
             h_f, txt_f, lk_f = fallback_templates[idx % len(fallback_templates)]
@@ -1257,35 +1415,79 @@ class GeminiContentBrainService(ILLMService):
         )
         cursor_ms += op_dur + 110
 
-        # 2. Selected Comment Cards (seq_index = 1..N)
+        def _split_long_story_pairs(disp_text: str, spoken_text: str, max_card_chars: int = 560) -> List[tuple[str, str]]:
+            """Keep comments <= 560 chars on 1 full card; split essay-length stories cleanly at sentence boundaries."""
+            d_clean = (disp_text or "").strip()
+            s_clean = (spoken_text or d_clean).strip()
+            if len(d_clean) <= max_card_chars:
+                return [(d_clean, s_clean)]
+
+            sentences = [
+                seg.strip()
+                for seg in re.split(r"(?<=[.!?…\n])\s+|(?<=[,;])\s+(?=[A-ZÀ-Ỹa-zà-ỹ])", d_clean)
+                if seg.strip()
+            ]
+            if len(sentences) <= 1:
+                words = d_clean.split()
+                chunks_d: List[str] = []
+                cur_w: List[str] = []
+                for w in words:
+                    if cur_w and len(" ".join(cur_w + [w])) > 460:
+                        chunks_d.append(" ".join(cur_w))
+                        cur_w = [w]
+                    else:
+                        cur_w.append(w)
+                if cur_w:
+                    chunks_d.append(" ".join(cur_w))
+            else:
+                chunks_d = []
+                cur_s: List[str] = []
+                for sent in sentences:
+                    if cur_s and len(" ".join(cur_s + [sent])) > 480:
+                        chunks_d.append(" ".join(cur_s))
+                        cur_s = [sent]
+                    else:
+                        cur_s.append(sent)
+                if cur_s:
+                    chunks_d.append(" ".join(cur_s))
+
+            pairs: List[tuple[str, str]] = []
+            for ch_d in chunks_d:
+                ch_sp = self._expand_slang_vi(ch_d) or ch_d
+                pairs.append((ch_d, ch_sp))
+            return pairs or [(d_clean, s_clean)]
+
+        # 2. Selected Comment Cards (seq_index = 1..N, supporting multi-card continuation for essay-length comments)
         active_comments = [c for c in bundle.comments if c.selected]
         for idx, c in enumerate(active_comments, start=1):
             c_disp = (c.display_text or c.raw_text).strip()
             c_spoken = (c.spoken_vi_text or self._expand_slang_vi(c_disp) or c_disp).strip()
             if not c_spoken:
                 continue
-            c_dur = _estimate_dur_ms(c_spoken)
             c_handle = f"@nguoila_{idx:02d}" if anonymize_handles else (c.author_handle or f"@thanhvien_{idx:02d}")
-            seq = len(lines)
-            lines.append(
-                NarrationLineDTO(
-                    seq_index=seq,
-                    rel_start_ms=cursor_ms,
-                    rel_end_ms=cursor_ms + c_dur,
-                    original_text=c_disp,
-                    vi_text=c_spoken,
-                    callout_label="",
-                    voice_profile_override=c.voice_profile_id or None,
-                    speaker_handle=c_handle,
-                    speaker_avatar_path="" if anonymize_handles else (c.avatar_path or ""),
-                    display_card_text=c_disp,
-                    likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
-                    card_image_path=c.attached_image_path or "",
-                    is_op_post=False,
-                    words=_distribute_words(c_spoken, cursor_ms, cursor_ms + c_dur),
+            story_parts = _split_long_story_pairs(c_disp, c_spoken, max_card_chars=560)
+            for p_idx, (part_disp, part_sp) in enumerate(story_parts):
+                c_dur = _estimate_dur_ms(part_sp)
+                seq = len(lines)
+                lines.append(
+                    NarrationLineDTO(
+                        seq_index=seq,
+                        rel_start_ms=cursor_ms,
+                        rel_end_ms=cursor_ms + c_dur,
+                        original_text=part_disp,
+                        vi_text=part_sp,
+                        callout_label="",
+                        voice_profile_override=c.voice_profile_id or None,
+                        speaker_handle=c_handle,
+                        speaker_avatar_path="" if anonymize_handles else (c.avatar_path or ""),
+                        display_card_text=part_disp,
+                        likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
+                        card_image_path=(c.attached_image_path or "") if p_idx == 0 else "",
+                        is_op_post=False,
+                        words=_distribute_words(part_sp, cursor_ms, cursor_ms + c_dur),
+                    )
                 )
-            )
-            cursor_ms += c_dur + 110
+                cursor_ms += c_dur + (70 if p_idx < len(story_parts) - 1 else 110)
 
         # 3. Optional Engagement Hook CTA Card at the end
         clean_cta = append_cta_comment.strip()

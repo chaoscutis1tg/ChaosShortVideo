@@ -16,6 +16,7 @@ class ThreadFilterVibe(str, Enum):
     """AI curation & ranking criteria for selecting featured social/Threads replies."""
 
     FUNNY_VIRAL = "FUNNY_VIRAL"
+    LONG_STORY = "LONG_STORY"
     EMPATHY_STORY = "EMPATHY_STORY"
     DEBATE_SPICY = "DEBATE_SPICY"
     TOP_LIKED = "TOP_LIKED"

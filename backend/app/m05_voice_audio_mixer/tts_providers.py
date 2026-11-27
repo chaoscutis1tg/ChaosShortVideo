@@ -130,11 +130,25 @@ class LocalPiperVITSProvider(ITTSProvider):
         )
 
     def _synth_sync(self, enhanced_text: str, profile: VoiceProfileDTO, out_wav_path: Path) -> int:
+        import urllib.request
         import piper  # type: ignore
 
         model_path = self._resolve_model_path(profile.voice_id_or_sample_path)
         if not model_path.exists():
-            raise VoiceSynthesisError(f"Không tìm thấy mô hình giọng Offline: {model_path.name}")
+            try:
+                model_path.parent.mkdir(parents=True, exist_ok=True)
+                base_hf = (
+                    "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+                    "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium"
+                )
+                json_cfg = model_path.with_suffix(model_path.suffix + ".json")
+                if not json_cfg.exists():
+                    urllib.request.urlretrieve(f"{base_hf}.onnx.json", str(json_cfg))
+                urllib.request.urlretrieve(f"{base_hf}.onnx", str(model_path))
+            except Exception as dl_exc:
+                raise VoiceSynthesisError(
+                    f"Không tìm thấy và không thể tự tải mô hình giọng Offline ({model_path.name}): {dl_exc}"
+                ) from dl_exc
 
         key = str(model_path)
         if key not in self._loaded_models:

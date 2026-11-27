@@ -19,12 +19,14 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter
 from pydantic import BaseModel, Field
@@ -462,6 +464,17 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        friendly_parts: List[str] = []
+        for err in exc.errors()[:3]:
+            loc_items = [str(x) for x in err.get("loc", []) if x not in ("body", "query", "path")]
+            field_label = ".".join(loc_items) if loc_items else "tham số"
+            raw_msg = str(err.get("msg", "Dữ liệu không hợp lệ"))
+            friendly_parts.append(f"{field_label}: {raw_msg}")
+        summary = "Tham số đầu vào chưa hợp lệ — " + "; ".join(friendly_parts)
+        return JSONResponse(status_code=422, content={"detail": summary, "errors": exc.errors()})
 
     app.mount("/media/outputs", StaticFiles(directory=str(settings.outputs_dir)), name="outputs")
     app.mount("/media/work", StaticFiles(directory=str(settings.work_dir)), name="work")
@@ -2517,7 +2530,16 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
     # Serve built React frontend SPA if `frontend/dist` exists
     dist_dir = settings.workspace_root / "frontend" / "dist"
     if dist_dir.exists():
+        no_cache_headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
         app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="fe_assets")
+
+        @app.get("/")
+        async def serve_spa_root():
+            return FileResponse(str(dist_dir / "index.html"), headers=no_cache_headers)
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
@@ -2526,7 +2548,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 return FileResponse(str(candidate))
             return FileResponse(
                 str(dist_dir / "index.html"),
-                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                headers=no_cache_headers,
             )
 
     return app

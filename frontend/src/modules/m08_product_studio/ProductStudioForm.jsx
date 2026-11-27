@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Images,
   Layers,
+  Loader2,
   MessageSquareHeart,
   MessageSquarePlus,
   Music2,
@@ -35,11 +36,16 @@ import {
 import { studioApi } from '../m00_core_contracts/apiClient';
 import { stripLeadingEmoji } from '../m00_core_contracts/constants';
 import {
+  FieldError,
+  hasAllowedExtension,
   InlineBgmSelector,
   InlineVoiceSelector,
+  isValidHttpUrl,
   MediaDropzone,
   ModeChoiceGrid,
   ParentGroupSelector,
+  scrollToFirstValidationError,
+  StudioLoadingBanner,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
@@ -353,6 +359,21 @@ export default function ProductStudioForm({
   const [uploadingFeedback, setUploadingFeedback] = useState(false);
   const [uploadingDemo, setUploadingDemo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
 
   const loadTemplates = async () => {
     try {
@@ -406,10 +427,14 @@ export default function ProductStudioForm({
 
   const handleScrapeProductUrl = async () => {
     const clean = scrapeUrl.trim();
-    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      notify('Vui lòng dán đường dẫn sản phẩm hợp lệ (bắt đầu bằng https://...).');
+    if (!isValidHttpUrl(clean)) {
+      const msg = 'Vui lòng dán đường dẫn sản phẩm hợp lệ (bắt đầu bằng https://...).';
+      setErrors((prev) => ({ ...prev, scrapeUrl: msg }));
+      scrollToFirstValidationError(rootRef);
+      notify(msg);
       return;
     }
+    clearError('scrapeUrl', 'photos', 'productName', 'rawDescription');
     setScrapingUrl(true);
     try {
       const res = await studioApi.scrapeProductUrl(clean);
@@ -436,14 +461,36 @@ export default function ProductStudioForm({
   };
 
   const handleStartBatchFromUrls = async () => {
-    const urls = batchUrlsText
+    const rawLines = batchUrlsText
       .split(/\r?\n/)
       .map((s) => s.trim())
-      .filter((s) => s.startsWith('http://') || s.startsWith('https://'));
+      .filter(Boolean);
+    const urls = rawLines.filter((s) => isValidHttpUrl(s));
+    const invalidCount = rawLines.length - urls.length;
+
     if (urls.length === 0) {
-      notify('Vui lòng dán ít nhất 1 đường dẫn sản phẩm hợp lệ (mỗi dòng 1 link https://...).');
+      const msg = 'Vui lòng dán ít nhất 1 đường dẫn sản phẩm hợp lệ (mỗi dòng 1 link https://...).';
+      setErrors((prev) => ({ ...prev, batchUrls: msg }));
+      scrollToFirstValidationError(rootRef);
+      notify(msg);
       return;
     }
+    if (invalidCount > 0) {
+      const msg = `Có ${invalidCount} dòng chưa đúng chuẩn URL https://... — vui lòng kiểm tra lại.`;
+      setErrors((prev) => ({ ...prev, batchUrls: msg }));
+      scrollToFirstValidationError(rootRef);
+      notify(msg);
+      return;
+    }
+    if (urls.length > 20) {
+      const msg = `Tối đa 20 link sản phẩm mỗi đợt (hiện đang có ${urls.length} link).`;
+      setErrors((prev) => ({ ...prev, batchUrls: msg }));
+      scrollToFirstValidationError(rootRef);
+      notify(msg);
+      return;
+    }
+
+    clearError('batchUrls');
     setStartingBatch(true);
     try {
       const res = await studioApi.startProductBatchUrls({
@@ -553,6 +600,29 @@ export default function ProductStudioForm({
 
   const handlePhotosSelected = async (files, fromClipboard = false) => {
     if (!files || files.length === 0) return;
+    const allowedMediaExts = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.bmp',
+      '.mp4',
+      '.mov',
+      '.mkv',
+      '.webm',
+      '.avi',
+      '.m4v',
+    ];
+    const invalidFile = Array.from(files).find(
+      (f) => f.name && !hasAllowedExtension(f.name, allowedMediaExts)
+    );
+    if (invalidFile) {
+      const msg = `Tệp "${invalidFile.name}" không đúng định dạng Ảnh/Video hỗ trợ (.jpg, .png, .webp, .mp4, .mov).`;
+      setErrors((prev) => ({ ...prev, photos: msg }));
+      notify(msg);
+      return;
+    }
+    clearError('photos');
     setUploadingPhotos(true);
     try {
       const results = await studioApi.uploadBatchFiles(files, 'product_photo');
@@ -659,10 +729,22 @@ export default function ProductStudioForm({
   const updateSalesLayout = (patch) => setLayoutConfig((prev) => ({ ...prev, ...patch }));
 
   const handleExpandProductBrief = async () => {
-    if ((productName.trim() + rawDescription.trim()).length < 3) {
-      notify('Vui lòng nhập tên sản phẩm hoặc vài từ mô tả ngắn trước khi bấm Phân tích AI.');
+    const cleanName = productName.trim();
+    const cleanDesc = rawDescription.trim();
+    const nextErrs = {};
+    if ((cleanName + cleanDesc).length < 4) {
+      nextErrs.productName =
+        'Vui lòng nhập tên sản phẩm hoặc vài từ mô tả ngắn trước khi bấm Phân tích AI.';
+    } else if (cleanName.length > 160) {
+      nextErrs.productName = 'Tên sản phẩm tối đa 160 ký tự.';
+    }
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrs }));
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+    clearError('productName', 'rawDescription');
     setAnalyzingBrief(true);
     try {
       const res = await studioApi.expandShortBrief({
@@ -703,15 +785,37 @@ export default function ProductStudioForm({
   };
 
   const handleStart = async (autoOneClick) => {
-    if (productName.trim().length < 2) {
-      notify('Vui lòng nhập tên sản phẩm.');
-      return;
-    }
+    const cleanName = productName.trim();
+    const cleanDesc = rawDescription.trim();
+    const nextErrs = {};
+
     if (uploadedPhotos.length === 0) {
-      notify('Vui lòng tải lên hoặc dán (Ctrl+V) ít nhất 1 ảnh/clip sản phẩm.');
+      nextErrs.photos =
+        'Bắt buộc tải lên hoặc dán (Ctrl+V) ít nhất 1 ảnh hoặc video sản phẩm ở Bước 1.';
+    } else if (Boolean(layoutConfig.comparison_split_enabled) && uploadedPhotos.length < 2) {
+      nextErrs.photos =
+        'Bạn đang bật chế độ "Chia đôi so sánh A/B" — vui lòng tải lên ít nhất 2 ảnh sản phẩm (hoặc tắt công tắc So sánh A/B ở Bước 3).';
+    }
+
+    if (cleanName.length < 2) {
+      nextErrs.productName = 'Vui lòng nhập tên sản phẩm (tối thiểu 2 ký tự).';
+    } else if (cleanName.length > 160) {
+      nextErrs.productName = 'Tên sản phẩm tối đa 160 ký tự.';
+    }
+
+    if (cleanDesc.length < 5) {
+      nextErrs.rawDescription =
+        'Vui lòng nhập mô tả ngắn hoặc thông số chính của sản phẩm (tối thiểu 5 ký tự).';
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
 
+    setErrors({});
     setSubmitting(true);
     try {
       const fbPaths = feedbackPhotos.map((f) => f.local_path);
@@ -805,11 +909,14 @@ export default function ProductStudioForm({
             <Globe size={15} /> Hút nhanh từ Website:
           </span>
           <input
-            className="input"
+            className={`input ${errors.scrapeUrl ? 'input-error' : ''}`}
             style={{ flex: 1, minWidth: 220, minHeight: 37, padding: '6px 12px', fontSize: 13.2 }}
             placeholder="Dán link sản phẩm (VD: https://www.sonmusic.vn/...) để tự lấy tên, mô tả & bộ ảnh..."
             value={scrapeUrl}
-            onChange={(e) => setScrapeUrl(e.target.value)}
+            onChange={(e) => {
+              setScrapeUrl(e.target.value);
+              clearError('scrapeUrl');
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleScrapeProductUrl()}
           />
           <button
@@ -819,7 +926,8 @@ export default function ProductStudioForm({
             disabled={scrapingUrl}
             onClick={handleScrapeProductUrl}
           >
-            <Globe size={14} /> {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút 1 link'}
+            {scrapingUrl ? <Loader2 size={14} className="spin" /> : <Globe size={14} />}{' '}
+            {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút 1 link'}
           </button>
           <button
             type="button"
@@ -830,24 +938,52 @@ export default function ProductStudioForm({
             <Layers size={14} /> Tạo hàng loạt (Nhiều link)
           </button>
         </div>
+        <FieldError message={errors.scrapeUrl} />
+
+        <StudioLoadingBanner
+          loading={scrapingUrl}
+          title="Đang hút thông tin & tải bộ ảnh gốc từ trang sản phẩm..."
+          subtitle="Hệ thống đang bóc tách tên sản phẩm, thông số kỹ thuật và ảnh độ phân giải cao"
+          steps={['Kết nối Website sản phẩm', 'Trích xuất mô tả & tải bộ ảnh về máy']}
+          stepIntervalMs={2400}
+        />
 
         {/* ITEM 6: BATCH STORE URL PRODUCER */}
         {showBatchPanel && (
-          <div className="surface-box" style={{ borderColor: 'var(--brand)' }}>
+          <div className="surface-box fade-slide-in" style={{ borderColor: 'var(--brand)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
               <strong style={{ fontSize: 13.2, color: 'var(--brand-text)' }}>
-                Sản xuất hàng loạt từ danh sách Link sản phẩm trên Website (2 – 20 sản phẩm/lần)
+                Sản xuất hàng loạt từ danh sách Link sản phẩm trên Website (1 – 20 sản phẩm/lần)
               </strong>
-              <span className="badge badge-info">Tự động xếp hàng đợi chạy lần lượt</span>
+              <span className="badge badge-info">
+                Đã nhận{' '}
+                {
+                  batchUrlsText
+                    .split(/\r?\n/)
+                    .map((s) => s.trim())
+                    .filter((s) => isValidHttpUrl(s)).length
+                }
+                /20 link hợp lệ
+              </span>
             </div>
             <textarea
-              className="textarea"
-              style={{ minHeight: 92, marginBottom: 10, fontSize: 13 }}
+              className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
+              style={{ minHeight: 92, marginBottom: 6, fontSize: 13 }}
               placeholder={`Dán mỗi dòng 1 đường dẫn sản phẩm:\nhttps://www.sonmusic.vn/dan-violin-avaro-s2\nhttps://www.sonmusic.vn/dan-violin-avaro-s2s\n...`}
               value={batchUrlsText}
-              onChange={(e) => setBatchUrlsText(e.target.value)}
+              onChange={(e) => {
+                setBatchUrlsText(e.target.value);
+                clearError('batchUrls');
+              }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <FieldError message={errors.batchUrls} />
+            <StudioLoadingBanner
+              loading={startingBatch}
+              title="Đang quét danh sách sản phẩm & khởi tạo hàng đợi xuất loạt video..."
+              steps={['Đọc dữ liệu từng trang sản phẩm', 'Xếp lịch dựng video tự động']}
+              stepIntervalMs={2800}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
               <SwitchCard checked={batchDiversify} onChange={setBatchDiversify}>
                 Tự xoay vòng 4 góc kịch bản để các video không lặp câu chữ
               </SwitchCard>
@@ -857,7 +993,7 @@ export default function ProductStudioForm({
                 disabled={startingBatch}
                 onClick={handleStartBatchFromUrls}
               >
-                <Layers size={15} />{' '}
+                {startingBatch ? <Loader2 size={15} className="spin" /> : <Layers size={15} />}{' '}
                 {startingBatch ? 'Đang hút danh sách sản phẩm...' : 'Hút & Xếp hàng xuất loạt Video'}
               </button>
             </div>
@@ -969,6 +1105,8 @@ export default function ProductStudioForm({
           accept="image/*,video/*"
           multiple
           disabled={uploadingPhotos}
+          loading={uploadingPhotos}
+          error={errors.photos}
           icon={Images}
           title={
             uploadingPhotos
@@ -1407,10 +1545,14 @@ export default function ProductStudioForm({
           <div className="form-group">
             <label className="form-label">Tên sản phẩm</label>
             <input
-              className="input"
+              className={`input ${errors.productName ? 'input-error' : ''}`}
               value={productName}
-              onChange={(e) => setProductName(e.target.value)}
+              onChange={(e) => {
+                setProductName(e.target.value);
+                clearError('productName');
+              }}
             />
+            <FieldError message={errors.productName} />
           </div>
           <div className="form-group">
             <label className="form-label">Nhóm mặt hàng</label>
@@ -1452,22 +1594,36 @@ export default function ProductStudioForm({
                 disabled={analyzingBrief || submitting}
                 onClick={handleExpandProductBrief}
               >
-                <Wand2 size={13} />{' '}
+                {analyzingBrief ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}{' '}
                 {analyzingBrief ? 'Đang gọi API phân tích...' : 'Phân tích & Viết chi tiết (AI)'}
               </button>
             </div>
           </div>
           <textarea
-            className="textarea"
+            className={`textarea ${errors.rawDescription ? 'input-error' : ''}`}
             style={{ minHeight: 124 }}
             placeholder="Chỉ cần gõ ngắn gọn vài từ (VD: Đàn Guitar gỗ thông nguyên tấm cho người mới tập, âm ấm, tặng kèm bao da) rồi bấm nút 'Phân tích & Viết chi tiết (AI)'..."
             value={rawDescription}
             onChange={(e) => {
               setRawDescription(e.target.value);
+              clearError('rawDescription');
               if (complianceReport) setComplianceReport(null);
             }}
           />
+          <FieldError message={errors.rawDescription} />
         </div>
+
+        <StudioLoadingBanner
+          loading={analyzingBrief}
+          showSkeleton={!productAiAnalysis}
+          title="Đang gọi API AI phân tích sản phẩm & viết lời bình bán hàng truyền cảm..."
+          subtitle="Hệ thống đang chuyển hóa thông số khô cứng thành lời kể tự nhiên có chiều sâu"
+          steps={[
+            'Phân tích điểm đắt giá của sản phẩm',
+            'Viết kịch bản lời bình & câu kêu gọi hành động (CTA)',
+          ]}
+          stepIntervalMs={2400}
+        />
 
         {productAiAnalysis && (
           <div
@@ -1941,6 +2097,17 @@ export default function ProductStudioForm({
         </div>
       </div>
 
+      <StudioLoadingBanner
+        loading={submitting}
+        title="Đang khởi tạo dự án Video Giới Thiệu Sản Phẩm..."
+        subtitle="Hệ thống đang khớp từng tấm ảnh/clip sản phẩm với lời bình & chuẩn bị dựng khung CapCut"
+        steps={[
+          'Kiểm tra bộ ảnh sản phẩm & kịch bản lời bình',
+          'Đưa vào hàng đợi kết xuất GPU NVENC',
+        ]}
+        stepIntervalMs={1800}
+      />
+
       <div className="sticky-action-bar">
         <span className="text-sub" style={{ fontSize: 12.2 }}>
           Tự động lưu nháp • Dán ảnh <strong>Ctrl + V</strong> • Xuất ngay <strong>Ctrl + Enter</strong>
@@ -1949,18 +2116,22 @@ export default function ProductStudioForm({
           <button
             className="btn btn-secondary"
             style={{ minHeight: 42 }}
-            disabled={submitting || uploadingPhotos || uploadingDemo}
+            disabled={submitting || uploadingPhotos || uploadingDemo || scrapingUrl}
             onClick={() => handleStart(false)}
           >
-            <Edit3 size={15} /> Xem kịch bản &amp; chỉnh giọng từng câu
+            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
+            Xem kịch bản &amp; chỉnh giọng từng câu
           </button>
           <button
             className="btn btn-primary"
             style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
-            disabled={submitting || uploadingPhotos || uploadingDemo}
+            disabled={submitting || uploadingPhotos || uploadingDemo || scrapingUrl}
             onClick={() => handleStart(true)}
           >
-            <Play size={16} /> Tạo {variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay
+            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
+            {submitting
+              ? 'Đang khởi tạo...'
+              : `Tạo ${variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay`}
           </button>
         </div>
       </div>

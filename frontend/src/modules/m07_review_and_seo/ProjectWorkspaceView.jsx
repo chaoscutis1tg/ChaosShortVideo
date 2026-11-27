@@ -576,6 +576,17 @@ export default function ProjectWorkspaceView({
     const isMovie = detail.mode === 'MOVIE_CLIPPER';
     const isDubbed =
       reviewAudioSubMode === 'VIET_DUB_AND_SUB' || reviewAudioSubMode === 'VIET_DUB_NO_SUB';
+    if (isDubbed) {
+      const hasEmptyLine = editableClips
+        .filter((c) => selectedParts.includes(c.part_number))
+        .some((c) =>
+          (c.lines || []).some((ln) => !ln.is_real_demo_slot && !(ln.vi_text || '').trim())
+        );
+      if (hasEmptyLine) {
+        notify('Vui lòng không để trống câu lời đọc tiếng Việt trong phần đã chọn xuất.');
+        return;
+      }
+    }
     const effSubStyle =
       reviewAudioSubMode === 'VIET_DUB_NO_SUB' || reviewAudioSubMode === 'RAW_ORIGINAL'
         ? 'NONE'
@@ -1953,8 +1964,10 @@ export default function ProjectWorkspaceView({
                         disabled={busyAction}
                         onClick={handleApproveAndRender}
                       >
-                        <RefreshCw size={15} />{' '}
-                        {detail.state === 'COMPLETED'
+                        <RefreshCw size={15} className={busyAction ? 'spin' : ''} />{' '}
+                        {busyAction
+                          ? 'Đang khởi chạy xuất video...'
+                          : detail.state === 'COMPLETED'
                           ? 'Xuất lại video với chỉnh sửa mới'
                           : `Xuất ${selectedParts.length}/${editableClips.length} phần đã chọn`}
                       </button>

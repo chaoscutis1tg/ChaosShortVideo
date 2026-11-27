@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
-import { SwitchCard } from '../m00_core_contracts/StudioWidgets';
+import { StudioLoadingBanner, SwitchCard } from '../m00_core_contracts/StudioWidgets';
 
 const ASPECT_META = {
   '9:16': { label: '9:16 Dọc', res: '1080×1920', height: 434 },
@@ -746,7 +746,7 @@ export default function Canvas916Designer({
             onClick={() => handleRenderTrueSnapshot(false)}
             title="Xuất thử 1 bức ảnh Full HD qua đúng bộ dựng thật (tách nền, làm mờ, cỡ chữ phụ đề)"
           >
-            {renderingSnapshot ? <Loader2 size={13} /> : <Eye size={13} />} Xem khung thật 1080p
+            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Eye size={13} />} Xem khung thật 1080p
           </button>
           <button
             type="button"
@@ -756,9 +756,15 @@ export default function Canvas916Designer({
             onClick={() => handleRenderTrueSnapshot(true)}
             title="Xem trước Ảnh Bìa TikTok / Shorts thực tế"
           >
-            <Camera size={13} /> Xem thử Ảnh bìa
+            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Camera size={13} />} Xem thử Ảnh bìa
           </button>
         </div>
+
+        <StudioLoadingBanner
+          loading={renderingSnapshot}
+          title="Đang dựng khung 1080p thực tế..."
+          subtitle="Kết xuất qua bộ dựng FFmpeg"
+        />
 
         {/* Subtitle Size & Position Quick Control */}
         <div className="surface-box" style={{ padding: '9px 11px', marginBottom: 10 }}>

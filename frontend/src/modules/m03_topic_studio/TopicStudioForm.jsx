@@ -6,6 +6,7 @@ import {
   Image,
   KeyRound,
   Layers,
+  Loader2,
   Play,
   RotateCcw,
   Sparkles,
@@ -15,10 +16,13 @@ import {
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import {
+  FieldError,
   InlineBgmSelector,
   InlineVoiceSelector,
   ModeChoiceGrid,
   ParentGroupSelector,
+  scrollToFirstValidationError,
+  StudioLoadingBanner,
 } from '../m00_core_contracts/StudioWidgets';
 
 const TOPIC_DRAFT_KEY = 'chaos_draft_topic_v1';
@@ -112,6 +116,21 @@ export default function TopicStudioForm({
     savedDraft.tone || 'Mở đầu cuốn hút trong 3 giây đầu, giọng kể tự nhiên sâu sắc'
   );
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
 
   // Auto-save form draft to localStorage so F5 / reload never loses user input
   useEffect(() => {
@@ -160,19 +179,39 @@ export default function TopicStudioForm({
   };
 
   const handleAnalyzeBrief = async () => {
-    if ((topicTitle.trim() + shortBrief.trim()).length < 3) {
-      notify('Vui lòng nhập tiêu đề hoặc vài từ mô tả ngắn trước khi bấm Phân tích.');
+    const cleanTitle = topicTitle.trim();
+    const cleanBrief = shortBrief.trim();
+    const nextErrs = {};
+
+    if ((cleanTitle + cleanBrief).length < 5) {
+      nextErrs.topicTitle =
+        'Vui lòng nhập tiêu đề hoặc ít nhất 5 ký tự mô tả ngắn trước khi bấm Phân tích AI.';
+    } else if (cleanTitle.length > 180) {
+      nextErrs.topicTitle = 'Tiêu đề quá dài (tối đa 180 ký tự).';
+    }
+
+    const partsNum = Number(partCount);
+    if (!Number.isInteger(partsNum) || partsNum < 1 || partsNum > 10) {
+      nextErrs.partCount = 'Số tập chia liên tiếp phải là số nguyên từ 1 đến 10 tập.';
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    setErrors({});
     setAnalyzing(true);
     try {
-      const origTitle = topicTitle.trim();
+      const origTitle = cleanTitle;
       const res = await studioApi.expandShortBrief({
         mode: 'TOPIC_VIDEO',
         raw_title: origTitle,
-        short_brief: shortBrief.trim(),
-        target_duration_sec: Number(durationSec),
-        part_count: Number(partCount),
+        short_brief: cleanBrief,
+        target_duration_sec: Math.min(160, Math.max(30, Number(durationSec) || 75)),
+        part_count: partsNum,
       });
 
       if (origTitle && origTitle !== res.refined_title) {
@@ -213,20 +252,37 @@ export default function TopicStudioForm({
 
   const handleStart = async (autoOneClick) => {
     const effTitle = topicTitle.trim() || shortBrief.trim().slice(0, 90);
+    const partsNum = Number(partCount);
+    const nextErrs = {};
+
     if (effTitle.length < 3) {
-      notify('Vui lòng nhập tiêu đề hoặc mô tả ngắn video (ít nhất 3 ký tự).');
+      nextErrs.topicTitle = 'Vui lòng nhập tiêu đề hoặc mô tả ngắn video (tối thiểu 3 ký tự).';
+    } else if (effTitle.length > 180) {
+      nextErrs.topicTitle = 'Tiêu đề video không được vượt quá 180 ký tự.';
+    }
+    if (!Number.isInteger(partsNum) || partsNum < 1 || partsNum > 10) {
+      nextErrs.partCount = 'Số tập muốn chia phải là số nguyên từ 1 đến 10 tập.';
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    setErrors({});
     const effPoints = keyPoints.trim() || shortBrief.trim();
+    const safeDur = Math.min(160, Math.max(30, Number(durationSec) || 75));
     setSubmitting(true);
     try {
       const res = await studioApi.startTopicProject({
         topic_title: effTitle,
         key_points: effPoints,
         visual_mode: visualMode,
-        target_duration_sec: Number(durationSec),
-        part_count: Number(partCount),
-        narrative_tone: tone,
+        target_duration_sec: safeDur,
+        part_count: partsNum,
+        narrative_tone: tone.trim() || 'Giọng kể tự nhiên cuốn hút',
         voice_profile_id: voiceId,
         voice_speed_global: Number(voiceSpeed),
         voice_pitch_global: Number(voicePitch),
@@ -346,11 +402,15 @@ export default function TopicStudioForm({
             )}
           </div>
           <input
-            className="input"
+            className={`input ${errors.topicTitle ? 'input-error' : ''}`}
             placeholder="VD: 4 cấp độ chơi đàn Guitar — Bạn đang ở đâu? (hoặc gõ vắn tắt chủ đề)"
             value={topicTitle}
-            onChange={(e) => setTopicTitle(e.target.value)}
+            onChange={(e) => {
+              setTopicTitle(e.target.value);
+              clearError('topicTitle');
+            }}
           />
+          <FieldError message={errors.topicTitle} />
         </div>
 
         <div className="form-group">
@@ -362,7 +422,10 @@ export default function TopicStudioForm({
             style={{ minHeight: 74 }}
             placeholder="VD: Làm sao biết mình đang ở cấp độ nào khi tập Guitar, từ lúc mới bấm hợp âm bị rè cho tới lúc tự cảm âm đệm hát..."
             value={shortBrief}
-            onChange={(e) => setShortBrief(e.target.value)}
+            onChange={(e) => {
+              setShortBrief(e.target.value);
+              clearError('topicTitle');
+            }}
           />
         </div>
 
@@ -394,15 +457,28 @@ export default function TopicStudioForm({
             disabled={analyzing || submitting}
             onClick={handleAnalyzeBrief}
           >
-            <Wand2 size={16} />{' '}
+            {analyzing ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}{' '}
             {analyzing ? 'Đang gọi API phân tích chi tiết...' : 'Phân tích & Triển khai chi tiết (AI)'}
           </button>
         </div>
 
+        <StudioLoadingBanner
+          loading={analyzing}
+          showSkeleton={!aiAnalysis}
+          title="Đang gọi API AI phân tích chủ đề & viết dàn ý kịch bản chi tiết..."
+          subtitle="Hệ thống đang tối ưu tiêu đề, câu Hook 3 giây đầu và đề xuất giọng đọc phù hợp nhất"
+          steps={[
+            'Phân tích ý tưởng gốc & tâm lý người xem',
+            'Triển khai dàn ý từng phân cảnh & mô tả hình ảnh',
+            'Chọn giọng đọc & nhạc nền tối ưu',
+          ]}
+          stepIntervalMs={2400}
+        />
+
         {/* AI EXPANSION RESULT SUMMARY & 1-CLICK NEXT RUN */}
         {aiAnalysis && (
           <div
-            className="surface-box"
+            className={`surface-box ${analyzing ? 'is-reloading-dim' : 'fade-slide-in'}`}
             style={{
               marginBottom: 14,
               borderColor: 'rgba(16, 185, 129, 0.45)',
@@ -570,15 +646,25 @@ export default function TopicStudioForm({
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Số tập muốn chia liên tiếp</label>
+            <label className="form-label">Số tập muốn chia liên tiếp (1 – 10 tập)</label>
             <input
               type="number"
-              className="input"
+              className={`input ${errors.partCount ? 'input-error' : ''}`}
               min={1}
               max={10}
               value={partCount}
-              onChange={(e) => setPartCount(e.target.value)}
+              onChange={(e) => {
+                setPartCount(e.target.value);
+                clearError('partCount');
+              }}
+              onBlur={() => {
+                const n = Number(partCount);
+                if (!Number.isFinite(n) || n < 1) setPartCount(1);
+                else if (n > 10) setPartCount(10);
+                else setPartCount(Math.round(n));
+              }}
             />
+            <FieldError message={errors.partCount} />
           </div>
         </div>
 
@@ -601,6 +687,17 @@ export default function TopicStudioForm({
           </div>
         </div>
       </div>
+
+      <StudioLoadingBanner
+        loading={submitting}
+        title="Đang khởi tạo dự án Video Chủ Đề..."
+        subtitle="Hệ thống đang chuẩn bị kịch bản chi tiết & tài nguyên hình ảnh cho từng câu dẫn"
+        steps={[
+          'Kiểm tra cấu hình kịch bản & giọng đọc',
+          'Đưa dự án vào hàng đợi sản xuất tự động',
+        ]}
+        stepIntervalMs={1800}
+      />
 
       <div className="sticky-action-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -625,7 +722,8 @@ export default function TopicStudioForm({
             disabled={submitting || analyzing}
             onClick={() => handleStart(false)}
           >
-            <Edit3 size={15} /> Xem &amp; sửa kịch bản trước
+            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
+            Xem &amp; sửa kịch bản trước
           </button>
           <button
             className="btn btn-primary"
@@ -633,7 +731,8 @@ export default function TopicStudioForm({
             disabled={submitting || analyzing}
             onClick={() => handleStart(true)}
           >
-            <Play size={16} /> Bắt đầu tạo video tự động
+            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
+            {submitting ? 'Đang khởi tạo...' : 'Bắt đầu tạo video tự động'}
           </button>
         </div>
       </div>

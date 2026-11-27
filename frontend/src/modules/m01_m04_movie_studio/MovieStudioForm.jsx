@@ -5,6 +5,7 @@ import {
   Film,
   Languages,
   Link2,
+  Loader2,
   Mic,
   Play,
   Search,
@@ -14,11 +15,16 @@ import {
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import {
+  FieldError,
+  hasAllowedExtension,
   InlineBgmSelector,
   InlineVoiceSelector,
+  isValidHttpUrl,
   MediaDropzone,
   ModeChoiceGrid,
   ParentGroupSelector,
+  scrollToFirstValidationError,
+  StudioLoadingBanner,
 } from '../m00_core_contracts/StudioWidgets';
 
 const MOVIE_DRAFT_KEY = 'chaos_draft_movie_v1';
@@ -107,6 +113,39 @@ export default function MovieStudioForm({
 
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
+
+  const validateCutDurationPair = (rawMin, rawMax) => {
+    const a = Number(rawMin);
+    const b = Number(rawMax);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return 'Khoảng thời lượng mỗi phần phải là số hợp lệ.';
+    }
+    if (a < 20 || a > 170) {
+      return 'Thời lượng tối thiểu mỗi phần phải nằm trong khoảng 20 – 170 giây.';
+    }
+    if (b < 30 || b > 180) {
+      return 'Thời lượng tối đa mỗi phần phải nằm trong khoảng 30 – 180 giây.';
+    }
+    if (b < a + 5) {
+      return 'Thời lượng tối đa phải lớn hơn thời lượng tối thiểu ít nhất 5 giây.';
+    }
+    return '';
+  };
 
   useEffect(() => {
     try {
@@ -143,9 +182,18 @@ export default function MovieStudioForm({
     duckingRatio,
   ]);
 
-  const handleProbeUrl = async (rawVal) => {
+  const handleProbeUrl = async (rawVal, silentInvalid = false) => {
     const candidate = (rawVal ?? pathOrUrl).trim();
-    if (!candidate.includes('http://') && !candidate.includes('https://')) return;
+    if (!isValidHttpUrl(candidate)) {
+      if (!silentInvalid) {
+        const msg = 'Vui lòng dán đường dẫn video trực tuyến hợp lệ (bắt đầu bằng https://...).';
+        setErrors((prev) => ({ ...prev, pathOrUrl: msg }));
+        scrollToFirstValidationError(rootRef);
+        notify(msg);
+      }
+      return;
+    }
+    clearError('pathOrUrl', 'videoUpload');
     setSourceType('VIDEO_URL');
     setLocalVideoPreviewUrl('');
     setProbingUrl(true);
@@ -171,6 +219,25 @@ export default function MovieStudioForm({
   const handleFilesSelected = async (fileList) => {
     const file = fileList?.[0];
     if (!file) return;
+    if (
+      !hasAllowedExtension(file.name, [
+        '.mp4',
+        '.mkv',
+        '.mov',
+        '.webm',
+        '.avi',
+        '.flv',
+        '.ts',
+        '.m4v',
+      ])
+    ) {
+      const msg =
+        'Định dạng tệp chưa hỗ trợ — vui lòng chọn tệp video (.mp4, .mkv, .mov, .webm, .avi).';
+      setErrors((prev) => ({ ...prev, videoUpload: msg }));
+      notify(msg);
+      return;
+    }
+    clearError('pathOrUrl', 'videoUpload');
     setUploading(true);
     try {
       const res = await studioApi.uploadStudioFile(file, 'video');
@@ -192,20 +259,50 @@ export default function MovieStudioForm({
   const handleSrtUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!hasAllowedExtension(file.name, ['.srt', '.vtt'])) {
+      notify('Vui lòng chọn tệp phụ đề rời đúng chuẩn (.srt hoặc .vtt).');
+      e.target.value = '';
+      return;
+    }
     try {
       const res = await studioApi.uploadStudioFile(file, 'srt');
       setExternalSrtPath(res.local_path);
       notify(`Đã đính kèm phụ đề: ${file.name}`);
     } catch (err) {
       notify(`Lỗi tải phụ đề: ${err.message}`);
+    } finally {
+      e.target.value = '';
     }
   };
 
   const submitMovie = async (autoOneClick) => {
-    if (!pathOrUrl.trim()) {
-      notify('Vui lòng dán liên kết video hoặc chọn tệp video từ thiết bị.');
+    const cleanSource = pathOrUrl.trim();
+    const nextErrs = {};
+
+    if (!cleanSource) {
+      nextErrs.pathOrUrl = 'Vui lòng dán liên kết video trực tuyến hoặc tải tệp video từ thiết bị.';
+    } else if (sourceType === 'VIDEO_URL' && !isValidHttpUrl(cleanSource)) {
+      nextErrs.pathOrUrl =
+        'Liên kết video chưa hợp lệ (cần bắt đầu bằng https://... hoặc tải tệp video ở khung bên dưới).';
+    }
+
+    if (projectName.trim().length > 150) {
+      nextErrs.projectName = 'Tiêu đề hiển thị tối đa 150 ký tự.';
+    }
+
+    const cutErr = validateCutDurationPair(minSec, maxSec);
+    if (cutErr) {
+      nextErrs.cutRange = cutErr;
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    setErrors({});
     const cleanTitle = projectName.trim() || 'Tập Phim Mới';
     const isDubbed =
       outputAudioSubMode === 'VIET_DUB_AND_SUB' || outputAudioSubMode === 'VIET_DUB_NO_SUB';
@@ -221,13 +318,13 @@ export default function MovieStudioForm({
       const started = await studioApi.startMovieProject({
         project_name: cleanTitle,
         source_type: sourceType,
-        path_or_url: pathOrUrl.trim(),
+        path_or_url: cleanSource,
         external_srt_path: externalSrtPath || null,
         source_language: sourceLang,
         cut_config: {
           cut_strategy: cutStrategy,
-          min_clip_sec: Number(minSec),
-          max_clip_sec: Number(maxSec),
+          min_clip_sec: Math.round(Number(minSec)),
+          max_clip_sec: Math.round(Number(maxSec)),
           max_highlights: 5,
           drama_genre: 'Phim bộ hiện đại',
           series_title: cleanTitle,
@@ -309,12 +406,13 @@ export default function MovieStudioForm({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
               <input
-                className="input"
+                className={`input ${errors.pathOrUrl ? 'input-error' : ''}`}
                 placeholder="Dán liên kết video (https://...) vào đây..."
                 value={pathOrUrl}
                 onChange={(e) => {
                   const v = e.target.value;
                   setPathOrUrl(v);
+                  clearError('pathOrUrl');
                   if (v.includes('http://') || v.includes('https://')) {
                     setSourceType('VIDEO_URL');
                   }
@@ -322,7 +420,7 @@ export default function MovieStudioForm({
                 onPaste={(e) => {
                   const pasted = e.clipboardData.getData('text');
                   if (pasted && (pasted.includes('http://') || pasted.includes('https://'))) {
-                    setTimeout(() => handleProbeUrl(pasted), 80);
+                    setTimeout(() => handleProbeUrl(pasted, true), 80);
                   }
                 }}
               />
@@ -331,15 +429,25 @@ export default function MovieStudioForm({
               type="button"
               className="btn btn-secondary"
               disabled={probingUrl}
-              onClick={() => handleProbeUrl(pathOrUrl)}
+              onClick={() => handleProbeUrl(pathOrUrl, false)}
             >
-              <Search size={15} /> {probingUrl ? 'Đang kiểm tra...' : 'Kiểm tra link'}
+              {probingUrl ? <Loader2 size={15} className="spin" /> : <Search size={15} />}{' '}
+              {probingUrl ? 'Đang kiểm tra...' : 'Kiểm tra link'}
             </button>
           </div>
+          <FieldError message={errors.pathOrUrl} />
+
+          <StudioLoadingBanner
+            loading={probingUrl}
+            title="Đang kết nối & kiểm tra siêu dữ liệu liên kết video..."
+            subtitle="Hệ thống đang đọc tiêu đề, thời lượng và ảnh thu nhỏ của video gốc"
+            steps={['Phân giải đường dẫn video', 'Đọc thông tin luồng phát']}
+            stepIntervalMs={2200}
+          />
 
           {probedInfo && (
             <div
-              className="surface-box"
+              className="surface-box fade-slide-in"
               style={{
                 marginTop: 9,
                 borderColor: 'rgba(16, 185, 129, 0.45)',
@@ -361,10 +469,12 @@ export default function MovieStudioForm({
         <MediaDropzone
           accept="video/*"
           disabled={uploading}
+          loading={uploading}
+          error={errors.videoUpload}
           icon={Upload}
           title={
             uploading
-              ? 'Đang tải tệp video lên...'
+              ? 'Đang tải tệp video gốc lên máy chủ...'
               : 'Hoặc kéo thả tệp video (.mp4, .mkv, .mov) trực tiếp từ máy tính / điện thoại'
           }
           hint="Tự động kiểm tra khung hình & tách luồng âm thanh stereo gốc"
@@ -372,7 +482,7 @@ export default function MovieStudioForm({
         />
 
         {localVideoPreviewUrl && (
-          <div style={{ marginTop: 12 }}>
+          <div className="fade-slide-in" style={{ marginTop: 12 }}>
             <video
               controls
               src={localVideoPreviewUrl}
@@ -390,11 +500,15 @@ export default function MovieStudioForm({
         <div className="form-group" style={{ marginTop: 13 }}>
           <label className="form-label">Tiêu đề hiển thị trên đầu các phần video</label>
           <input
-            className="input"
+            className={`input ${errors.projectName ? 'input-error' : ''}`}
             placeholder="Tự động lấy theo tên video hoặc tự nhập (VD: Tổng Tài Trở Lại)"
             value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
+            onChange={(e) => {
+              setProjectName(e.target.value);
+              clearError('projectName');
+            }}
           />
+          <FieldError message={errors.projectName} />
         </div>
 
         <ParentGroupSelector
@@ -491,24 +605,45 @@ export default function MovieStudioForm({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="number"
-                className="input"
+                className={`input ${errors.cutRange ? 'input-error' : ''}`}
                 min={20}
                 max={170}
                 value={minSec}
-                onChange={(e) => setMinSec(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMinSec(v);
+                  const errMsg = validateCutDurationPair(v, maxSec);
+                  setErrors((prev) => {
+                    const copy = { ...prev };
+                    if (errMsg) copy.cutRange = errMsg;
+                    else delete copy.cutRange;
+                    return copy;
+                  });
+                }}
               />
               <span className="text-sub" style={{ fontWeight: 600 }}>
                 đến
               </span>
               <input
                 type="number"
-                className="input"
+                className={`input ${errors.cutRange ? 'input-error' : ''}`}
                 min={30}
                 max={180}
                 value={maxSec}
-                onChange={(e) => setMaxSec(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMaxSec(v);
+                  const errMsg = validateCutDurationPair(minSec, v);
+                  setErrors((prev) => {
+                    const copy = { ...prev };
+                    if (errMsg) copy.cutRange = errMsg;
+                    else delete copy.cutRange;
+                    return copy;
+                  });
+                }}
               />
             </div>
+            <FieldError message={errors.cutRange} />
           </div>
         </div>
 
@@ -575,6 +710,17 @@ export default function MovieStudioForm({
         </div>
       </div>
 
+      <StudioLoadingBanner
+        loading={submitting}
+        title="Đang khởi tạo dự án Cắt & Dịch Video Dài..."
+        subtitle="Hệ thống đang lên lịch tải video gốc, nhận diện lời thoại GPU Faster-Whisper & chia tập thông minh"
+        steps={[
+          'Xác thực nguồn video & cấu hình chia tập',
+          'Đưa vào tiến trình xử lý tự động trên GPU',
+        ]}
+        stepIntervalMs={1800}
+      />
+
       {/* STICKY ACTIONS */}
       <div className="sticky-action-bar">
         <span className="text-sub" style={{ fontSize: 12.2 }}>
@@ -584,18 +730,20 @@ export default function MovieStudioForm({
           <button
             className="btn btn-secondary"
             style={{ minHeight: 42 }}
-            disabled={submitting}
+            disabled={submitting || uploading || probingUrl}
             onClick={() => submitMovie(false)}
           >
-            <Edit3 size={15} /> Xem và chỉnh lời dịch trước khi xuất
+            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
+            Xem và chỉnh lời dịch trước khi xuất
           </button>
           <button
             className="btn btn-primary"
             style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
-            disabled={submitting}
+            disabled={submitting || uploading || probingUrl}
             onClick={() => submitMovie(true)}
           >
-            <Play size={16} /> Bắt đầu cắt &amp; thuyết minh tự động
+            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
+            {submitting ? 'Đang khởi tạo...' : 'Bắt đầu cắt & thuyết minh tự động'}
           </button>
         </div>
       </div>

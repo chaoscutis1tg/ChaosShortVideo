@@ -1,8 +1,26 @@
-import React, { useState } from 'react';
-import { Film, Headphones, Link2, Mic, Play, Plus, RotateCcw, Upload, Volume2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import {
+  Film,
+  Headphones,
+  Link2,
+  Loader2,
+  Mic,
+  Play,
+  Plus,
+  RotateCcw,
+  Upload,
+  Volume2,
+} from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import { stripLeadingEmoji } from '../m00_core_contracts/constants';
-import { MediaDropzone } from '../m00_core_contracts/StudioWidgets';
+import {
+  FieldError,
+  hasAllowedExtension,
+  isValidHttpUrl,
+  MediaDropzone,
+  scrollToFirstValidationError,
+  StudioLoadingBanner,
+} from '../m00_core_contracts/StudioWidgets';
 
 const SAMPLE_PRESETS = [
   {
@@ -80,6 +98,22 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
   const [cloneDialect, setCloneDialect] = useState('auto');
   const [cloneFile, setCloneFile] = useState(null);
   const [savingClone, setSavingClone] = useState(false);
+  const [errors, setErrors] = useState({});
+  const cloneCardRef = useRef(null);
+
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
 
   const matchesFilter = (v, tabId) => {
     if (tabId === 'ALL') return true;
@@ -115,17 +149,40 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
 
   const handleYoutubeCloneSubmit = async (e) => {
     e.preventDefault();
-    if (!ytUrl.trim() || !ytVoiceName.trim()) {
-      notify('Vui lòng dán link YouTube và đặt tên cho giọng thuyết minh mới.');
+    const cleanUrl = ytUrl.trim();
+    const cleanName = ytVoiceName.trim();
+    const startNum = Number(ytStartSec);
+    const durNum = Number(ytDurationSec);
+    const nextErrs = {};
+
+    if (!isValidHttpUrl(cleanUrl)) {
+      nextErrs.ytUrl =
+        'Vui lòng dán đường dẫn video YouTube hợp lệ (bắt đầu bằng https://www.youtube.com/... hoặc https://youtu.be/...).';
+    }
+    if (cleanName.length < 2 || cleanName.length > 80) {
+      nextErrs.ytVoiceName = 'Tên giọng đọc mới cần từ 2 đến 80 ký tự.';
+    }
+    if (!Number.isFinite(startNum) || startNum < 0 || startNum > 14400) {
+      nextErrs.ytTiming = 'Giây bắt đầu cắt mẫu phải nằm trong khoảng 0 – 14.400 giây.';
+    } else if (!Number.isFinite(durNum) || durNum < 6 || durNum > 22) {
+      nextErrs.ytTiming = 'Độ dài đoạn giọng mẫu cần từ 6 đến 22 giây để đạt độ chuẩn cao nhất.';
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(cloneCardRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    setErrors({});
     setCloningYoutube(true);
     try {
       const created = await studioApi.cloneVoiceFromYoutube({
-        youtube_url: ytUrl.trim(),
-        display_name: ytVoiceName.trim(),
-        start_sec: Number(ytStartSec) || 5,
-        duration_sec: Number(ytDurationSec) || 15,
+        youtube_url: cleanUrl,
+        display_name: cleanName,
+        start_sec: Math.round(startNum),
+        duration_sec: Math.round(durNum),
         category: ytCategory,
         dialect_hint: ytDialect,
         speed_rate: Number(ytSpeed) || 1.02,
@@ -149,10 +206,27 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
 
   const handleCreateClone = async (e) => {
     e.preventDefault();
-    if (!cloneName.trim() || !cloneFile) {
-      notify('Vui lòng đặt tên giọng và chọn tệp âm thanh mẫu (10–20 giây).');
+    const cleanName = cloneName.trim();
+    const nextErrs = {};
+    if (cleanName.length < 2 || cleanName.length > 80) {
+      nextErrs.cloneName = 'Vui lòng đặt tên gợi nhớ cho giọng đọc (2 – 80 ký tự).';
+    }
+    if (!cloneFile) {
+      nextErrs.cloneFile = 'Vui lòng chọn tệp ghi âm mẫu (.mp3, .wav, .m4a, .mp4) dài 6 – 22 giây.';
+    } else if (
+      !hasAllowedExtension(cloneFile.name, ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.mp4', '.mov'])
+    ) {
+      nextErrs.cloneFile = 'Định dạng tệp mẫu chưa hợp lệ (.mp3, .wav, .m4a, .flac, .mp4).';
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(cloneCardRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    setErrors({});
     setSavingClone(true);
     try {
       const fd = new FormData();
@@ -425,7 +499,12 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                       disabled={loadingPreviewId === v.profile_id}
                       onClick={() => handlePreview(v)}
                     >
-                      <Play size={13} /> {loadingPreviewId === v.profile_id ? 'Đang tạo...' : 'Nghe thử'}
+                      {loadingPreviewId === v.profile_id ? (
+                        <Loader2 size={13} className="spin" />
+                      ) : (
+                        <Play size={13} />
+                      )}{' '}
+                      {loadingPreviewId === v.profile_id ? 'Đang tạo...' : 'Nghe thử'}
                     </button>
                   </div>
                 </div>
@@ -436,7 +515,7 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
       </div>
 
       {/* VOICE CLONE STUDIO CARD (YOUTUBE URL + LOCAL UPLOAD) */}
-      <div className="card">
+      <div className="card" ref={cloneCardRef}>
         <div className="page-header">
           <div>
             <div className="page-title">
@@ -499,22 +578,30 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
 
               <div className="form-group">
                 <input
-                  className="input"
+                  className={`input ${errors.ytUrl ? 'input-error' : ''}`}
                   placeholder="VD: https://www.youtube.com/watch?v=3s-dbpC0PRc"
                   value={ytUrl}
-                  onChange={(e) => setYtUrl(e.target.value)}
+                  onChange={(e) => {
+                    setYtUrl(e.target.value);
+                    clearError('ytUrl');
+                  }}
                 />
+                <FieldError message={errors.ytUrl} />
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
                   <label className="form-label">Đặt tên cho giọng đọc mới</label>
                   <input
-                    className="input"
+                    className={`input ${errors.ytVoiceName ? 'input-error' : ''}`}
                     placeholder="VD: Nữ Thuyết Minh Chiếu Rạp USLT"
                     value={ytVoiceName}
-                    onChange={(e) => setYtVoiceName(e.target.value)}
+                    onChange={(e) => {
+                      setYtVoiceName(e.target.value);
+                      clearError('ytVoiceName');
+                    }}
                   />
+                  <FieldError message={errors.ytVoiceName} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Xếp vào nhóm sử dụng</label>
@@ -537,25 +624,32 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input
                       type="number"
-                      className="input"
+                      className={`input ${errors.ytTiming ? 'input-error' : ''}`}
                       min={0}
                       max={14000}
                       value={ytStartSec}
-                      onChange={(e) => setYtStartSec(e.target.value)}
+                      onChange={(e) => {
+                        setYtStartSec(e.target.value);
+                        clearError('ytTiming');
+                      }}
                     />
                     <span className="text-sub" style={{ whiteSpace: 'nowrap' }}>
                       Độ dài (giây):
                     </span>
                     <input
                       type="number"
-                      className="input"
+                      className={`input ${errors.ytTiming ? 'input-error' : ''}`}
                       style={{ width: 92 }}
                       min={6}
                       max={22}
                       value={ytDurationSec}
-                      onChange={(e) => setYtDurationSec(e.target.value)}
+                      onChange={(e) => {
+                        setYtDurationSec(e.target.value);
+                        clearError('ytTiming');
+                      }}
                     />
                   </div>
+                  <FieldError message={errors.ytTiming} />
                 </div>
 
                 <div className="form-group">
@@ -598,8 +692,20 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
               </div>
             </div>
 
+            <StudioLoadingBanner
+              loading={cloningYoutube}
+              title="Đang tải đoạn mẫu YouTube, khử nhiễu nền & nhận diện giọng đọc trên GPU..."
+              subtitle="Quá trình thường mất 10 – 20 giây để tạo hồ sơ âm sắc chuẩn phòng thu"
+              steps={[
+                'Tải & cắt đoạn âm thanh từ YouTube',
+                'Khử nhiễu nền & chuẩn hóa âm lượng',
+                'Nhận diện lời thoại bằng GPU Faster-Whisper',
+              ]}
+              stepIntervalMs={3200}
+            />
+
             <button type="submit" className="btn btn-primary" disabled={cloningYoutube}>
-              <Plus size={16} />{' '}
+              {cloningYoutube ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}{' '}
               {cloningYoutube
                 ? 'Đang tải đoạn mẫu YouTube, lọc nhiễu & phân tích giọng trên GPU...'
                 : 'Tự động tách mẫu YouTube & Lưu vào kho giọng'}
@@ -612,11 +718,15 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                 <div className="form-group">
                   <label className="form-label">Đặt tên gợi nhớ cho giọng đọc</label>
                   <input
-                    className="input"
+                    className={`input ${errors.cloneName ? 'input-error' : ''}`}
                     placeholder="VD: Giọng Chủ Cửa Hàng Tư Vấn Đàn"
                     value={cloneName}
-                    onChange={(e) => setCloneName(e.target.value)}
+                    onChange={(e) => {
+                      setCloneName(e.target.value);
+                      clearError('cloneName');
+                    }}
                   />
+                  <FieldError message={errors.cloneName} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Xếp vào nhóm & vùng miền</label>
@@ -664,13 +774,18 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                 <MediaDropzone
                   accept="audio/*,video/*"
                   icon={Upload}
+                  loading={savingClone}
+                  error={errors.cloneFile}
                   title={
                     cloneFile
                       ? `Đã chọn tệp mẫu: ${cloneFile.name}`
                       : 'Kéo thả tệp ghi âm mẫu 10–20 giây (.mp3, .wav, .m4a, .mp4) hoặc bấm để chọn'
                   }
                   hint="Hệ thống tự khử nhiễu phòng thu và nhận diện lời thoại bằng GPU nếu bạn để trống câu mẫu"
-                  onFilesSelected={(files) => setCloneFile(files?.[0] || null)}
+                  onFilesSelected={(files) => {
+                    setCloneFile(files?.[0] || null);
+                    clearError('cloneFile');
+                  }}
                 />
               </div>
 
@@ -687,8 +802,15 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
               </div>
             </div>
 
+            <StudioLoadingBanner
+              loading={savingClone}
+              title="Đang xử lý âm sắc & phân tích lời thoại tệp ghi âm mẫu..."
+              steps={['Khử nhiễu & chuẩn hóa tệp mẫu', 'Nhận diện lời thoại & lưu vào kho giọng']}
+              stepIntervalMs={2500}
+            />
+
             <button type="submit" className="btn btn-primary" disabled={savingClone}>
-              <Plus size={16} />{' '}
+              {savingClone ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}{' '}
               {savingClone ? 'Đang xử lý & phân tích mẫu giọng...' : 'Lưu giọng đọc mới vào thư viện'}
             </button>
           </form>

@@ -101,6 +101,7 @@ export default function App() {
 
   const prevStatesRef = useRef({});
   const hasRunningRef = useRef(false);
+  const toastTimerRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -108,8 +109,9 @@ export default function App() {
   }, [theme]);
 
   const notify = (msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3600);
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), 4000);
   };
 
   const setTabPreviewFrame = (tabKey, url) => {
@@ -499,7 +501,17 @@ export default function App() {
                   marginBottom: 4,
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand-text)' }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--brand-text)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {pinnedJob.state !== 'PAUSED' && <span className="pulse-dot" />}
                   {pinnedJob.state === 'PAUSED' ? 'Đang tạm dừng' : 'Đang xử lý video'}
                 </span>
                 {queuedCount > 0 && (
@@ -878,7 +890,21 @@ export default function App() {
         />
       )}
 
-      {toastMsg && <div className="toast">{toastMsg}</div>}
+      {toastMsg && (
+        <div
+          className={`toast ${
+            /^(lỗi|không thể|vui lòng|bắt buộc|có \d+|định dạng|thời lượng|tối đa|khi cấu hình)/i.test(
+              toastMsg
+            )
+              ? 'toast-error'
+              : /^đã /i.test(toastMsg)
+              ? 'toast-ok'
+              : ''
+          }`}
+        >
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

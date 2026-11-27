@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Archive, CheckCircle2, Download, KeyRound, Save, Upload, X } from 'lucide-react';
+import { Archive, CheckCircle2, Download, KeyRound, Loader2, Save, Upload, X } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
+import { FieldError, hasAllowedExtension } from '../m00_core_contracts/StudioWidgets';
 
 export default function SettingsModal({
   systemStatus,
@@ -18,9 +19,38 @@ export default function SettingsModal({
   const [vbeeAppId, setVbeeAppId] = useState('');
   const [saving, setSaving] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
+  const [formErr, setFormErr] = useState('');
 
   const handleSave = async (e) => {
     e.preventDefault();
+    setFormErr('');
+    const entries = [
+      ['Gemini API Key', geminiKey],
+      ['Pexels API Key', pexelsKey],
+      ['Pixabay API Key', pixabayKey],
+      ['ElevenLabs API Key', elevenKey],
+      ['FPT.AI Key', fptKey],
+      ['Vbee API Key', vbeeKey],
+    ];
+    for (const [label, rawVal] of entries) {
+      const clean = rawVal.trim();
+      if (clean && (clean.length < 8 || /\s/.test(clean))) {
+        const msg = `${label} không hợp lệ (cần tối thiểu 8 ký tự và không chứa khoảng trắng).`;
+        setFormErr(msg);
+        notify(msg);
+        return;
+      }
+    }
+    if ((vbeeKey.trim() && !vbeeAppId.trim()) || (!vbeeKey.trim() && vbeeAppId.trim())) {
+      const keys = systemStatus?.keys_configured || {};
+      if (!keys.vbee) {
+        const msg = 'Khi cấu hình Vbee TTS, vui lòng điền đồng thời cả Vbee API Key và Vbee App ID.';
+        setFormErr(msg);
+        notify(msg);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const payload = {};
@@ -46,6 +76,11 @@ export default function SettingsModal({
   const handleImportBackup = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!hasAllowedExtension(file.name, ['.zip'])) {
+      notify('Vui lòng chọn đúng tệp gói sao lưu định dạng .ZIP.');
+      e.target.value = '';
+      return;
+    }
     setRestoringBackup(true);
     try {
       const res = await studioApi.importStoreBackupZip(file);
@@ -239,7 +274,7 @@ export default function SettingsModal({
               <Download size={14} /> Xuất gói Sao lưu (.ZIP)
             </a>
             <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-              <Upload size={14} />{' '}
+              {restoringBackup ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}{' '}
               {restoringBackup ? 'Đang khôi phục...' : 'Khôi phục từ tệp Sao lưu (.ZIP)'}
               <input
                 type="file"
@@ -252,12 +287,15 @@ export default function SettingsModal({
           </div>
         </div>
 
-        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+        <FieldError message={formErr} />
+
+        <div className="btn-row" style={{ justifyContent: 'flex-end', marginTop: formErr ? 10 : 0 }}>
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Đóng
           </button>
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            <Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu khóa API'}
+            {saving ? <Loader2 size={15} className="spin" /> : <Save size={15} />}{' '}
+            {saving ? 'Đang lưu...' : 'Lưu khóa API'}
           </button>
         </div>
       </form>

@@ -35,10 +35,16 @@ import {
 import { studioApi } from '../m00_core_contracts/apiClient';
 import { formatSecondsVi, stripLeadingEmoji } from '../m00_core_contracts/constants';
 import {
+  FieldError,
+  hasAllowedExtension,
   InlineBgmSelector,
+  isValidHttpUrl,
+  isVideoOnlyPlatformUrl,
   MediaDropzone,
   ModeChoiceGrid,
   ParentGroupSelector,
+  scrollToFirstValidationError,
+  StudioLoadingBanner,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
@@ -208,6 +214,21 @@ export default function ThreadsStudioForm({
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.06);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
 
   const femaleVoiceOptions = voices.filter((v) => {
     const label = `${v.display_name} ${v.dsp_preset || ''}`.toLowerCase();
@@ -323,16 +344,54 @@ export default function ThreadsStudioForm({
   };
 
   const handleExtractThreads = async () => {
-    if ((postUrl.trim() + rawPastedText.trim()).length < 4) {
-      notify('Vui lòng dán link bài viết Threads/Reddit hoặc dán văn bản vào ô bên dưới.');
+    const cleanUrl = postUrl.trim();
+    const cleanRaw = rawPastedText.trim();
+    const nextErrs = {};
+
+    if (!cleanUrl && cleanRaw.length < 10) {
+      if (!cleanRaw) {
+        nextErrs.postUrl =
+          'Vui lòng dán link bài viết Threads / Reddit công khai, hoặc nhập văn bản dự phòng ở ô bên dưới.';
+      } else {
+        nextErrs.rawPastedText =
+          'Văn bản dự phòng quá ngắn (cần tối thiểu 10 ký tự gồm nội dung bài viết hoặc các bình luận).';
+      }
+    } else if (cleanUrl) {
+      if (!isValidHttpUrl(cleanUrl)) {
+        nextErrs.postUrl =
+          'Đường dẫn chưa hợp lệ — vui lòng dán link đầy đủ bắt đầu bằng https://www.threads.com/... hoặc https://www.reddit.com/...';
+      } else if (isVideoOnlyPlatformUrl(cleanUrl)) {
+        nextErrs.postUrl =
+          'Đây là link Video (YouTube/TikTok). Nếu muốn tải làm Video Nền hãy dán xuống Bước 2; ô này dành cho link bài viết Threads / Reddit.';
+      }
+    }
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrs }));
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
+
+    const safeMax = Math.min(15, Math.max(2, Math.round(Number(maxComments) || 6)));
+    setMaxComments(safeMax);
+    setErrors((prev) => {
+      const copy = { ...prev };
+      delete copy.postUrl;
+      delete copy.rawPastedText;
+      delete copy.topicTitle;
+      delete copy.opDisplay;
+      delete copy.opSpoken;
+      delete copy.comments;
+      return copy;
+    });
+
     setExtracting(true);
     try {
       const res = await studioApi.extractThreadsPost({
-        post_url: postUrl.trim(),
-        raw_pasted_text: rawPastedText.trim(),
-        max_comments: Number(maxComments),
+        post_url: cleanUrl,
+        raw_pasted_text: cleanRaw,
+        max_comments: safeMax,
         filter_vibe: filterVibe,
         expand_slang_and_translate: expandSlang,
         anonymize_handles: Boolean(layoutConfig.threads_anonymize_handles),
@@ -386,6 +445,14 @@ export default function ThreadsStudioForm({
 
   const handleAttachCardImage = async (targetKey, fileObj) => {
     if (!fileObj) return;
+    if (!hasAllowedExtension(fileObj.name, ['.jpg', '.jpeg', '.png', '.webp', '.gif'])) {
+      notify('Vui lòng chọn tệp hình ảnh hợp lệ (.jpg, .png, .webp).');
+      return;
+    }
+    if (fileObj.size > 25 * 1024 * 1024) {
+      notify('Ảnh đính kèm quá lớn (tối đa 25MB).');
+      return;
+    }
     setUploadingCardImgKey(targetKey);
     try {
       const up = await studioApi.uploadStudioFile(fileObj, 'threads_media');
@@ -415,6 +482,7 @@ export default function ThreadsStudioForm({
   };
 
   const patchComment = (idx, patchObj) => {
+    clearError('comments');
     setBundle((prev) => {
       if (!prev) return prev;
       return {
@@ -494,6 +562,15 @@ export default function ThreadsStudioForm({
   const handleUploadBgFiles = async (files) => {
     const f = files?.[0];
     if (!f) return;
+    if (!hasAllowedExtension(f.name, ['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v'])) {
+      setErrors((prev) => ({
+        ...prev,
+        bgVideo: 'Định dạng chưa hỗ trợ — vui lòng chọn tệp video (.mp4, .mov, .webm, .mkv).',
+      }));
+      notify('Vui lòng chọn tệp video hợp lệ (.mp4, .mov, .webm, .mkv).');
+      return;
+    }
+    clearError('bgVideo', 'bgUrl');
     setUploadingBg(true);
     try {
       if (saveUploadedToLib) {
@@ -522,10 +599,14 @@ export default function ThreadsStudioForm({
 
   const handleDownloadBgFromUrl = async () => {
     const clean = bgUrlInput.trim();
-    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      notify('Vui lòng dán link video YouTube / TikTok hợp lệ (bắt đầu bằng https://...).');
+    if (!isValidHttpUrl(clean)) {
+      const msg = 'Vui lòng dán link video YouTube / TikTok hợp lệ (bắt đầu bằng https://...).';
+      setErrors((prev) => ({ ...prev, bgUrl: msg }));
+      scrollToFirstValidationError(rootRef);
+      notify(msg);
       return;
     }
+    clearError('bgUrl', 'bgVideo');
     setSavingBgUrl(true);
     try {
       const saved = await studioApi.saveBgVideoFromUrl({
@@ -563,31 +644,73 @@ export default function ThreadsStudioForm({
   };
 
   const handleStartThreadsVideo = async (autoOneClick) => {
-    if (!bundle || !bundle.op_display_text?.trim()) {
-      notify('Vui lòng bấm "Hút bài viết & Lọc bình luận tiêu biểu" trước khi xuất video.');
-      return;
+    const nextErrs = {};
+    if (!bundle) {
+      nextErrs.postUrl =
+        'Vui lòng bấm nút "Hút bài viết, Ảnh & Lọc bình luận" ở Bước 1A để tạo danh sách thẻ trước khi xuất video.';
+    } else {
+      const cleanTopic = (bundle.topic_title || '').trim();
+      if (cleanTopic.length < 3 || cleanTopic.length > 160) {
+        nextErrs.topicTitle = 'Tiêu đề SEO của dự án cần từ 3 đến 160 ký tự.';
+      }
+      if ((bundle.op_display_text || '').trim().length < 2) {
+        nextErrs.opDisplay = 'Chữ hiển thị trên Thẻ Bài Gốc (OP) cần ít nhất 2 ký tự.';
+      }
+      if ((bundle.op_spoken_vi_text || '').trim().length < 2) {
+        nextErrs.opSpoken = 'Lời đọc tiếng Việt của Bài Gốc (OP) cần ít nhất 2 ký tự.';
+      }
+      const selectedComments = (bundle.comments || []).filter((c) => c.selected);
+      if (selectedComments.length === 0) {
+        nextErrs.comments = 'Vui lòng tích chọn ít nhất 1 thẻ bình luận để đưa vào video.';
+      } else if (
+        selectedComments.some(
+          (c) => !(c.display_text || '').trim() || !(c.spoken_vi_text || '').trim()
+        )
+      ) {
+        nextErrs.comments =
+          'Có bình luận đang được tích chọn nhưng bị để trống chữ hiển thị hoặc lời đọc tiếng Việt.';
+      }
     }
+
     const effBg = selectedBgPath.trim() || bgUrlInput.trim();
     if (!effBg) {
-      notify('Vui lòng chọn hoặc tải lên 1 Video Nền ở Bước 2.');
-      return;
+      nextErrs.bgVideo =
+        'Bắt buộc chọn 1 Video Nền từ Kho, tải tệp video lên, hoặc dán link video nền ở Bước 2.';
+    } else if (!selectedBgPath.trim() && !isValidHttpUrl(bgUrlInput)) {
+      nextErrs.bgUrl = 'Link video nền ở Bước 2 chưa hợp lệ (cần bắt đầu bằng https://...).';
     }
-    const activeCount = (bundle.comments || []).filter((c) => c.selected).length;
-    if (activeCount === 0) {
-      notify('Vui lòng tích chọn ít nhất 1 bình luận để hiển thị trong video.');
+
+    if (Object.keys(nextErrs).length > 0) {
+      setErrors(nextErrs);
+      scrollToFirstValidationError(rootRef);
+      notify(Object.values(nextErrs)[0]);
       return;
     }
 
+    const safeSpeed = Math.min(1.45, Math.max(1.0, Number(voiceSpeed) || 1.25));
+    const normalizedBundle = {
+      ...bundle,
+      topic_title: (bundle.topic_title || '').trim(),
+      op_author_handle: (bundle.op_author_handle || '@chuthot').trim() || '@chuthot',
+      op_display_text: (bundle.op_display_text || '').trim(),
+      op_spoken_vi_text: (bundle.op_spoken_vi_text || '').trim(),
+      op_voice_profile_id: bundle.op_voice_profile_id || hostVoiceId,
+      male_voice_id: maleVoiceId,
+      female_voice_id: femaleVoiceId,
+      comments: (bundle.comments || []).map((c, idx) => ({
+        ...c,
+        author_handle: (c.author_handle || `@thanhvien_${idx + 1}`).trim(),
+        display_text: (c.display_text || '').trim(),
+        spoken_vi_text: (c.spoken_vi_text || c.display_text || '').trim(),
+      })),
+    };
+
+    setErrors({});
     setSubmitting(true);
     try {
       const isRemote = effBg.startsWith('http://') || effBg.startsWith('https://');
       const res = await studioApi.startThreadsProject({
-        bundle: {
-          ...bundle,
-          op_voice_profile_id: bundle.op_voice_profile_id || hostVoiceId,
-          male_voice_id: maleVoiceId,
-          female_voice_id: femaleVoiceId,
-        },
+        bundle: normalizedBundle,
         bg_source_type: isRemote ? 'VIDEO_URL' : 'LOCAL_FILE',
         bg_path_or_url: effBg,
         save_bg_to_library: false,
@@ -596,8 +719,8 @@ export default function ThreadsStudioForm({
         bg_audio_volume: Number(bgAudioVolume),
         append_cta_comment: appendCtaComment.trim(),
         enable_card_pop_sfx: enablePopSfx,
-        voice_profile_id: bundle.op_voice_profile_id || hostVoiceId,
-        voice_speed_global: Number(voiceSpeed),
+        voice_profile_id: normalizedBundle.op_voice_profile_id,
+        voice_speed_global: safeSpeed,
         voice_pitch_global: 0.0,
         bgm_preset_id: bgmPresetId,
         custom_bgm_path: customBgmPath,
@@ -740,11 +863,15 @@ export default function ThreadsStudioForm({
             Đường dẫn bài đăng Threads / Reddit / Diễn đàn (hỗ trợ cả link rút gọn <code>/share/...</code>)
           </label>
           <input
-            className="input"
+            className={`input ${errors.postUrl ? 'input-error' : ''}`}
             placeholder="VD: https://www.threads.com/share/... hoặc https://www.threads.net/@ten_tai_khoan/post/..."
             value={postUrl}
-            onChange={(e) => setPostUrl(e.target.value)}
+            onChange={(e) => {
+              setPostUrl(e.target.value);
+              clearError('postUrl', 'rawPastedText');
+            }}
           />
+          <FieldError message={errors.postUrl} />
         </div>
 
         <div className="form-group">
@@ -752,12 +879,16 @@ export default function ThreadsStudioForm({
             Nội dung văn bản dự phòng (Tùy chọn — Dán thêm nếu bài riêng tư)
           </label>
           <textarea
-            className="textarea"
+            className={`textarea ${errors.rawPastedText ? 'input-error' : ''}`}
             style={{ minHeight: 74 }}
             placeholder={`Có thể để trống nếu đã dán link công khai ở trên...`}
             value={rawPastedText}
-            onChange={(e) => setRawPastedText(e.target.value)}
+            onChange={(e) => {
+              setRawPastedText(e.target.value);
+              clearError('rawPastedText', 'postUrl');
+            }}
           />
+          <FieldError message={errors.rawPastedText} />
         </div>
 
         {/* STRICT 2 MAIN VOICES (NAM & NỮ) + FAST READING SPEED CONTROL */}
@@ -1004,7 +1135,7 @@ export default function ThreadsStudioForm({
             disabled={extracting || submitting}
             onClick={handleExtractThreads}
           >
-            {extracting ? <Loader2 size={16} /> : <Wand2 size={16} />}
+            {extracting ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
             <span>
               {extracting
                 ? 'Đang hút bài, ảnh & lọc bình luận...'
@@ -1013,9 +1144,25 @@ export default function ThreadsStudioForm({
           </button>
         </div>
 
+        <StudioLoadingBanner
+          loading={extracting}
+          showSkeleton={!bundle}
+          title="Đang hút bài viết, tải Avatar tròn & lọc bình luận tiêu biểu bằng AI..."
+          subtitle="Hệ thống đang tải song song ảnh đại diện, ảnh bình luận & phân vai đối thoại 2 giọng chính"
+          steps={[
+            'Kết nối bài viết Threads / Reddit',
+            'Tải Avatar người dùng & Ảnh bình luận',
+            'AI chọn lọc & bung viết tắt tiếng Việt',
+          ]}
+          stepIntervalMs={2800}
+        />
+
         {/* INTERACTIVE CURATED THREAD & COMMENTS EDITOR (WITH ATTACHED PHOTOS!) */}
         {bundle && (
-          <div style={{ marginTop: 15, display: 'grid', gap: 12 }}>
+          <div
+            className={extracting ? 'is-reloading-dim' : 'fade-slide-in'}
+            style={{ marginTop: 15, display: 'grid', gap: 12 }}
+          >
             <div
               className="surface-box"
               style={{
@@ -1181,13 +1328,15 @@ export default function ThreadsStudioForm({
                     Tiêu đề SEO của dự án video
                   </label>
                   <input
-                    className="input"
+                    className={`input ${errors.topicTitle ? 'input-error' : ''}`}
                     style={{ minHeight: 35 }}
                     value={bundle.topic_title}
-                    onChange={(e) =>
-                      setBundle((prev) => ({ ...prev, topic_title: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setBundle((prev) => ({ ...prev, topic_title: e.target.value }));
+                      clearError('topicTitle');
+                    }}
                   />
+                  <FieldError message={errors.topicTitle} />
                 </div>
 
                 <div className="form-grid">
@@ -1196,26 +1345,30 @@ export default function ThreadsStudioForm({
                       Chữ hiển thị trên Thẻ Bài Gốc
                     </label>
                     <textarea
-                      className="textarea"
+                      className={`textarea ${errors.opDisplay ? 'input-error' : ''}`}
                       style={{ minHeight: 66, fontSize: 13 }}
                       value={bundle.op_display_text}
-                      onChange={(e) =>
-                        setBundle((prev) => ({ ...prev, op_display_text: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setBundle((prev) => ({ ...prev, op_display_text: e.target.value }));
+                        clearError('opDisplay');
+                      }}
                     />
+                    <FieldError message={errors.opDisplay} />
                   </div>
                   <div>
                     <label className="form-label" style={{ fontSize: 11.8 }}>
                       Lời đọc giọng Việt ({Number(voiceSpeed).toFixed(2)}x)
                     </label>
                     <textarea
-                      className="textarea"
+                      className={`textarea ${errors.opSpoken ? 'input-error' : ''}`}
                       style={{ minHeight: 66, fontSize: 13 }}
                       value={bundle.op_spoken_vi_text}
-                      onChange={(e) =>
-                        setBundle((prev) => ({ ...prev, op_spoken_vi_text: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setBundle((prev) => ({ ...prev, op_spoken_vi_text: e.target.value }));
+                        clearError('opSpoken');
+                      }}
                     />
+                    <FieldError message={errors.opSpoken} />
                   </div>
                 </div>
 
@@ -1267,6 +1420,7 @@ export default function ThreadsStudioForm({
               </div>
 
               {/* COMMENTS LIST */}
+              <FieldError message={errors.comments} />
               <div style={{ display: 'grid', gap: 9, maxHeight: 500, overflowY: 'auto', paddingRight: 3 }}>
                 {(bundle.comments || []).map((cmt, idx) => {
                   const pKey = `cmt_${idx}`;
@@ -1552,6 +1706,7 @@ export default function ThreadsStudioForm({
                     onClick={() => {
                       setSelectedBgPath(bg.local_path);
                       setSelectedBgPreviewUrl(bg.media_url || '');
+                      clearError('bgVideo', 'bgUrl');
                     }}
                     style={{
                       width: 142,
@@ -1627,11 +1782,28 @@ export default function ThreadsStudioForm({
           </div>
         )}
 
+        <StudioLoadingBanner
+          loading={uploadingBg || savingBgUrl}
+          title={
+            savingBgUrl
+              ? 'Đang tải video nền từ liên kết trực tuyến vào Kho Video Nền...'
+              : 'Đang tải tệp video nền lên máy chủ cục bộ...'
+          }
+          subtitle="Hệ thống đang kiểm tra khung hình & lưu sẵn để tái sử dụng 1 chạm"
+          steps={[
+            'Tải luồng video gốc',
+            'Kiểm tra thông số FFprobe & lưu vào Kho Video Nền',
+          ]}
+          stepIntervalMs={3000}
+        />
+
         <div className="form-grid" style={{ marginBottom: 12 }}>
           <div>
             <MediaDropzone
               accept="video/*"
               disabled={uploadingBg}
+              loading={uploadingBg}
+              error={errors.bgVideo}
               icon={Upload}
               title={
                 uploadingBg
@@ -1677,11 +1849,14 @@ export default function ThreadsStudioForm({
               </label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input
-                  className="input"
+                  className={`input ${errors.bgUrl ? 'input-error' : ''}`}
                   style={{ flex: 1, minHeight: 37 }}
                   placeholder="https://www.youtube.com/shorts/... hoặc TikTok..."
                   value={bgUrlInput}
-                  onChange={(e) => setBgUrlInput(e.target.value)}
+                  onChange={(e) => {
+                    setBgUrlInput(e.target.value);
+                    clearError('bgUrl', 'bgVideo');
+                  }}
                 />
                 <button
                   type="button"
@@ -1690,10 +1865,11 @@ export default function ThreadsStudioForm({
                   disabled={savingBgUrl}
                   onClick={handleDownloadBgFromUrl}
                 >
-                  {savingBgUrl ? <Loader2 size={14} /> : <Plus size={14} />}
+                  {savingBgUrl ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
                   <span>{savingBgUrl ? 'Đang tải...' : 'Tải vào Kho'}</span>
                 </button>
               </div>
+              <FieldError message={errors.bgUrl} />
             </div>
 
             {selectedBgPreviewUrl && (
@@ -1847,6 +2023,17 @@ export default function ThreadsStudioForm({
         </div>
       </div>
 
+      <StudioLoadingBanner
+        loading={submitting}
+        title="Đang khởi tạo dự án Video Threads & đưa vào tiến trình dựng..."
+        subtitle="Hệ thống đang chuẩn bị thẻ giao diện Threads nổi và bộ đôi 2 giọng đọc chính"
+        steps={[
+          'Kiểm tra dữ liệu bài đăng & bình luận',
+          'Khởi động tiến trình tổng hợp giọng đọc & ghép khung 9:16',
+        ]}
+        stepIntervalMs={1800}
+      />
+
       {/* STICKY ACTION BAR */}
       <div className="sticky-action-bar">
         <span className="text-sub" style={{ fontSize: 12.2 }}>
@@ -1865,19 +2052,21 @@ export default function ThreadsStudioForm({
             type="button"
             className="btn btn-secondary"
             style={{ minHeight: 42 }}
-            disabled={submitting || extracting || uploadingBg}
+            disabled={submitting || extracting || uploadingBg || savingBgUrl}
             onClick={() => handleStartThreadsVideo(false)}
           >
-            <Edit3 size={15} /> Đưa sang Chờ duyệt kịch bản
+            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
+            Đưa sang Chờ duyệt kịch bản
           </button>
           <button
             type="button"
             className="btn btn-primary"
             style={{ minWidth: 245, minHeight: 42, fontSize: 14, fontWeight: 700 }}
-            disabled={submitting || extracting || uploadingBg}
+            disabled={submitting || extracting || uploadingBg || savingBgUrl}
             onClick={() => handleStartThreadsVideo(true)}
           >
-            <Play size={16} /> Bắt đầu dựng Video Threads ngay
+            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
+            {submitting ? 'Đang khởi tạo dự án...' : 'Bắt đầu dựng Video Threads ngay'}
           </button>
         </div>
       </div>

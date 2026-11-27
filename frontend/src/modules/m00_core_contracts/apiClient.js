@@ -1,5 +1,23 @@
 // Typed API & WebSocket client communicating strictly with Module M07
 
+function extractErrorDetail(errBody, fallbackMsg) {
+  if (!errBody) return fallbackMsg;
+  if (typeof errBody.detail === 'string' && errBody.detail.trim()) {
+    return errBody.detail.trim();
+  }
+  if (Array.isArray(errBody.detail) && errBody.detail.length > 0) {
+    return errBody.detail
+      .slice(0, 3)
+      .map((item) => {
+        const field = Array.isArray(item?.loc) ? item.loc.slice(1).join('.') : '';
+        const msg = item?.msg || 'Tham số không hợp lệ';
+        return field ? `[${field}] ${msg}` : msg;
+      })
+      .join(' • ');
+  }
+  return fallbackMsg;
+}
+
 async function requestJSON(url, options = {}) {
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -7,7 +25,7 @@ async function requestJSON(url, options = {}) {
   });
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody.detail || `HTTP ${res.status}`);
+    throw new Error(extractErrorDetail(errBody, `HTTP ${res.status}`));
   }
   return res.json();
 }
@@ -30,7 +48,7 @@ export const studioApi = {
     const res = await fetch('/api/system/backup-import', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Khôi phục dữ liệu sao lưu thất bại');
+      throw new Error(extractErrorDetail(err, 'Khôi phục dữ liệu sao lưu thất bại'));
     }
     return res.json();
   },
@@ -47,7 +65,7 @@ export const studioApi = {
     const res = await fetch('/api/voices/clone-sample', { method: 'POST', body: formData });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Tải mẫu giọng thất bại');
+      throw new Error(extractErrorDetail(err, 'Tải mẫu giọng thất bại'));
     }
     return res.json();
   },
@@ -65,7 +83,7 @@ export const studioApi = {
     const res = await fetch('/api/uploads/file', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Tải tệp lên thất bại');
+      throw new Error(extractErrorDetail(err, 'Tải tệp lên thất bại'));
     }
     return res.json();
   },
@@ -77,7 +95,7 @@ export const studioApi = {
     const res = await fetch('/api/uploads/batch', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Tải danh sách ảnh sản phẩm thất bại');
+      throw new Error(extractErrorDetail(err, 'Tải danh sách ảnh sản phẩm thất bại'));
     }
     return res.json();
   },
@@ -125,7 +143,7 @@ export const studioApi = {
     const res = await fetch('/api/threads/bg-videos/upload', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Tải video nền thất bại');
+      throw new Error(extractErrorDetail(err, 'Tải video nền thất bại'));
     }
     return res.json();
   },

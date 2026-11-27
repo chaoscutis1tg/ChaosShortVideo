@@ -1,5 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  CheckCircle2,
   FolderPlus,
   FolderTree,
   Loader2,
@@ -15,6 +17,170 @@ import { studioApi } from './apiClient';
 import { stripLeadingEmoji } from './constants';
 
 export const GROUP_COLOR_PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+
+/**
+ * Shared parameter validation helpers across all Studio forms.
+ */
+export function isValidHttpUrl(raw) {
+  const clean = (raw || '').trim();
+  if (!clean) return false;
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname || '';
+    return host === 'localhost' || host.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+export function isVideoOnlyPlatformUrl(raw) {
+  const clean = (raw || '').trim().toLowerCase();
+  if (!clean) return false;
+  return (
+    clean.includes('youtube.com/watch') ||
+    clean.includes('youtube.com/shorts/') ||
+    clean.includes('youtu.be/') ||
+    clean.includes('tiktok.com/') ||
+    clean.includes('vt.tiktok.com/') ||
+    clean.includes('bilibili.com/video') ||
+    clean.includes('douyin.com/')
+  );
+}
+
+export function hasAllowedExtension(fileName, allowedExts = []) {
+  if (!fileName || allowedExts.length === 0) return true;
+  const lower = String(fileName).toLowerCase();
+  return allowedExts.some((ext) => lower.endsWith(ext.toLowerCase()));
+}
+
+export function scrollToFirstValidationError(containerRef) {
+  setTimeout(() => {
+    const root = containerRef?.current || document;
+    const el = root.querySelector('.input-error, .dropzone-error, .field-error-msg');
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (typeof el.focus === 'function' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        el.focus({ preventScroll: true });
+      }
+    }
+  }, 40);
+}
+
+/**
+ * Crisp inline field validation message rendered directly below an invalid input.
+ */
+export function FieldError({ message }) {
+  if (!message) return null;
+  return (
+    <div className="field-error-msg" role="alert">
+      <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+/**
+ * Live Multi-Step Animated Loading Banner with elapsed timer & shimmer progress bar.
+ */
+export function StudioLoadingBanner({
+  loading = false,
+  title = 'Hệ thống đang xử lý dữ liệu...',
+  subtitle = '',
+  steps = [],
+  stepIntervalMs = 2600,
+  showSkeleton = false,
+}) {
+  const [elapsedTenths, setElapsedTenths] = useState(0);
+
+  useEffect(() => {
+    if (!loading) {
+      setElapsedTenths(0);
+      return undefined;
+    }
+    const started = Date.now();
+    const timer = setInterval(() => {
+      setElapsedTenths(Math.floor((Date.now() - started) / 100));
+    }, 200);
+    return () => clearInterval(timer);
+  }, [loading]);
+
+  if (!loading) return null;
+
+  const elapsedMs = elapsedTenths * 100;
+  const activeStepIdx =
+    steps.length > 0
+      ? Math.min(steps.length - 1, Math.floor(elapsedMs / Math.max(800, stepIntervalMs)))
+      : 0;
+
+  return (
+    <div className="loading-stage-banner" role="status" aria-live="polite">
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          <Loader2 size={18} className="spin" style={{ color: 'var(--brand-text)' }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>
+              {title}
+            </div>
+            {subtitle && (
+              <div className="text-sub" style={{ fontSize: 12.1, marginTop: 1 }}>
+                {subtitle}
+              </div>
+            )}
+          </div>
+        </div>
+        <span className="badge badge-info" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <span className="pulse-dot" style={{ width: 6, height: 6 }} />
+          {(elapsedTenths / 10).toFixed(1)}s
+        </span>
+      </div>
+
+      <div className="loading-indeterminate-track">
+        <div className="loading-indeterminate-bar" />
+      </div>
+
+      {steps.length > 0 && (
+        <div className="loading-steps-row">
+          {steps.map((stLabel, idx) => {
+            const isDone = idx < activeStepIdx;
+            const isAct = idx === activeStepIdx;
+            return (
+              <span
+                key={idx}
+                className={`loading-step-pill ${isAct ? 'active' : isDone ? 'done' : ''}`}
+              >
+                {isDone ? (
+                  <CheckCircle2 size={12} />
+                ) : isAct ? (
+                  <Loader2 size={12} className="spin" />
+                ) : (
+                  <span style={{ opacity: 0.65 }}>{idx + 1}.</span>
+                )}
+                <span>{stLabel}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {showSkeleton && (
+        <div style={{ display: 'grid', gap: 7, marginTop: 10 }}>
+          <div className="skeleton-line" style={{ width: '78%' }} />
+          <div className="skeleton-line" style={{ width: '94%' }} />
+          <div className="skeleton-line" style={{ width: '62%' }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Reusable Parent Project (Series / Campaign / Collection) selector + inline quick creator.
@@ -213,6 +379,8 @@ export function MediaDropzone({
   accept = '*/*',
   multiple = false,
   disabled = false,
+  loading = false,
+  error = '',
   title = 'Kéo thả tệp vào đây hoặc bấm để chọn từ thiết bị',
   hint = '',
   icon: CustomIcon = UploadCloud,
@@ -220,11 +388,12 @@ export function MediaDropzone({
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
+  const isBusy = Boolean(disabled || loading);
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragging(false);
-    if (disabled) return;
+    if (isBusy) return;
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
       onFilesSelected(files);
@@ -232,41 +401,59 @@ export function MediaDropzone({
   };
 
   return (
-    <div
-      className={`media-dropzone ${dragging ? 'dragging' : ''}`}
-      onClick={() => !disabled && inputRef.current?.click()}
-      onDragOver={(e) => {
-        e.preventDefault();
-        if (!disabled) setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-    >
-      <CustomIcon
-        size={26}
-        strokeWidth={1.85}
-        style={{ color: 'var(--brand-text)', margin: '0 auto 7px', display: 'block' }}
-      />
-      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{title}</div>
-      {hint && (
-        <div className="text-sub" style={{ fontSize: 12.5, marginTop: 4 }}>
-          {hint}
-        </div>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        multiple={multiple}
-        hidden
-        disabled={disabled}
-        onChange={(e) => {
-          if (e.target.files?.length) {
-            onFilesSelected(e.target.files);
-          }
-          e.target.value = '';
+    <div>
+      <div
+        className={`media-dropzone ${dragging ? 'dragging' : ''} ${
+          error ? 'dropzone-error' : ''
+        } ${loading ? 'dropzone-loading' : ''}`}
+        onClick={() => !isBusy && inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!isBusy) setDragging(true);
         }}
-      />
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+      >
+        {loading ? (
+          <Loader2
+            size={26}
+            strokeWidth={2}
+            className="spin"
+            style={{ color: 'var(--brand-text)', margin: '0 auto 7px', display: 'block' }}
+          />
+        ) : (
+          <CustomIcon
+            size={26}
+            strokeWidth={1.85}
+            style={{
+              color: error ? '#ef4444' : 'var(--brand-text)',
+              margin: '0 auto 7px',
+              display: 'block',
+            }}
+          />
+        )}
+        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{title}</div>
+        {hint && (
+          <div className="text-sub" style={{ fontSize: 12.5, marginTop: 4 }}>
+            {hint}
+          </div>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          multiple={multiple}
+          hidden
+          disabled={isBusy}
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              onFilesSelected(e.target.files);
+            }
+            e.target.value = '';
+          }}
+        />
+      </div>
+      <FieldError message={error} />
     </div>
   );
 }
@@ -599,6 +786,18 @@ export function InlineBgmSelector({
   const handleUploadCustomBgm = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!hasAllowedExtension(file.name, ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac'])) {
+      if (notify) {
+        notify('Vui lòng chọn tệp âm thanh nhạc nền hợp lệ (.mp3, .wav, .m4a, .flac, .ogg).');
+      }
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 150 * 1024 * 1024) {
+      if (notify) notify('Tệp nhạc nền quá lớn (tối đa 150MB).');
+      e.target.value = '';
+      return;
+    }
     stopPlayer();
     setUploadingBgm(true);
     try {

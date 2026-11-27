@@ -170,6 +170,7 @@ export default function ProjectWorkspaceView({
           callout_label: ln.callout_label || '',
           voice_profile_override: ln.voice_profile_override || null,
           speaker_handle: ln.speaker_handle || '',
+          speaker_avatar_path: ln.speaker_avatar_path || '',
           display_card_text: ln.display_card_text || '',
           likes_display: ln.likes_display || '',
           card_image_path: ln.card_image_path || '',

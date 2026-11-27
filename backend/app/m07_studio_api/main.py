@@ -226,6 +226,7 @@ class ApprovedClipLinePatch(BaseModel):
     callout_label: str = ""
     voice_profile_override: Optional[str] = None
     speaker_handle: str = ""
+    speaker_avatar_path: str = ""
     display_card_text: str = ""
     likes_display: str = ""
     card_image_path: str = ""
@@ -1569,10 +1570,14 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
             out = curated.model_dump()
             out["op_image_media_url"] = _to_media_url(curated.op_image_path) if curated.op_image_path else ""
+            out["op_avatar_media_url"] = _to_media_url(curated.op_avatar_path) if curated.op_avatar_path else ""
             for idx, c_dto in enumerate(curated.comments):
                 if idx < len(out["comments"]):
                     out["comments"][idx]["attached_image_media_url"] = (
                         _to_media_url(c_dto.attached_image_path) if c_dto.attached_image_path else ""
+                    )
+                    out["comments"][idx]["avatar_media_url"] = (
+                        _to_media_url(c_dto.avatar_path) if c_dto.avatar_path else ""
                     )
             return out
         except Exception as exc:
@@ -1978,6 +1983,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                                 callout_label=ln.callout_label,
                                 voice_profile_override=ln.voice_profile_override,
                                 speaker_handle=ln.speaker_handle,
+                                speaker_avatar_path=ln.speaker_avatar_path,
                                 display_card_text=ln.display_card_text,
                                 likes_display=ln.likes_display,
                                 card_image_path=ln.card_image_path,
@@ -2020,6 +2026,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                             callout_label=s.get("callout_label") or "",
                             voice_profile_override=s.get("voice_profile_override") or None,
                             speaker_handle=s.get("speaker_handle") or "",
+                            speaker_avatar_path=s.get("speaker_avatar_path") or "",
                             display_card_text=s.get("display_card_text") or "",
                             likes_display=s.get("likes_display") or "",
                             card_image_path=s.get("card_image_path") or "",

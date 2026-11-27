@@ -1075,7 +1075,28 @@ export default function ThreadsStudioForm({
                     marginBottom: 8,
                   }}
                 >
-                  <span className="badge badge-info">Thẻ mở đầu • Bài đăng gốc (OP)</span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    {bundle.op_avatar_media_url && !layoutConfig.threads_anonymize_handles && (
+                      <img
+                        src={bundle.op_avatar_media_url}
+                        alt="OP Avatar"
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: '1.5px solid var(--brand)',
+                        }}
+                      />
+                    )}
+                    <span className="badge badge-info">Thẻ mở đầu • Bài đăng gốc (OP)</span>
+                  </span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
                       className="input"
@@ -1290,6 +1311,19 @@ export default function ThreadsStudioForm({
                             checked={Boolean(cmt.selected)}
                             onChange={(e) => patchComment(idx, { selected: e.target.checked })}
                           />
+                          {cmt.avatar_media_url && !layoutConfig.threads_anonymize_handles && (
+                            <img
+                              src={cmt.avatar_media_url}
+                              alt={cmt.author_handle}
+                              style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: '50%',
+                                objectFit: 'cover',
+                                border: '1px solid var(--border-strong)',
+                              }}
+                            />
+                          )}
                           <span>Thẻ trả lời {idx + 1}</span>
                           {hasCmtImg && (
                             <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 6px' }}>

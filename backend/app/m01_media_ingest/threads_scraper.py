@@ -257,6 +257,7 @@ def _parse_jina_threads_markdown(md_text: str) -> List[Dict[str, Any]]:
     cur: Optional[Dict[str, Any]] = None
     pending_avatar: str = ""
     pending_handle: str = ""
+    avatar_by_user: Dict[str, str] = {}
 
     def _flush_current() -> None:
         nonlocal cur
@@ -264,6 +265,8 @@ def _parse_jina_threads_markdown(md_text: str) -> List[Dict[str, Any]]:
             return
         body = "\n".join(cur["text_lines"]).strip()
         img_u = cur.get("image_url") or ""
+        u_clean = cur["username"].lstrip("@").lower()
+        exact_av = avatar_by_user.get(u_clean) or cur.get("avatar_url") or ""
         if len(body) >= 2 or img_u:
             entries.append(
                 {
@@ -273,7 +276,7 @@ def _parse_jina_threads_markdown(md_text: str) -> List[Dict[str, Any]]:
                     "replies": cur.get("replies") or 0,
                     "is_verified": bool(cur.get("is_verified")),
                     "image_url": img_u,
-                    "avatar_url": cur.get("avatar_url") or "",
+                    "avatar_url": exact_av,
                 }
             )
         cur = None
@@ -296,6 +299,9 @@ def _parse_jina_threads_markdown(md_text: str) -> List[Dict[str, Any]]:
                 )
                 if is_avatar:
                     pending_avatar = img_u
+                    m_owner = re.search(r"([A-Za-z0-9_.-]+)[’']s\s+profile\s+picture", alt, re.I)
+                    if m_owner:
+                        avatar_by_user[m_owner.group(1).lower()] = img_u
                 elif "rsrc.php" not in img_u and "static.cdninstagram" not in img_u:
                     if cur is not None and not cur.get("image_url"):
                         cur["image_url"] = img_u
@@ -455,7 +461,7 @@ class ThreadsScraperService:
                 return ""
             digest = hashlib.md5(u.encode("utf-8")).hexdigest()[:12]
             dst_jpg = media_dir / f"{prefix}_{digest}.jpg"
-            if dst_jpg.exists() and dst_jpg.stat().st_size > 1024:
+            if dst_jpg.exists() and dst_jpg.stat().st_size > 256:
                 return str(dst_jpg)
 
             async with sem:
@@ -469,7 +475,7 @@ class ThreadsScraperService:
                         headers=headers, follow_redirects=True, timeout=12.0
                     ) as client:
                         resp = await client.get(u)
-                        if resp.status_code != 200 or len(resp.content) < 512:
+                        if resp.status_code != 200 or len(resp.content) < 256:
                             return ""
 
                     def _decode_save(raw_bytes: bytes) -> str:
@@ -492,18 +498,29 @@ class ThreadsScraperService:
         if not (op_local and Path(op_local).exists()) and bundle.op_image_url:
             op_local = await _fetch_and_save_jpg(bundle.op_image_url, "op_img")
 
+        op_av_local = bundle.op_avatar_path
+        if not (op_av_local and Path(op_av_local).exists()) and bundle.op_avatar_url:
+            op_av_local = await _fetch_and_save_jpg(bundle.op_avatar_url, "op_av")
+
         async def _dl_comment(c: ThreadCommentItemDTO) -> ThreadCommentItemDTO:
-            if c.attached_image_path and Path(c.attached_image_path).exists():
-                return c
-            if not c.attached_image_url:
-                return c
-            saved_p = await _fetch_and_save_jpg(c.attached_image_url, "cmt_img")
-            return c.model_copy(update={"attached_image_path": saved_p}) if saved_p else c
+            c_img_p = c.attached_image_path
+            if not (c_img_p and Path(c_img_p).exists()) and c.attached_image_url:
+                c_img_p = await _fetch_and_save_jpg(c.attached_image_url, "cmt_img")
+            c_av_p = c.avatar_path
+            if not (c_av_p and Path(c_av_p).exists()) and c.avatar_url:
+                c_av_p = await _fetch_and_save_jpg(c.avatar_url, "cmt_av")
+            return c.model_copy(
+                update={
+                    "attached_image_path": c_img_p or "",
+                    "avatar_path": c_av_p or "",
+                }
+            )
 
         updated_cmts = list(await asyncio.gather(*(_dl_comment(c) for c in bundle.comments)))
         return bundle.model_copy(
             update={
                 "op_image_path": op_local,
+                "op_avatar_path": op_av_local,
                 "comments": updated_cmts,
             }
         )

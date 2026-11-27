@@ -250,6 +250,7 @@ class NarrationLineDTO(BaseContractDTO):
     callout_label: str = Field(default="", max_length=90)
     voice_profile_override: Optional[str] = None
     speaker_handle: str = Field(default="", max_length=90)
+    speaker_avatar_path: str = ""
     display_card_text: str = ""
     likes_display: str = Field(default="", max_length=32)
     card_image_path: str = ""
@@ -650,6 +651,8 @@ class ThreadCommentItemDTO(BaseContractDTO):
     attached_image_path: str = ""
     attached_image_media_url: str = ""
     avatar_url: str = ""
+    avatar_path: str = ""
+    avatar_media_url: str = ""
     is_verified: bool = False
     is_ai_suggested: bool = False
     voice_profile_id: str = ""
@@ -671,6 +674,8 @@ class ScrapedThreadBundleDTO(BaseContractDTO):
     op_image_path: str = ""
     op_image_media_url: str = ""
     op_avatar_url: str = ""
+    op_avatar_path: str = ""
+    op_avatar_media_url: str = ""
     op_is_verified: bool = False
     op_voice_profile_id: str = "threads_nu_chinh"
     male_voice_id: str = "threads_nam_chinh"

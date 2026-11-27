@@ -3,7 +3,7 @@
 import asyncio
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.m00_core_contracts import (
     AIContentBrainError,
@@ -988,18 +988,29 @@ class GeminiContentBrainService(ILLMService):
                 curated_list: List[ThreadCommentItemDTO] = []
                 used_raw_indices: set[int] = set()
 
+                raw_avatar_lookup: Dict[str, str] = {}
+                for rc_item in raw_bundle.comments:
+                    norm_h = re.sub(r"[^a-z0-9]", "", rc_item.author_handle.lower())
+                    if norm_h and rc_item.avatar_url and norm_h not in raw_avatar_lookup:
+                        raw_avatar_lookup[norm_h] = rc_item.avatar_url
+
                 def _match_raw_comment(item_dict: dict) -> Optional[ThreadCommentItemDTO]:
                     s_idx = item_dict.get("source_index")
-                    if isinstance(s_idx, int) and 0 <= s_idx < len(raw_bundle.comments):
-                        used_raw_indices.add(s_idx)
-                        return raw_bundle.comments[s_idx]
-                    h_cand = str(item_dict.get("author_handle") or "").lstrip("@").lower()
-                    d_cand = str(item_dict.get("display_text") or "").strip().lower()[:40]
+                    try:
+                        s_int = int(s_idx) if s_idx is not None and not isinstance(s_idx, bool) else -1
+                    except (TypeError, ValueError):
+                        s_int = -1
+                    if 0 <= s_int < len(raw_bundle.comments):
+                        used_raw_indices.add(s_int)
+                        return raw_bundle.comments[s_int]
+                    h_cand = re.sub(r"[^a-z0-9]", "", str(item_dict.get("author_handle") or "").lower())
+                    d_cand = str(item_dict.get("display_text") or "").strip().lower()[:32]
                     for r_i, rc in enumerate(raw_bundle.comments):
                         if r_i in used_raw_indices:
                             continue
-                        if (h_cand and rc.author_handle.lstrip("@").lower() == h_cand) or (
-                            len(d_cand) >= 10 and d_cand in rc.raw_text.lower()
+                        rc_h = re.sub(r"[^a-z0-9]", "", rc.author_handle.lower())
+                        if (h_cand and rc_h == h_cand) or (
+                            len(d_cand) >= 8 and d_cand in rc.raw_text.lower()
                         ):
                             used_raw_indices.add(r_i)
                             return rc
@@ -1036,7 +1047,12 @@ class GeminiContentBrainService(ILLMService):
                             )[:24],
                             attached_image_url=matched_rc.attached_image_url if matched_rc else "",
                             attached_image_path=matched_rc.attached_image_path if matched_rc else "",
-                            avatar_url=matched_rc.avatar_url if matched_rc else "",
+                            avatar_url=(
+                                matched_rc.avatar_url
+                                if (matched_rc and matched_rc.avatar_url)
+                                else raw_avatar_lookup.get(re.sub(r"[^a-z0-9]", "", h_raw.lower()), "")
+                            ),
+                            avatar_path=matched_rc.avatar_path if matched_rc else "",
                             is_ai_suggested=bool(item.get("is_ai_suggested")) and matched_rc is None,
                             selected=True,
                         )
@@ -1115,6 +1131,7 @@ class GeminiContentBrainService(ILLMService):
                         op_image_url=raw_bundle.op_image_url,
                         op_image_path=raw_bundle.op_image_path,
                         op_avatar_url=raw_bundle.op_avatar_url,
+                        op_avatar_path=raw_bundle.op_avatar_path,
                         op_likes_display=raw_bundle.op_likes_display or "2,3K",
                         op_replies_display=raw_bundle.op_replies_display or str(len(voiced_cmts) * 14),
                         op_is_verified=raw_bundle.op_is_verified,
@@ -1230,6 +1247,7 @@ class GeminiContentBrainService(ILLMService):
                 callout_label="",
                 voice_profile_override=bundle.op_voice_profile_id or None,
                 speaker_handle=op_handle,
+                speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
                 display_card_text=op_disp,
                 likes_display=bundle.op_likes_display or "1,8K",
                 card_image_path=bundle.op_image_path or "",
@@ -1259,6 +1277,7 @@ class GeminiContentBrainService(ILLMService):
                     callout_label="",
                     voice_profile_override=c.voice_profile_id or None,
                     speaker_handle=c_handle,
+                    speaker_avatar_path="" if anonymize_handles else (c.avatar_path or ""),
                     display_card_text=c_disp,
                     likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
                     card_image_path=c.attached_image_path or "",
@@ -1284,6 +1303,7 @@ class GeminiContentBrainService(ILLMService):
                     callout_label="",
                     voice_profile_override=bundle.op_voice_profile_id or None,
                     speaker_handle=op_handle,
+                    speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
                     display_card_text=clean_cta,
                     likes_display="Ghim",
                     card_image_path="",

@@ -291,28 +291,50 @@ class ThreadsCardVisualRenderer:
             width=2,
         )
 
-        # 3. Circular Initials Avatar + Signature Vertical Thread Connector Line
+        # 3. Real User Circular Avatar Photo (with fallback to Gradient Initials when anonymized or missing)
         av_size = 66
         av_x = card_x + 34
         av_y = card_y + 28
-        h_digest = int(hashlib.md5(raw_handle.encode("utf-8")).hexdigest()[:6], 16)
-        c_top, c_bot = AVATAR_PALETTE[h_digest % len(AVATAR_PALETTE)]
-        cd.ellipse([(av_x, av_y), (av_x + av_size, av_y + av_size)], fill=(*c_top, 255))
-        cd.ellipse(
-            [(av_x + 3, av_y + 3), (av_x + av_size - 3, av_y + av_size - 3)],
-            fill=(*c_bot, 255),
-        )
-        initials = raw_handle.lstrip("@")[:2].upper() or "TH"
-        bb_av = cd.textbbox((0, 0), initials, font=f_avatar)
-        cd.text(
-            (
-                av_x + (av_size - (bb_av[2] - bb_av[0])) // 2,
-                av_y + (av_size - (bb_av[3] - bb_av[1])) // 2 - 4,
-            ),
-            initials,
-            font=f_avatar,
-            fill=(255, 255, 255, 255),
-        )
+        drew_real_avatar = False
+        if not anonymize_handles and line.speaker_avatar_path and Path(line.speaker_avatar_path).exists():
+            try:
+                with Image.open(line.speaker_avatar_path) as raw_av:
+                    av_fit = ImageOps.fit(
+                        ImageOps.exif_transpose(raw_av).convert("RGBA"),
+                        (av_size, av_size),
+                        method=Image.Resampling.LANCZOS,
+                    )
+                av_mask = Image.new("L", (av_size, av_size), 0)
+                ImageDraw.Draw(av_mask).ellipse([(0, 0), (av_size - 1, av_size - 1)], fill=255)
+                av_circle = Image.new("RGBA", (av_size, av_size), (0, 0, 0, 0))
+                av_circle.paste(av_fit, (0, 0), av_mask)
+                ImageDraw.Draw(av_circle).ellipse(
+                    [(0, 0), (av_size - 1, av_size - 1)], outline=photo_border, width=2
+                )
+                card_layer.alpha_composite(av_circle, dest=(av_x, av_y))
+                drew_real_avatar = True
+            except Exception:
+                drew_real_avatar = False
+
+        if not drew_real_avatar:
+            h_digest = int(hashlib.md5(raw_handle.encode("utf-8")).hexdigest()[:6], 16)
+            c_top, c_bot = AVATAR_PALETTE[h_digest % len(AVATAR_PALETTE)]
+            cd.ellipse([(av_x, av_y), (av_x + av_size, av_y + av_size)], fill=(*c_top, 255))
+            cd.ellipse(
+                [(av_x + 3, av_y + 3), (av_x + av_size - 3, av_y + av_size - 3)],
+                fill=(*c_bot, 255),
+            )
+            initials = raw_handle.lstrip("@")[:2].upper() or "TH"
+            bb_av = cd.textbbox((0, 0), initials, font=f_avatar)
+            cd.text(
+                (
+                    av_x + (av_size - (bb_av[2] - bb_av[0])) // 2,
+                    av_y + (av_size - (bb_av[3] - bb_av[1])) // 2 - 4,
+                ),
+                initials,
+                font=f_avatar,
+                fill=(255, 255, 255, 255),
+            )
 
         # Vertical thread stem below avatar
         stem_x = av_x + av_size // 2

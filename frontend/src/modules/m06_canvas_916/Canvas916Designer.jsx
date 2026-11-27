@@ -210,17 +210,26 @@ export default function Canvas916Designer({
   };
 
   const handleRenderTrueSnapshot = async (asCover = false) => {
+    const modeForSnap = contextMode || activeTab;
     setRenderingSnapshot(true);
     try {
       const res = await studioApi.renderTrueFrameSnapshot({
-        active_tab: activeTab,
+        active_tab: modeForSnap,
         sample_media_url: previewFrameUrl || '',
         banner_title:
           layoutConfig.cover_headline ||
           layoutConfig.outro_brand_title ||
-          'Đàn Violin Avaro Gỗ Thịt Tự Nhiên',
+          (modeForSnap === 'topic'
+            ? 'Chủ Đề Câu Chuyện Hấp Dẫn'
+            : modeForSnap === 'movie'
+            ? 'Tiêu Đề Tập Phim | Phần 1'
+            : 'Đàn Violin Avaro Gỗ Thịt Tự Nhiên'),
         sample_subtitle:
-          'Mặt đàn gỗ thịt tự nhiên nguyên tấm cho tiếng đàn vang dày và ấm.',
+          modeForSnap === 'topic'
+            ? 'Hình ảnh minh họa chuyển cảnh mượt mà theo đúng từng câu dẫn chuyện.'
+            : modeForSnap === 'movie'
+            ? 'Nhưng khi mọi chuyện sáng tỏ thì tất cả đã hoàn toàn thay đổi.'
+            : 'Mặt đàn gỗ thịt tự nhiên nguyên tấm cho tiếng đàn vang dày và ấm.',
         preview_as_cover: asCover,
         layout_config: layoutConfig,
       });
@@ -274,7 +283,7 @@ export default function Canvas916Designer({
           </span>
           <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <span className="badge badge-info" style={{ fontSize: 11, padding: '2px 8px' }}>
-              {MODE_BADGE_MAP[activeTab] || 'Studio'}
+              {MODE_BADGE_MAP[effMode] || MODE_BADGE_MAP[activeTab] || 'Studio'}
             </span>
             <span className="badge" style={{ fontSize: 11, padding: '2px 8px' }}>
               {aspectInfo.res}

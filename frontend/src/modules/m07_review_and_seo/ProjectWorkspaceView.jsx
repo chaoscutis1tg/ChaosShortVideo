@@ -577,6 +577,7 @@ export default function ProjectWorkspaceView({
     try {
       await studioApi.renderApprovedProject(detail.id, {
         voice_profile_id: selectedVoice,
+        visual_mode: detail.saved_request?.visual_mode || 'AI_IMAGE',
         bgm_preset_id: bgmPresetId,
         custom_bgm_path: customBgmPath,
         audio_config: {

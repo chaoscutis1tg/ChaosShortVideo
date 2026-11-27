@@ -104,11 +104,11 @@ Khi chuyển sang máy tính mới sau khi `git clone`:
 | **`M00`** | `backend/app/m00_core_contracts/` | `frontend/src/modules/m00_core_contracts/` | Hợp đồng `Pydantic DTOs`, `ABC Interfaces`, CSDL `SQLite` & khóa `GPUResourceManager`. |
 | **`M01`** | `backend/app/m01_media_ingest/` | `frontend/src/modules/m01_m04_movie_studio/` | Nhập tệp nội bộ, cắt đoạn nhanh (`Media Trimmer`), tải link `yt-dlp` / `m3u8`, tách WAV `16kHz`. |
 | **`M02`** | `backend/app/m02_asr_transcription/` | — | Nhận diện thoại bằng GPU (`Faster-Whisper` + tự giải phóng VRAM) & đọc `.srt` rời. |
-| **`M03`** | `backend/app/m03_ai_content_brain/` | `frontend/src/modules/m03_topic_studio/` | Viết kịch bản chủ đề & bán hàng, dịch ngữ cảnh phim, chia tập `65–120s` & sinh gói SEO. |
-| **`M04`** | `backend/app/m04_visual_producer/` | `frontend/src/modules/m04_product_studio/` | Vẽ cảnh AI `9:16` trên GPU (`LCM_Dreamshaper_v7`), khung sản phẩm tách nền & Stock Video. |
-| **`M05`** | `backend/app/m05_voice_audio_mixer/` | `frontend/src/modules/m05_voice_lab/` | Giọng thuyết minh đa tầng (`Edge-TTS`, `Piper Offline`, `Gemini`, `F5-TTS`), `Audio Ducking` & `.ass`. |
-| **`M06`** | `backend/app/m06_nvenc_compositor/` | `frontend/src/modules/m06_canvas_916/` | Bố cục `9:16 / 4:5 / 1:1`, `Cover Studio`, che chữ gốc (`Hardsub Mask`), lách bản quyền & `h264_nvenc`. |
-| **`M07`** | `backend/app/m07_studio_api/` | `frontend/src/modules/m07_review_and_seo/` | `PipelineOrchestrator`, REST API, WebSocket tiến độ, QR mạng LAN & xuất trọn gói `.ZIP`. |
+| **`M03`** | `backend/app/m03_ai_content_brain/` | `frontend/src/modules/m03_topic_studio/` | Phân tích ý tưởng ngắn bằng AI (`Brief Expander`), viết kịch bản chủ đề & bán hàng, dịch phim & sinh SEO. |
+| **`M04`** | `backend/app/m04_visual_producer/` | `frontend/src/modules/m08_product_studio/` | Vẽ cảnh AI `9:16` trên GPU (`LCM_Dreamshaper_v7`), khung sản phẩm tách nền & Stock Video. |
+| **`M05`** | `backend/app/m05_voice_audio_mixer/` | `frontend/src/modules/m05_voice_lab/` | Kho 30 giọng đọc theo nền tảng, tách/nhái giọng trực tiếp từ YouTube (`F5-TTS`), `Audio Ducking` & `.ass`. |
+| **`M06`** | `backend/app/m06_nvenc_compositor/` | `frontend/src/modules/m06_canvas_916/` | Khung `9:16 / 4:5 / 1:1` thông minh theo ngữ cảnh, `Cover Studio`, che chữ gốc & xuất `h264_nvenc`. |
+| **`M07`** | `backend/app/m07_studio_api/` | `frontend/src/modules/m07_review_and_seo/` | Khung Studio `100vh` Sticky, quản lý **Dự Án Cha → Dự Án Con** 2 cột, lưu nháp tự động, QR LAN & xuất `.ZIP`. |
 
 ---
 

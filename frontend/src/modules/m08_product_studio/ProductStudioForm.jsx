@@ -461,6 +461,7 @@ export default function ProductStudioForm({
         custom_bgm_path: customBgmPath,
         bgm_volume: bgmVolume,
         layout_config: layoutConfig,
+        parent_group_id: parentGroupId || null,
         auto_one_click: true,
       });
       notify(

@@ -228,6 +228,8 @@ export default function TopicStudioForm({
         part_count: Number(partCount),
         narrative_tone: tone,
         voice_profile_id: voiceId,
+        voice_speed_global: Number(voiceSpeed),
+        voice_pitch_global: Number(voicePitch),
         subtitle_style: subtitleStyle,
         bgm_preset_id: bgmPresetId,
         custom_bgm_path: customBgmPath,

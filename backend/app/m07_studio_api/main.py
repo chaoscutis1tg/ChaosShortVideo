@@ -104,6 +104,8 @@ class TopicStartRequest(BaseModel):
     part_count: int = Field(default=1, ge=1, le=20)
     narrative_tone: str = "cuốn hút, kịch tính kiểu kể chuyện Shorts/TikTok"
     voice_profile_id: str = "edge_nam_minh_movie"
+    voice_speed_global: Optional[float] = None
+    voice_pitch_global: Optional[float] = None
     subtitle_style: SubtitleStyle = SubtitleStyle.KARAOKE_CAPCUT
     bgm_preset_id: Optional[str] = "bgm_lofi_story"
     custom_bgm_path: Optional[str] = None
@@ -332,6 +334,7 @@ class ProductBatchUrlsRequest(BaseModel):
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
+    parent_group_id: Optional[str] = None
     auto_one_click: bool = True
 
 
@@ -984,6 +987,18 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                         fg_m = rgb_m.resize((fw, fh), Image.Resampling.LANCZOS).convert("RGBA")
                         base_c.alpha_composite(fg_m, ((canvas_w - fw) // 2, (canvas_h - fh) // 2))
                         base_c.save(plate_png, format="PNG")
+                elif req.active_tab == "topic":
+                    with Image.open(src_media) as im_top:
+                        rgb_t = im_top.convert("RGB")
+                        sc_t = max(canvas_w / max(rgb_t.width, 1), canvas_h / max(rgb_t.height, 1))
+                        tw = max(canvas_w, int(round(rgb_t.width * sc_t)))
+                        th = max(canvas_h, int(round(rgb_t.height * sc_t)))
+                        resized_t = rgb_t.resize((tw, th), Image.Resampling.LANCZOS)
+                        ox = (tw - canvas_w) // 2
+                        oy = (th - canvas_h) // 2
+                        resized_t.crop((ox, oy, ox + canvas_w, oy + canvas_h)).convert("RGBA").save(
+                            plate_png, format="PNG"
+                        )
                 else:
                     ProductPhotoShowcaseProvider.compose_uncropped_plate(
                         src_img=src_media,
@@ -1140,6 +1155,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     custom_bgm_path=req.custom_bgm_path,
                     bgm_volume=req.bgm_volume,
                     layout_config=req.layout_config,
+                    parent_group_id=req.parent_group_id,
                     auto_one_click=req.auto_one_click,
                 )
                 repo.create_project(
@@ -1149,6 +1165,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     target_min_sec=max(15, req.target_duration_sec - 15),
                     target_max_sec=min(180, req.target_duration_sec + 20),
                     request_payload_json=single_req.model_dump_json(),
+                    parent_group_id=req.parent_group_id,
                 )
                 prompt_dto = ProductReviewPromptDTO(
                     project_id=project_id,
@@ -1445,6 +1462,10 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 keep_original_audio=False,
                 bgm_volume=req.bgm_volume,
                 subtitle_style=req.subtitle_style,
+                subtitle_pos_y=req.layout_config.subtitle_pos_y,
+                subtitle_font_size=req.layout_config.subtitle_font_size,
+                voice_speed_global=req.voice_speed_global,
+                voice_pitch_global=req.voice_pitch_global,
             ),
             req.bgm_preset_id,
             req.custom_bgm_path,
@@ -1973,24 +1994,56 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             )
             return {"project_id": project_id, "state": st}
 
-        prompt_dto = TopicPromptDTO(
-            project_id=project_id,
-            topic_title=proj["name"],
-            target_duration_sec=int(proj.get("target_max_sec") or 90),
+        top_req: Optional[TopicStartRequest] = None
+        try:
+            raw_top = json.loads(saved_json)
+            if raw_top.get("topic_title"):
+                top_req = TopicStartRequest(**raw_top)
+        except Exception:
+            top_req = None
+
+        prompt_dto = (
+            TopicPromptDTO(
+                project_id=project_id,
+                topic_title=top_req.topic_title,
+                key_points=top_req.key_points,
+                visual_mode=top_req.visual_mode,
+                target_duration_sec=top_req.target_duration_sec,
+                part_count=top_req.part_count,
+                narrative_tone=top_req.narrative_tone,
+            )
+            if top_req
+            else TopicPromptDTO(
+                project_id=project_id,
+                topic_title=proj["name"],
+                target_duration_sec=int(proj.get("target_max_sec") or 90),
+            )
         )
         repo.update_project_state(project_id, JobState.AI_ANALYZING, error_message="")
+        top_audio = _resolve_bgm_into_audio_cfg(
+            AudioSubConfigDTO(
+                enable_narration=True,
+                keep_original_audio=False,
+                bgm_volume=top_req.bgm_volume if top_req else 0.08,
+                subtitle_style=top_req.subtitle_style if top_req else SubtitleStyle.KARAOKE_CAPCUT,
+                subtitle_pos_y=top_req.layout_config.subtitle_pos_y if top_req else 0.84,
+                subtitle_font_size=top_req.layout_config.subtitle_font_size if top_req else 52,
+                voice_speed_global=top_req.voice_speed_global if top_req else None,
+                voice_pitch_global=top_req.voice_pitch_global if top_req else None,
+            ),
+            top_req.bgm_preset_id if top_req else "bgm_lofi_story",
+            top_req.custom_bgm_path if top_req else None,
+        )
         st = job_mgr.enqueue_job(
             project_id=project_id,
             mode=ProjectMode.TOPIC_VIDEO,
             is_render_only=False,
             coro_factory=lambda: orchestrator.execute_topic_pipeline(
                 prompt_dto,
-                "edge_nam_minh_movie",
-                AudioSubConfigDTO(
-                    keep_original_audio=False, subtitle_style=SubtitleStyle.KARAOKE_CAPCUT
-                ),
-                LayoutAndAntiCopyConfigDTO(),
-                True,
+                top_req.voice_profile_id if top_req else "edge_nam_minh_movie",
+                top_audio,
+                top_req.layout_config if top_req else LayoutAndAntiCopyConfigDTO(),
+                top_req.auto_one_click if top_req else True,
             ),
         )
         return {"project_id": project_id, "state": st}
@@ -2072,7 +2125,10 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             candidate = dist_dir / full_path
             if full_path and candidate.exists() and candidate.is_file():
                 return FileResponse(str(candidate))
-            return FileResponse(str(dist_dir / "index.html"))
+            return FileResponse(
+                str(dist_dir / "index.html"),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
     return app
 

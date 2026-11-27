@@ -31,13 +31,22 @@ TTS_MODELS_DIR = WORKSPACE_ROOT / "assets" / "tts_models"
 FFMPEG_702_ZIP_URL = (
     "https://github.com/GyanD/codexffmpeg/releases/download/7.0.2/ffmpeg-7.0.2-essentials_build.zip"
 )
-PIPER_ONNX_URL = (
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/"
-    "vi_VN-vais1000-medium.onnx"
-)
-PIPER_JSON_URL = (
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/"
-    "vi_VN-vais1000-medium.onnx.json"
+PIPER_MODELS = (
+    (
+        "vi_VN-vais1000-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium",
+        "Giọng Offline Bắc Ngọc Huyền (~60 MB)",
+    ),
+    (
+        "vi_VN-25hours_single-low.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low",
+        "Giọng Offline Nữ Thuyết Minh Quỳnh Mai (~60 MB)",
+    ),
+    (
+        "vi_VN-vivos-x_low.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low",
+        "Bộ Giọng Offline Miền Nam VIVOS Đa Nhân Vật (~28 MB)",
+    ),
 )
 
 
@@ -108,26 +117,43 @@ def ensure_ffmpeg_binaries() -> bool:
     return False
 
 
-def ensure_piper_vietnamese_voice() -> bool:
-    """Ensure offline Vietnamese Piper VITS model (`vi_VN-vais1000-medium`) exists."""
-    onnx_path = TTS_MODELS_DIR / "vi_VN-vais1000-medium.onnx"
-    json_path = TTS_MODELS_DIR / "vi_VN-vais1000-medium.onnx.json"
-    if onnx_path.exists() and onnx_path.stat().st_size > 1_000_000 and json_path.exists():
-        print("[OK] Đã có sẵn giọng đọc Offline Ngọc Huyền (vi_VN-vais1000-medium)")
-        return True
-
+def _patch_piper_json_phoneme_map(json_path: Path) -> None:
+    if not json_path.exists():
+        return
     try:
-        _download_with_progress(
-            PIPER_JSON_URL, json_path, "Cấu hình giọng đọc Offline vi_VN-vais1000-medium.onnx.json"
-        )
-        _download_with_progress(
-            PIPER_ONNX_URL, onnx_path, "Mô hình giọng đọc Offline Ngọc Huyền (~60 MB)"
-        )
-        print("[OK] Tải hoàn tất mô hình giọng đọc Offline tiếng Việt!")
-        return True
-    except Exception as exc:
-        print(f"[CẢNH BÁO] Chưa tải được giọng đọc Offline (hệ thống sẽ tự tải lại khi dùng): {exc}")
-        return False
+        import json
+
+        cfg = json.loads(json_path.read_text(encoding="utf-8"))
+        id_map = cfg.get("phoneme_id_map") or {}
+        pmap = cfg.get("phoneme_map") or {}
+        for ch in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u032a", "\u032f", "\u0329"):
+            if ch not in id_map and ch not in pmap:
+                pmap[ch] = []
+        cfg["phoneme_map"] = pmap
+        json_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def ensure_piper_vietnamese_voice() -> bool:
+    """Ensure all 3 offline Vietnamese Piper VITS models (`vais1000`, `25hours_single`, `vivos`) exist."""
+    all_ok = True
+    for filename, base_url, label in PIPER_MODELS:
+        onnx_path = TTS_MODELS_DIR / filename
+        json_path = TTS_MODELS_DIR / f"{filename}.json"
+        if onnx_path.exists() and onnx_path.stat().st_size > 1_000_000 and json_path.exists():
+            _patch_piper_json_phoneme_map(json_path)
+            print(f"[OK] Đã có sẵn {label} ({filename})")
+            continue
+        try:
+            _download_with_progress(f"{base_url}.onnx.json", json_path, f"Cấu hình {filename}.json")
+            _patch_piper_json_phoneme_map(json_path)
+            _download_with_progress(f"{base_url}.onnx", onnx_path, label)
+            print(f"[OK] Tải hoàn tất {label}!")
+        except Exception as exc:
+            print(f"[CẢNH BÁO] Chưa tải được {filename} (sẽ tự tải khi dùng): {exc}")
+            all_ok = False
+    return all_ok
 
 
 def preload_gpu_scene_model() -> None:

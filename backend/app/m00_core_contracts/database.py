@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Dict, List, Optional
 
+from .config import WORKSPACE_ROOT
 from .dtos import (
     BrandKitDTO,
     ClipSpecDTO,
@@ -23,13 +24,357 @@ from .enums import (
     ProjectMode,
     TransitionStyle,
     VoiceTier,
+    VoiceUseCaseCategory,
 )
 
 DEFAULT_VOICE_PROFILES: List[VoiceProfileDTO] = [
+    # =========================================================================
+    # NHÓM 1: LỒNG TIẾNG & THUYẾT MINH PHIM (MOVIE_DUB — 10 Giọng)
+    # =========================================================================
+    VoiceProfileDTO(
+        profile_id="gemini_uslt_mytam",
+        display_name="Mỹ Tâm USLT — Nữ Sài Gòn Thuyết Minh Phim Chiếu Rạp Mỹ (Chuẩn Tín Hiệu Vô Hình)",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Miền Nam", "Phim chiếu rạp Mỹ", "Chuẩn Tín Hiệu Vô Hình"],
+        voice_id_or_sample_path="Kore",
+        speed_rate=1.02,
+        pitch_hz=0.0,
+        emotion_prompt=(
+            "Đọc bằng giọng nữ miền Nam Sài Gòn trung trầm, điềm tĩnh, nghiêm nghị, rõ từng chữ "
+            "chuẩn thuyết minh phim hành động Mỹ chiếu rạp (kiểu USLT / SCTV9), phát âm phương ngữ Nam Bộ tự nhiên"
+        ),
+        dsp_preset="cinema_uslt_female",
+    ),
+    VoiceProfileDTO(
+        profile_id="clone_tin_hieu_vo_hinh",
+        display_name="Giọng Mẫu Tín Hiệu Vô Hình — Nữ Nam Bộ Trích Gốc Phim Mẫu (Voice Clone GPU)",
+        tier=VoiceTier.LOCAL_F5_CLONE,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Mẫu gốc YouTube", "Miền Nam", "Thuyết minh USLT"],
+        voice_id_or_sample_path=str(
+            WORKSPACE_ROOT / "assets" / "voice_samples" / "ref_tin_hieu_vo_hinh_24k.wav"
+        ),
+        sample_ref_text=(
+            "Nhưng khi chính phủ chịu lắng nghe khoa học thì nó đã quá muộn rồi. "
+            "Đại dịch đã khiến xã hội ngưng lại đột ngột."
+        ),
+        speed_rate=1.02,
+        pitch_hz=0.0,
+        emotion_prompt=(
+            "Đọc bằng giọng nữ miền Nam Sài Gòn trung trầm, điềm tĩnh, nghiêm nghị, rõ chữ "
+            "chuẩn thuyết minh phim chiếu rạp Mỹ Tín Hiệu Vô Hình, phát âm phương ngữ Nam Bộ tự nhiên"
+        ),
+        dsp_preset="cinema_uslt_female",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_cinema_fenrir",
+        display_name="Quốc Khánh Cinema (Gemini Studio) — Nam Trầm Thuyết Minh Bom Tấn Hollywood",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Miền Nam", "Phim hành động Mỹ", "Nam trầm dày"],
+        voice_id_or_sample_path="Fenrir",
+        speed_rate=1.03,
+        pitch_hz=-0.6,
+        emotion_prompt=(
+            "Đọc bằng giọng nam miền Nam trầm dày, uy lực, đĩnh đạc chuẩn thuyết minh phim hành động "
+            "chiếu rạp Hollywood, ngắt nhịp dứt khoát và cuốn hút"
+        ),
+        dsp_preset="cinema_uslt_male",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_nam_minh_movie",
+        display_name="Minh Quân — Nam Trầm Thuyết Minh Phim Bộ / Tổng Tài (Đĩnh đạc)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Phim bộ", "Tổng tài", "Đĩnh đạc"],
+        voice_id_or_sample_path="en-US-BrianMultilingualNeural",
+        speed_rate=1.08,
+        pitch_hz=-1.2,
+        emotion_prompt="Giọng nam trầm ấm, đĩnh đạc, nhấn nhá kịch tính chuẩn thuyết minh phim bộ",
+        dsp_preset="movie_male_deep",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_nam_uslt_saigon",
+        display_name="Chí Bảo — Nam Sài Gòn Thuyết Minh Phim Lẻ & Phim Hồng Kông (TVB / USLT)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Miền Nam", "Phim lẻ & TVB", "Rõ chữ"],
+        voice_id_or_sample_path="ko-KR-HyunsuMultilingualNeural",
+        speed_rate=1.05,
+        pitch_hz=-0.6,
+        emotion_prompt="Giọng nam miền Nam ấm rõ, nhịp điệu tự nhiên chuẩn thuyết minh phim lẻ và phim bộ TVB",
+        dsp_preset="cinema_uslt_male",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_hoang_vu_action",
+        display_name="Hoàng Vũ — Nam Kịch Tính Phim Hành Động / Trinh Thám (Gay cấn)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Hành động", "Sinh tồn", "Gay cấn"],
+        voice_id_or_sample_path="fr-FR-RemyMultilingualNeural",
+        speed_rate=1.12,
+        pitch_hz=-0.8,
+        emotion_prompt="Giọng nam hồi hộp, dồn dập, nhấn mạnh các tình tiết gay cấn bất ngờ",
+        dsp_preset="thriller_suspense",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_hoai_my_drama",
+        display_name="Thanh Thảo — Nữ Thuyết Minh Phim Ngôn Tình / Cổ Trang Sâu Lắng",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Cổ trang", "Ngôn tình", "Truyền cảm"],
+        voice_id_or_sample_path="en-US-AvaMultilingualNeural",
+        speed_rate=1.04,
+        pitch_hz=0.0,
+        emotion_prompt="Giọng nữ truyền cảm, mềm mại, giàu cảm xúc nội tâm cho phim cổ trang và tâm lý",
+        dsp_preset="drama_female_emotional",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_cinema_leda",
+        display_name="Thúy Hạnh VTV (Gemini Studio) — Nữ Bắc Thuyết Minh Phim Điện Ảnh Đĩnh Đạc",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Miền Bắc", "Phim truyền hình", "Chuẩn VTV"],
+        voice_id_or_sample_path="Leda",
+        speed_rate=1.02,
+        pitch_hz=-0.2,
+        emotion_prompt=(
+            "Đọc bằng giọng nữ Hà Nội chuẩn đài truyền hình VTV, sang trọng, điềm đạm, "
+            "nhấn nhá tinh tế cho thuyết minh phim truyện điện ảnh"
+        ),
+        dsp_preset="cinema_uslt_female",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_bong_dem_horror",
+        display_name="Bóng Đêm — Nam Trầm Lạnh Phim Kinh Dị / Tâm Lý Tội Phạm (Ám ảnh)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Kinh dị", "Trinh thám đêm", "Trầm lạnh"],
+        voice_id_or_sample_path="en-AU-WilliamMultilingualNeural",
+        speed_rate=0.98,
+        pitch_hz=-2.0,
+        emotion_prompt="Giọng nam trầm lạnh, nhịp chậm đầy bí ẩn cho phim kinh dị và giải mã vụ án",
+        dsp_preset="horror_dark_male",
+    ),
+    VoiceProfileDTO(
+        profile_id="local_25h_saigon_movie",
+        display_name="Quỳnh Mai (Offline 0.1s) — Nữ Thuyết Minh Phim & Đọc Truyện Không Cần Mạng",
+        tier=VoiceTier.LOCAL_ONNX_VITS,
+        category=VoiceUseCaseCategory.MOVIE_DUB,
+        tags=["Offline 0.1s", "Không cần mạng", "Nữ êm dịu"],
+        voice_id_or_sample_path="vi_VN-25hours_single-low.onnx",
+        speed_rate=1.03,
+        pitch_hz=-0.2,
+        emotion_prompt="Giọng nữ đọc truyện và thuyết minh phim êm dịu, chạy trực tiếp trên máy 0.1s",
+        dsp_preset="cinema_uslt_female",
+    ),
+
+    # =========================================================================
+    # NHÓM 2: CHUYÊN SHORT TIKTOK NHỊP NHANH (TIKTOK_SHORT — 7 Giọng)
+    # =========================================================================
+    VoiceProfileDTO(
+        profile_id="edge_hoai_my_fast",
+        display_name="Mai Phương — Nữ Review Nhịp Nhanh Bắt Trend TikTok (Giữ chân 3s đầu)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["TikTok Xu hướng", "Nhịp nhanh", "Bắt tai"],
+        voice_id_or_sample_path="en-US-EmmaMultilingualNeural",
+        speed_rate=1.15,
+        pitch_hz=0.4,
+        emotion_prompt="Giọng nữ trẻ trung, bắt tai, mở đầu cuốn hút giữ chân người xem lướt TikTok",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_tiktok_zephyr",
+        display_name="Bảo Ngọc GenZ (Gemini Studio) — Nữ Kể Drama / Storytime Bóc Phốt Cuốn Hút",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Miền Nam", "Storytime Drama", "GenZ tự nhiên"],
+        voice_id_or_sample_path="Zephyr",
+        speed_rate=1.12,
+        pitch_hz=0.2,
+        emotion_prompt=(
+            "Đọc bằng giọng nữ trẻ miền Nam GenZ năng động, biểu cảm sinh động, nhấn nhá kịch tính "
+            "như đang kể drama nóng hổi trên TikTok"
+        ),
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_tuan_kiet_tiktok",
+        display_name="Tuấn Kiệt — Nam Review Công Nghệ / Đời Sống Tốc Độ Cao (Sắc nét)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Review nhanh", "Công nghệ & Mẹo", "Năng lượng cao"],
+        voice_id_or_sample_path="it-IT-GiuseppeMultilingualNeural",
+        speed_rate=1.16,
+        pitch_hz=0.2,
+        emotion_prompt="Giọng nam trẻ khỏe khoắn, tốc độ nhanh, đi thẳng vào trọng tâm cho video TikTok 30–60s",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_hai_dang_topfact",
+        display_name="Hải Đăng — Nam Top 5 Sự Thật Giật Gân / Tóm Tắt Nhanh 60 Giây",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Top sự thật", "Giật gân", "Tốc độ cao"],
+        voice_id_or_sample_path="fr-FR-RemyMultilingualNeural",
+        speed_rate=1.17,
+        pitch_hz=-0.4,
+        emotion_prompt="Giọng nam dồn dập, nhấn mạnh con số và chi tiết bất ngờ giữ tỷ lệ xem hết video",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_minh_chau_lifestyle",
+        display_name="Minh Châu — Nữ Mẹo Vặt / Ẩm Thực & Vlog Đời Thường Sôi Động",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Ẩm thực & Vlog", "Tươi sáng", "Thân thiện"],
+        voice_id_or_sample_path="pt-BR-ThalitaMultilingualNeural",
+        speed_rate=1.13,
+        pitch_hz=0.6,
+        emotion_prompt="Giọng nữ tươi tắn, giàu năng lượng tích cực cho clip ẩm thực, du lịch và mẹo hay",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_tiktok_achird",
+        display_name="Khôi Nguyên (Gemini Studio) — Nam Trẻ Bắt Trend Hài Hước & Phản Biện",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Hài hước", "Góc nhìn mới", "Linh hoạt"],
+        voice_id_or_sample_path="Achird",
+        speed_rate=1.12,
+        pitch_hz=0.0,
+        emotion_prompt=(
+            "Đọc bằng giọng nam trẻ trung, lanh lợi, dí dỏm kiểu nhà sáng tạo nội dung TikTok triệu view"
+        ),
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="local_vivos_tiktok_fast",
+        display_name="Tuấn Anh Sài Gòn (Offline 0.1s) — Nam Miền Nam Nhịp Nhanh Không Cần Mạng",
+        tier=VoiceTier.LOCAL_ONNX_VITS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Offline 0.1s", "Miền Nam", "Nhịp nhanh"],
+        voice_id_or_sample_path="vi_VN-vivos-x_low.onnx#2",
+        speed_rate=1.13,
+        pitch_hz=0.0,
+        emotion_prompt="Giọng nam miền Nam trẻ trung chạy offline siêu tốc 0.1s cho xuất hàng loạt TikTok",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+
+    # =========================================================================
+    # NHÓM 3: CHUYÊN YOUTUBE SHORTS CHIỀU SÂU & TRI THỨC (YOUTUBE_SHORT — 8 Giọng)
+    # =========================================================================
+    VoiceProfileDTO(
+        profile_id="gemini_yt_orus",
+        display_name="Giáo Sư Hoàng Nam (Gemini Studio) — Nam Trầm Khoa Học, Vũ Trụ & Lịch Sử",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Khoa học & Lịch sử", "Chiều sâu", "Chuẩn Documentary"],
+        voice_id_or_sample_path="Orus",
+        speed_rate=1.03,
+        pitch_hz=-0.8,
+        emotion_prompt=(
+            "Đọc bằng giọng nam trầm uyên bác, chững chạc, truyền cảm hứng khám phá như phim tài liệu "
+            "khoa học vũ trụ và lịch sử trên YouTube Shorts"
+        ),
+        dsp_preset="yt_documentary_warm",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_lan_anh_story",
+        display_name="Lan Anh — Nữ Trầm Dịu Podcast Đêm Khuya & Tâm Lý Học (Chữa lành)",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Podcast chữa lành", "Tâm lý học", "Sâu lắng"],
+        voice_id_or_sample_path="fr-FR-VivienneMultilingualNeural",
+        speed_rate=1.00,
+        pitch_hz=-0.6,
+        emotion_prompt="Giọng nữ nhẹ nhàng, sâu lắng, ngắt nghỉ giàu chiều sâu cảm xúc cho YouTube Shorts",
+        dsp_preset="luxury_silk_female",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_van_minh_knowledge",
+        display_name="Văn Minh — Nam Phân Tích Tài Chính, Kinh Doanh & Tóm Tắt Sách",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Tài chính & Sách", "Mạch lạc", "Điềm đạm"],
+        voice_id_or_sample_path="en-AU-WilliamMultilingualNeural",
+        speed_rate=1.05,
+        pitch_hz=-0.8,
+        emotion_prompt="Giọng nam điềm đạm, đáng tin cậy, trình bày kiến thức kinh tế và bài học thành công",
+        dsp_preset="yt_documentary_warm",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_actor_charon",
+        display_name="Diễn Viên AI Charon (Gemini Studio) — Nam Trầm Sâu Bí Ẩn & Triết Lý",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Giải mã bí ẩn", "Triết lý", "Trầm sâu"],
+        voice_id_or_sample_path="Charon",
+        speed_rate=1.03,
+        pitch_hz=-1.0,
+        emotion_prompt="Giọng nam trầm sâu, sang trọng, nhịp chậm có chiều sâu điện ảnh và suy ngẫm",
+        dsp_preset="movie_male_deep",
+    ),
+    VoiceProfileDTO(
+        profile_id="gemini_actor_aoede",
+        display_name="Nghệ Sĩ AI Aoede (Gemini Studio) — Nữ Ấm Áp Kể Chuyện Nghệ Thuật & Văn Hóa",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Nghệ thuật & Âm nhạc", "Truyền cảm", "Tinh tế"],
+        voice_id_or_sample_path="Aoede",
+        speed_rate=1.02,
+        pitch_hz=0.0,
+        emotion_prompt="Đọc tự nhiên như người làm nghệ thuật lâu năm đang tâm sự nhẹ nhàng, truyền cảm",
+        dsp_preset="luxury_silk_female",
+    ),
+    VoiceProfileDTO(
+        profile_id="edge_thu_ha_doc",
+        display_name="Thu Hà — Nữ Thuyết Minh Khám Phá Thế Giới & Kiến Thức Thường Thức",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Khám phá", "Thiên nhiên", "Dễ nghe"],
+        voice_id_or_sample_path="en-US-AvaMultilingualNeural",
+        speed_rate=1.04,
+        pitch_hz=-0.3,
+        emotion_prompt="Giọng nữ trong trẻo, mạch lạc, dẫn dắt người xem khám phá kiến thức thú vị",
+        dsp_preset="yt_documentary_warm",
+    ),
+    VoiceProfileDTO(
+        profile_id="local_vais_studio",
+        display_name="Ngọc Huyền (Offline 0.1s) — Nữ Bắc Chuẩn Đài Tin Tức & Kiến Thức",
+        tier=VoiceTier.LOCAL_ONNX_VITS,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Offline 0.1s", "Miền Bắc", "Chuẩn đài"],
+        voice_id_or_sample_path="vi_VN-vais1000-medium.onnx",
+        speed_rate=1.05,
+        pitch_hz=0.0,
+        emotion_prompt="Giọng phát thanh viên miền Bắc rõ nét, chạy 100% trên máy không phụ thuộc mạng",
+        dsp_preset="drama_female_emotional",
+    ),
+    VoiceProfileDTO(
+        profile_id="local_vivos_saigon_male",
+        display_name="Minh Triết Sài Gòn (Offline 0.1s) — Nam Trầm Miền Nam Kể Chuyện Offline",
+        tier=VoiceTier.LOCAL_ONNX_VITS,
+        category=VoiceUseCaseCategory.YOUTUBE_SHORT,
+        tags=["Offline 0.1s", "Miền Nam", "Nam trầm"],
+        voice_id_or_sample_path="vi_VN-vivos-x_low.onnx#8",
+        speed_rate=1.03,
+        pitch_hz=-0.4,
+        emotion_prompt="Giọng nam miền Nam trầm ấm chạy offline trực tiếp trên máy tính không cần mạng",
+        dsp_preset="yt_documentary_warm",
+    ),
+
+    # =========================================================================
+    # NHÓM 4: TƯ VẤN BÁN HÀNG & SHOWROOM CAO CẤP (ECOMMERCE_SALES — 5 Giọng)
+    # =========================================================================
     VoiceProfileDTO(
         profile_id="edge_nam_nghe_nhan",
-        display_name="Đức Trung — Nam Trầm Ấm Chia Sẻ Nhạc Cụ / Đồ Gỗ Thủ Công (Truyền cảm)",
+        display_name="Đức Trung — Nam Trầm Ấm Nghệ Nhân Nhạc Cụ & Đồ Gỗ Thủ Công (Truyền cảm)",
         tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.ECOMMERCE_SALES,
+        tags=["Nhạc cụ & Đồ gỗ", "Chân thành", "Ấm áp"],
         voice_id_or_sample_path="en-US-AndrewMultilingualNeural",
         speed_rate=1.01,
         pitch_hz=-0.8,
@@ -38,48 +383,22 @@ DEFAULT_VOICE_PROFILES: List[VoiceProfileDTO] = [
     ),
     VoiceProfileDTO(
         profile_id="edge_nu_boutique_silk",
-        display_name="Khánh Linh — Nữ Bản Xứ Sang Trọng Tư Vấn Nhạc Cụ & Thời Trang (Mềm mại)",
+        display_name="Khánh Linh — Nữ Sang Trọng Tư Vấn Nhạc Cụ & Thời Trang Thiết Kế (Mềm mại)",
         tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="vi-VN-HoaiMyNeural",
+        category=VoiceUseCaseCategory.ECOMMERCE_SALES,
+        tags=["Showroom & Boutique", "Thanh lịch", "Mềm mại"],
+        voice_id_or_sample_path="en-US-AvaMultilingualNeural",
         speed_rate=1.01,
         pitch_hz=-0.4,
-        emotion_prompt="Giọng nữ tiếng Việt bản xứ sang trọng, thanh lịch, tròn vành rõ chữ cho showroom đàn và thời trang",
-        dsp_preset="luxury_silk_female",
-    ),
-    VoiceProfileDTO(
-        profile_id="edge_nam_minh_movie",
-        display_name="Minh Quân — Nam Trầm Thuyết Minh Phim Bộ / Tổng Tài (Đĩnh đạc)",
-        tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="en-US-BrianMultilingualNeural",
-        speed_rate=1.08,
-        pitch_hz=-1.2,
-        emotion_prompt="Giọng nam trầm ấm, đĩnh đạc, nhấn nhá kịch tính chuẩn thuyết minh phim bộ",
-        dsp_preset="movie_male_deep",
-    ),
-    VoiceProfileDTO(
-        profile_id="edge_hoai_my_drama",
-        display_name="Thanh Thảo — Nữ Ngôn Tình Sâu Lắng / Kể Chuyện Nghệ Thuật (Ngọt ngào)",
-        tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="en-US-AvaMultilingualNeural",
-        speed_rate=1.04,
-        pitch_hz=0.0,
-        emotion_prompt="Giọng nữ truyền cảm, mềm mại, giàu cảm xúc nội tâm",
-        dsp_preset="drama_female_emotional",
-    ),
-    VoiceProfileDTO(
-        profile_id="edge_lan_anh_story",
-        display_name="Lan Anh — Nữ Trầm Dịu Đêm Khuya / Review Tinh Tế (Chữa lành)",
-        tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="fr-FR-VivienneMultilingualNeural",
-        speed_rate=1.00,
-        pitch_hz=-0.6,
-        emotion_prompt="Giọng nữ nhẹ nhàng, sâu lắng, ngắt nghỉ giàu chiều sâu cảm xúc",
+        emotion_prompt="Giọng nữ sang trọng, thanh lịch, tròn vành rõ chữ cho showroom đàn và thời trang",
         dsp_preset="luxury_silk_female",
     ),
     VoiceProfileDTO(
         profile_id="edge_gia_bao_consult",
         display_name="Gia Bảo — Nam Trẻ Trung Tư Vấn Thực Tế & So Sánh Phiên Bản (Rõ ràng)",
         tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.ECOMMERCE_SALES,
+        tags=["Tư vấn mua hàng", "So sánh A/B", "Rõ ràng"],
         voice_id_or_sample_path="it-IT-GiuseppeMultilingualNeural",
         speed_rate=1.07,
         pitch_hz=-0.4,
@@ -90,6 +409,8 @@ DEFAULT_VOICE_PROFILES: List[VoiceProfileDTO] = [
         profile_id="edge_phuong_anh_fashion",
         display_name="Phương Anh — Nữ Hiện Đại Lookbook Quần Áo & Phụ Kiện (Tươi sáng)",
         tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.ECOMMERCE_SALES,
+        tags=["Thời trang & Mỹ phẩm", "Tươi sáng", "Hiện đại"],
         voice_id_or_sample_path="pt-BR-ThalitaMultilingualNeural",
         speed_rate=1.06,
         pitch_hz=0.5,
@@ -97,64 +418,16 @@ DEFAULT_VOICE_PROFILES: List[VoiceProfileDTO] = [
         dsp_preset="drama_female_emotional",
     ),
     VoiceProfileDTO(
-        profile_id="edge_hoang_vu_action",
-        display_name="Hoàng Vũ — Nam Kịch Tính Phim Hành Động / Trinh Thám (Gay cấn)",
-        tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="fr-FR-RemyMultilingualNeural",
-        speed_rate=1.12,
-        pitch_hz=-0.8,
-        emotion_prompt="Giọng nam hồi hộp, dồn dập, nhấn mạnh các tình tiết gay cấn bất ngờ",
-        dsp_preset="thriller_suspense",
-    ),
-    VoiceProfileDTO(
-        profile_id="edge_hoai_my_fast",
-        display_name="Mai Phương — Nữ Review Nhịp Nhanh TikTok / Shorts (Bắt tai)",
-        tier=VoiceTier.EDGE_TTS,
-        voice_id_or_sample_path="en-US-EmmaMultilingualNeural",
-        speed_rate=1.13,
-        pitch_hz=0.3,
-        emotion_prompt="Giọng nữ trẻ trung, bắt tai, mở đầu cuốn hút giữ chân người xem TikTok",
-        dsp_preset="thriller_suspense",
-    ),
-    VoiceProfileDTO(
-        profile_id="local_vais_studio",
-        display_name="Ngọc Huyền (Offline Phòng Thu) — Nữ Bắc Chuẩn Đài 0.1s (Không cần mạng)",
-        tier=VoiceTier.LOCAL_ONNX_VITS,
-        voice_id_or_sample_path="vi_VN-vais1000-medium.onnx",
-        speed_rate=1.05,
-        pitch_hz=0.0,
-        emotion_prompt="Giọng phát thanh viên miền Bắc rõ nét, chạy 100% trên máy không phụ thuộc mạng",
-        dsp_preset="drama_female_emotional",
-    ),
-    VoiceProfileDTO(
-        profile_id="gemini_actor_aoede",
-        display_name="Nghệ Sĩ AI Aoede (Gemini Studio) — Nữ Ấm Áp Kể Chuyện Thủ Công & Nhạc Cụ",
-        tier=VoiceTier.GEMINI_EMOTIONAL,
-        voice_id_or_sample_path="Aoede",
-        speed_rate=1.02,
-        pitch_hz=0.0,
-        emotion_prompt="Đọc tự nhiên như người chơi violin lâu năm đang tâm sự nhẹ nhàng, truyền cảm và sang trọng",
-        dsp_preset="luxury_silk_female",
-    ),
-    VoiceProfileDTO(
         profile_id="gemini_actor_puck",
         display_name="Chuyên Gia AI Puck (Gemini Studio) — Nam Thân Thiện Tư Vấn Trải Nghiệm",
         tier=VoiceTier.GEMINI_EMOTIONAL,
+        category=VoiceUseCaseCategory.ECOMMERCE_SALES,
+        tags=["Tư vấn 1-1", "Gần gũi", "Chân thực"],
         voice_id_or_sample_path="Puck",
         speed_rate=1.04,
         pitch_hz=-0.5,
         emotion_prompt="Giọng nam gần gũi, chân thành, nhấn nhá tự nhiên như đang trò chuyện trực tiếp tại cửa hàng",
         dsp_preset="artisan_warm_studio",
-    ),
-    VoiceProfileDTO(
-        profile_id="gemini_actor_charon",
-        display_name="Diễn Viên AI Charon (Gemini Studio) — Nam Trầm Sâu Điện Ảnh & Luxury",
-        tier=VoiceTier.GEMINI_EMOTIONAL,
-        voice_id_or_sample_path="Charon",
-        speed_rate=1.03,
-        pitch_hz=-1.0,
-        emotion_prompt="Giọng nam trầm sâu, sang trọng, nhịp chậm có chiều sâu điện ảnh",
-        dsp_preset="movie_male_deep",
     ),
 ]
 
@@ -214,6 +487,8 @@ class SQLiteRepository:
             profile_id TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
             tier TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'MOVIE_DUB',
+            tags_json TEXT NOT NULL DEFAULT '[]',
             voice_id_or_sample_path TEXT NOT NULL,
             sample_ref_text TEXT DEFAULT '',
             speed_rate REAL NOT NULL DEFAULT 1.08,
@@ -315,6 +590,14 @@ class SQLiteRepository:
                 conn.execute(
                     "ALTER TABLE voice_profiles ADD COLUMN dsp_preset TEXT DEFAULT 'movie_male_deep'"
                 )
+            if "category" not in vp_cols:
+                conn.execute(
+                    "ALTER TABLE voice_profiles ADD COLUMN category TEXT DEFAULT 'MOVIE_DUB'"
+                )
+            if "tags_json" not in vp_cols:
+                conn.execute(
+                    "ALTER TABLE voice_profiles ADD COLUMN tags_json TEXT DEFAULT '[]'"
+                )
             seg_cols = [
                 r["name"] for r in conn.execute("PRAGMA table_info(subtitle_segments)").fetchall()
             ]
@@ -354,16 +637,19 @@ class SQLiteRepository:
 
     def upsert_voice_profile(self, profile: VoiceProfileDTO) -> None:
         """Create or update a VoiceProfileDTO in SQLite."""
+        tags_str = json.dumps(profile.tags, ensure_ascii=False)
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO voice_profiles
-                (profile_id, display_name, tier, voice_id_or_sample_path, sample_ref_text,
+                (profile_id, display_name, tier, category, tags_json, voice_id_or_sample_path, sample_ref_text,
                  speed_rate, pitch_hz, emotion_prompt, dsp_preset, cloud_vendor)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(profile_id) DO UPDATE SET
                     display_name=excluded.display_name,
                     tier=excluded.tier,
+                    category=excluded.category,
+                    tags_json=excluded.tags_json,
                     voice_id_or_sample_path=excluded.voice_id_or_sample_path,
                     sample_ref_text=excluded.sample_ref_text,
                     speed_rate=excluded.speed_rate,
@@ -376,6 +662,8 @@ class SQLiteRepository:
                     profile.profile_id,
                     profile.display_name,
                     profile.tier.value,
+                    profile.category.value,
+                    tags_str,
                     profile.voice_id_or_sample_path,
                     profile.sample_ref_text,
                     profile.speed_rate,
@@ -387,24 +675,45 @@ class SQLiteRepository:
             )
 
     def list_voice_profiles(self) -> List[VoiceProfileDTO]:
-        """Return all registered voice profiles."""
+        """Return all registered voice profiles ordered cleanly by category and priority."""
+        default_order = {vp.profile_id: idx for idx, vp in enumerate(DEFAULT_VOICE_PROFILES)}
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM voice_profiles ORDER BY rowid ASC").fetchall()
-        return [
-            VoiceProfileDTO(
-                profile_id=r["profile_id"],
-                display_name=r["display_name"],
-                tier=VoiceTier(r["tier"]),
-                voice_id_or_sample_path=r["voice_id_or_sample_path"],
-                sample_ref_text=r["sample_ref_text"] or "",
-                speed_rate=float(r["speed_rate"]),
-                pitch_hz=float(r["pitch_hz"]),
-                emotion_prompt=r["emotion_prompt"] or "",
-                dsp_preset=r["dsp_preset"] or "movie_male_deep",
-                cloud_vendor=r["cloud_vendor"],
+        profiles: List[VoiceProfileDTO] = []
+        for r in rows:
+            raw_cat = r["category"] if "category" in r.keys() and r["category"] else "MOVIE_DUB"
+            try:
+                cat_enum = VoiceUseCaseCategory(raw_cat)
+            except ValueError:
+                cat_enum = VoiceUseCaseCategory.MOVIE_DUB
+            try:
+                parsed_tags = json.loads(r["tags_json"] or "[]") if "tags_json" in r.keys() else []
+            except Exception:
+                parsed_tags = []
+            profiles.append(
+                VoiceProfileDTO(
+                    profile_id=r["profile_id"],
+                    display_name=r["display_name"],
+                    tier=VoiceTier(r["tier"]),
+                    category=cat_enum,
+                    tags=parsed_tags if isinstance(parsed_tags, list) else [],
+                    voice_id_or_sample_path=r["voice_id_or_sample_path"],
+                    sample_ref_text=r["sample_ref_text"] or "",
+                    speed_rate=float(r["speed_rate"]),
+                    pitch_hz=float(r["pitch_hz"]),
+                    emotion_prompt=r["emotion_prompt"] or "",
+                    dsp_preset=r["dsp_preset"] or "movie_male_deep",
+                    cloud_vendor=r["cloud_vendor"],
+                )
             )
-            for r in rows
-        ]
+        # Put custom user-cloned voices right at the top of their category, followed by curated order
+        profiles.sort(
+            key=lambda p: (
+                0 if p.profile_id not in default_order else 1,
+                default_order.get(p.profile_id, 999),
+            )
+        )
+        return profiles
 
     def get_voice_profile(self, profile_id: str) -> Optional[VoiceProfileDTO]:
         """Fetch a single VoiceProfileDTO by ID."""

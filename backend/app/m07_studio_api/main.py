@@ -59,6 +59,7 @@ from app.m00_core_contracts import (
     VisualMode,
     VoiceProfileDTO,
     VoiceTier,
+    VoiceUseCaseCategory,
     get_settings,
     resolve_aspect_dimensions,
 )
@@ -231,6 +232,17 @@ class VoicePreviewRequest(BaseModel):
     sample_text: str = "Không ai ngờ người đàn ông trầm lặng này lại chính là chủ tịch tập đoàn!"
     speed_rate: Optional[float] = None
     pitch_hz: Optional[float] = None
+
+
+class YouTubeVoiceCloneRequest(BaseModel):
+    youtube_url: str = Field(min_length=8)
+    display_name: str = Field(min_length=2, max_length=120)
+    start_sec: float = Field(default=5.0, ge=0.0, le=14400.0)
+    duration_sec: float = Field(default=15.0, ge=6.0, le=24.0)
+    category: VoiceUseCaseCategory = VoiceUseCaseCategory.MOVIE_DUB
+    dialect_hint: str = Field(default="auto")
+    speed_rate: float = Field(default=1.02, ge=0.80, le=1.40)
+    sample_ref_text: str = Field(default="")
 
 
 class URLProbeRequest(BaseModel):
@@ -498,9 +510,65 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             out.append(d)
         return out
 
+    def _serialize_voice_profile(v: VoiceProfileDTO) -> Dict[str, Any]:
+        d = v.model_dump()
+        if v.tier == VoiceTier.LOCAL_F5_CLONE and v.voice_id_or_sample_path:
+            sp = Path(v.voice_id_or_sample_path)
+            if sp.exists():
+                d["sample_audio_url"] = _to_media_url(str(sp))
+        return d
+
+    async def _auto_transcribe_reference_wav(norm_wav: Path, vid: str) -> str:
+        """Convert 24kHz sample WAV to 16kHz mono and run M02 GPU/CPU Whisper to extract exact Vietnamese text."""
+        wav_16k = norm_wav.with_name(f"{vid}_16k_tmp.wav")
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(norm_wav),
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    str(wav_16k),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode != 0 or not wav_16k.exists():
+                return ""
+            from app.m00_core_contracts import MediaAssetDTO
+
+            dummy_media = MediaAssetDTO(
+                media_id=f"vc_{vid}",
+                project_id=f"vc_{vid}",
+                video_path=norm_wav,
+                audio_16k_wav_path=wav_16k,
+                duration_ms=15000,
+                width=1080,
+                height=1920,
+                fps=30.0,
+            )
+            tr = await orchestrator.transcriber.transcribe(dummy_media, lang_hint="vi")
+            joined = " ".join(s.text.strip() for s in tr.segments if s.text.strip()).strip()
+            return joined
+        except Exception:
+            return ""
+        finally:
+            wav_16k.unlink(missing_ok=True)
+
     @app.get("/api/voices")
     async def list_voices() -> List[Dict[str, Any]]:
-        return [v.model_dump() for v in repo.list_voice_profiles()]
+        return [_serialize_voice_profile(v) for v in repo.list_voice_profiles()]
 
     @app.post("/api/voices/preview")
     async def preview_voice(req: VoicePreviewRequest) -> Dict[str, str]:
@@ -524,11 +592,14 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
     async def register_cloned_voice(
         display_name: str = Form(...),
         sample_ref_text: str = Form(default=""),
-        speed_rate: float = Form(default=1.12),
+        speed_rate: float = Form(default=1.04),
+        category: str = Form(default="MOVIE_DUB"),
+        dialect_hint: str = Form(default="auto"),
         sample_file: UploadFile = File(...),
     ) -> Dict[str, Any]:
         vid = f"clone_{uuid.uuid4().hex[:8]}"
-        raw_path = settings.assets_dir / "voice_samples" / f"{vid}_raw_{sample_file.filename}"
+        safe_ext = Path(sample_file.filename or "sample.wav").suffix or ".wav"
+        raw_path = settings.assets_dir / "voice_samples" / f"{vid}_raw{safe_ext}"
         norm_wav = settings.assets_dir / "voice_samples" / f"{vid}_24k.wav"
         raw_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -536,21 +607,120 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             shutil.copyfileobj(sample_file.file, f_out)
 
         try:
-            F5VoiceCloneGPUProvider.prepare_reference_sample(raw_path, norm_wav)
+            await asyncio.to_thread(
+                F5VoiceCloneGPUProvider.prepare_reference_sample, raw_path, norm_wav, 0.0, 16.0
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         finally:
             raw_path.unlink(missing_ok=True)
 
+        ref_txt = sample_ref_text.strip()
+        if not ref_txt:
+            ref_txt = await _auto_transcribe_reference_wav(norm_wav, vid)
+
+        analysis = await asyncio.to_thread(
+            F5VoiceCloneGPUProvider.analyze_voice_sample, norm_wav, ref_txt, dialect_hint
+        )
+        try:
+            cat_enum = VoiceUseCaseCategory(category)
+        except ValueError:
+            cat_enum = VoiceUseCaseCategory.MOVIE_DUB
+
         profile = VoiceProfileDTO(
             profile_id=vid,
-            display_name=f"{display_name} (Voice Clone GPU)",
+            display_name=f"{display_name.strip()} (Giọng Thu Mẫu)",
             tier=VoiceTier.LOCAL_F5_CLONE,
+            category=cat_enum,
+            tags=list(analysis.get("tags") or ["Giọng thu mẫu"]),  # type: ignore[arg-type]
             voice_id_or_sample_path=str(norm_wav),
-            sample_ref_text=sample_ref_text.strip(),
+            sample_ref_text=ref_txt,
             speed_rate=speed_rate,
             pitch_hz=0.0,
+            emotion_prompt=str(analysis.get("emotion_prompt") or ""),
+            dsp_preset=str(analysis.get("dsp_preset") or "cinema_uslt_female"),
         )
         repo.upsert_voice_profile(profile)
-        return profile.model_dump()
+        return _serialize_voice_profile(profile)
+
+    @app.post("/api/voices/clone-youtube")
+    async def register_cloned_voice_from_youtube(req: YouTubeVoiceCloneRequest) -> Dict[str, Any]:
+        """Download a clean 10–20s narrator segment directly from YouTube, auto-transcribe & build GPU Clone profile."""
+        import sys
+
+        clean_url = normalize_video_url(req.youtube_url.strip())
+        vid = f"ytclone_{uuid.uuid4().hex[:8]}"
+        samples_dir = settings.assets_dir / "voice_samples"
+        samples_dir.mkdir(parents=True, exist_ok=True)
+        out_tpl = str(samples_dir / f"{vid}_raw.%(ext)s")
+        norm_wav = samples_dir / f"{vid}_24k.wav"
+
+        s_sec = max(0.0, float(req.start_sec))
+        e_sec = s_sec + max(6.0, min(24.0, float(req.duration_sec)))
+
+        def _download_yt_slice() -> Path:
+            cmd = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--no-playlist",
+                "-f",
+                "bestaudio/best",
+                "--download-sections",
+                f"*{s_sec:.1f}-{e_sec:.1f}",
+                "--force-keyframes-at-cuts",
+                "-x",
+                "--audio-format",
+                "wav",
+                "-o",
+                out_tpl,
+                clean_url,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=False)
+            matches = list(samples_dir.glob(f"{vid}_raw.*"))
+            if proc.returncode != 0 or not matches:
+                err_msg = (proc.stderr or proc.stdout or "").strip()[-320:]
+                raise RuntimeError(f"Không thể tải đoạn giọng mẫu từ YouTube: {err_msg}")
+            return matches[0]
+
+        raw_dl: Optional[Path] = None
+        try:
+            raw_dl = await asyncio.to_thread(_download_yt_slice)
+            await asyncio.to_thread(
+                F5VoiceCloneGPUProvider.prepare_reference_sample,
+                raw_dl,
+                norm_wav,
+                0.0,
+                req.duration_sec,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            for leftover in samples_dir.glob(f"{vid}_raw.*"):
+                leftover.unlink(missing_ok=True)
+
+        ref_txt = req.sample_ref_text.strip()
+        if not ref_txt:
+            ref_txt = await _auto_transcribe_reference_wav(norm_wav, vid)
+
+        analysis = await asyncio.to_thread(
+            F5VoiceCloneGPUProvider.analyze_voice_sample, norm_wav, ref_txt, req.dialect_hint
+        )
+        profile = VoiceProfileDTO(
+            profile_id=vid,
+            display_name=f"{req.display_name.strip()} (Trích Mẫu YouTube)",
+            tier=VoiceTier.LOCAL_F5_CLONE,
+            category=req.category,
+            tags=["Mẫu YouTube", *list(analysis.get("tags") or [])[1:]],  # type: ignore[misc]
+            voice_id_or_sample_path=str(norm_wav),
+            sample_ref_text=ref_txt,
+            speed_rate=req.speed_rate,
+            pitch_hz=0.0,
+            emotion_prompt=str(analysis.get("emotion_prompt") or ""),
+            dsp_preset=str(analysis.get("dsp_preset") or "cinema_uslt_female"),
+        )
+        repo.upsert_voice_profile(profile)
+        return _serialize_voice_profile(profile)
 
     @app.post("/api/media/probe-url")
     async def probe_remote_video_url(req: URLProbeRequest) -> Dict[str, Any]:

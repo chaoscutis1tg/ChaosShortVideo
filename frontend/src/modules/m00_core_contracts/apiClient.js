@@ -52,6 +52,12 @@ export const studioApi = {
     return res.json();
   },
 
+  cloneVoiceFromYoutube: (payload) =>
+    requestJSON('/api/voices/clone-youtube', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   async uploadStudioFile(file, category = 'video') {
     const fd = new FormData();
     fd.append('category', category);

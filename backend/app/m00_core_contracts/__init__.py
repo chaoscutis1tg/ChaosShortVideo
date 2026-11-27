@@ -87,6 +87,7 @@ from .enums import (
     TransitionStyle,
     VisualMode,
     VoiceTier,
+    VoiceUseCaseCategory,
 )
 from .exceptions import (
     AIContentBrainError,
@@ -192,6 +193,7 @@ __all__ = [
     "VisualMode",
     "CutStrategy",
     "VoiceTier",
+    "VoiceUseCaseCategory",
     "LayoutType",
     "SubtitleStyle",
     "HardsubMaskMode",

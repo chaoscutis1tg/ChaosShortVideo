@@ -181,6 +181,40 @@ class StudioVoiceMasteringDSP:
             "acompressor=threshold=-19dB:ratio=2.4:attack=18:release=220:makeup=1.9,"
             "aecho=0.8:0.88:24:0.05"
         ),
+        "cinema_uslt_female": (
+            "highpass=f=85,"
+            "equalizer=f=190:width_type=o:width=1.1:g=2.4,"
+            "equalizer=f=360:width_type=o:width=1.0:g=-1.8,"
+            "equalizer=f=3100:width_type=o:width=1.3:g=3.4,"
+            "acompressor=threshold=-17dB:ratio=3.2:attack=10:release=160:makeup=2.3"
+        ),
+        "cinema_uslt_male": (
+            "highpass=f=72,"
+            "equalizer=f=135:width_type=o:width=1.1:g=3.4,"
+            "equalizer=f=340:width_type=o:width=1.0:g=-1.8,"
+            "equalizer=f=3000:width_type=o:width=1.3:g=3.2,"
+            "acompressor=threshold=-17dB:ratio=3.2:attack=10:release=165:makeup=2.3"
+        ),
+        "tiktok_punchy_bright": (
+            "highpass=f=95,"
+            "equalizer=f=210:width_type=o:width=1.1:g=2.0,"
+            "equalizer=f=4200:width_type=o:width=1.4:g=3.5,"
+            "acompressor=threshold=-16dB:ratio=3.4:attack=6:release=125:makeup=2.5"
+        ),
+        "yt_documentary_warm": (
+            "highpass=f=72,"
+            "equalizer=f=150:width_type=o:width=1.2:g=3.0,"
+            "equalizer=f=350:width_type=o:width=1.0:g=-1.3,"
+            "equalizer=f=3700:width_type=o:width=1.5:g=2.2,"
+            "acompressor=threshold=-18dB:ratio=2.6:attack=15:release=210:makeup=2.0"
+        ),
+        "horror_dark_male": (
+            "highpass=f=65,"
+            "equalizer=f=115:width_type=o:width=1.1:g=4.0,"
+            "equalizer=f=3600:width_type=o:width=1.4:g=2.8,"
+            "acompressor=threshold=-17dB:ratio=3.2:attack=12:release=190:makeup=2.3,"
+            "aecho=0.8:0.86:28:0.08"
+        ),
     }
 
     @classmethod

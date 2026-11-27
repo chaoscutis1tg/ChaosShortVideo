@@ -1664,9 +1664,11 @@ export default function ProductStudioForm({
         <div className="step-header">
           <span className="step-num">4</span>
           <div>
-            <div className="step-title">Giọng đọc truyền cảm (13 giọng), Nhạc nền Violin & Thời lượng xuất</div>
+            <div className="step-title">
+              Giọng đọc truyền cảm ({voices.length} giọng), Nhạc nền Violin & Thời lượng xuất
+            </div>
             <div className="step-desc">
-              Tên giọng hiển thị đầy đủ không cắt chữ; tinh chỉnh trực tiếp tốc độ đọc, độ trầm ấm và thời lượng video
+              Lọc nhanh theo nhóm Bán hàng / TikTok / YouTube Shorts; tinh chỉnh trực tiếp tốc độ đọc và độ trầm ấm
             </div>
           </div>
         </div>
@@ -1680,7 +1682,8 @@ export default function ProductStudioForm({
             onSpeedChange={setVoiceSpeed}
             voicePitch={voicePitch}
             onPitchChange={setVoicePitch}
-            label="Giọng đọc chia sẻ sản phẩm (13 giọng)"
+            defaultCategory="ECOMMERCE_SALES"
+            label={`Giọng đọc chia sẻ sản phẩm (${voices.length} giọng)`}
             sampleText="Điểm chạm cảm xúc đầu tiên của cây đàn này nằm ở mặt top gỗ thịt tự nhiên nguyên tấm, cho tiếng đàn ngân dày, ấm và có chiều sâu."
             notify={notify}
           />

@@ -37,6 +37,7 @@ from .enums import (
     TransitionStyle,
     VisualMode,
     VoiceTier,
+    VoiceUseCaseCategory,
 )
 
 
@@ -296,6 +297,8 @@ class VoiceProfileDTO(BaseContractDTO):
     profile_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     tier: VoiceTier = VoiceTier.EDGE_TTS
+    category: VoiceUseCaseCategory = VoiceUseCaseCategory.MOVIE_DUB
+    tags: List[str] = Field(default_factory=list)
     voice_id_or_sample_path: str = Field(default="en-US-BrianMultilingualNeural")
     sample_ref_text: str = ""
     speed_rate: float = Field(default=1.08, ge=0.7, le=1.6)
@@ -321,6 +324,7 @@ class AudioSubConfigDTO(BaseContractDTO):
     enable_narration: bool = True
     keep_original_audio: bool = True
     ducking_ratio: float = Field(default=DEFAULT_DUCKING_RATIO, ge=0.0, le=1.0)
+    dynamic_cinema_ducking: bool = True
     bgm_path: Optional[Path] = None
     bgm_volume: float = Field(default=DEFAULT_ANTI_COPY_BGM_VOL, ge=0.0, le=1.0)
     subtitle_style: SubtitleStyle = SubtitleStyle.CINEMA

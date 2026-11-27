@@ -117,8 +117,16 @@ export function MediaDropzone({
   );
 }
 
+export const VOICE_CATEGORY_META = [
+  { id: 'ALL', label: 'Tất cả', groupTitle: 'Tất cả giọng đọc' },
+  { id: 'TIKTOK_SHORT', label: 'Short TikTok', groupTitle: 'Chuyên Short TikTok (Nhịp nhanh • Bắt trend)' },
+  { id: 'YOUTUBE_SHORT', label: 'YouTube Shorts', groupTitle: 'Chuyên YouTube Shorts (Chiều sâu • Tri thức)' },
+  { id: 'MOVIE_DUB', label: 'Thuyết minh Phim', groupTitle: 'Lồng tiếng & Thuyết minh Phim (Chiếu rạp USLT • Phim bộ)' },
+  { id: 'ECOMMERCE_SALES', label: 'Bán hàng', groupTitle: 'Tư vấn Bán hàng & Showroom' },
+];
+
 /**
- * Full-width readable Voice Selector Card (zero mid-word truncation!) with optional Speed & Pitch sliders.
+ * Full-width readable Voice Selector Card with Platform Category Filter Pills + Speed & Pitch sliders.
  */
 export function InlineVoiceSelector({
   voices = [],
@@ -130,15 +138,35 @@ export function InlineVoiceSelector({
   onSpeedChange = null,
   voicePitch = null,
   onPitchChange = null,
+  defaultCategory = 'ALL',
   notify,
 }) {
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState(defaultCategory || 'ALL');
   const audioRef = useRef(null);
 
   const selectedVoiceObj = voices.find((v) => v.profile_id === voiceId);
   const effSpeed = voiceSpeed ?? selectedVoiceObj?.speed_rate ?? 1.04;
   const effPitch = voicePitch ?? selectedVoiceObj?.pitch_hz ?? 0.0;
+
+  const filteredVoices =
+    categoryFilter === 'ALL'
+      ? voices
+      : voices.filter((v) => (v.category || 'MOVIE_DUB') === categoryFilter);
+  const effectiveVoices = filteredVoices.length > 0 ? filteredVoices : voices;
+
+  const handleSelectCategory = (catId) => {
+    setCategoryFilter(catId);
+    if (catId === 'ALL') return;
+    const matching = voices.filter((v) => (v.category || 'MOVIE_DUB') === catId);
+    if (matching.length > 0 && !matching.some((v) => v.profile_id === voiceId)) {
+      const topVoice = matching[0];
+      onChange(topVoice.profile_id);
+      if (onSpeedChange) onSpeedChange(topVoice.speed_rate);
+      if (onPitchChange) onPitchChange(topVoice.pitch_hz);
+    }
+  };
 
   const handleTogglePreview = async () => {
     if (playing && audioRef.current) {
@@ -197,6 +225,37 @@ export function InlineVoiceSelector({
         </button>
       </div>
 
+      {/* Quick Platform / Purpose Filter Pills */}
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        {VOICE_CATEGORY_META.map((cat) => {
+          const count =
+            cat.id === 'ALL'
+              ? voices.length
+              : voices.filter((v) => (v.category || 'MOVIE_DUB') === cat.id).length;
+          const active = categoryFilter === cat.id;
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => handleSelectCategory(cat.id)}
+              style={{
+                padding: '4px 9px',
+                fontSize: 11.5,
+                fontWeight: active ? 700 : 500,
+                borderRadius: 999,
+                cursor: 'pointer',
+                border: active ? '1px solid var(--brand)' : '1px solid var(--border)',
+                background: active ? 'var(--brand-soft)' : 'transparent',
+                color: active ? 'var(--brand-text)' : 'var(--text-secondary)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {cat.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       <select
         className="select"
         value={voiceId}
@@ -212,16 +271,43 @@ export function InlineVoiceSelector({
           if (found && onPitchChange) onPitchChange(found.pitch_hz);
         }}
       >
-        {voices.map((v) => (
-          <option key={v.profile_id} value={v.profile_id}>
-            {stripLeadingEmoji(v.display_name)}
-          </option>
-        ))}
+        {categoryFilter === 'ALL'
+          ? VOICE_CATEGORY_META.filter((c) => c.id !== 'ALL').map((cat) => {
+              const items = voices.filter((v) => (v.category || 'MOVIE_DUB') === cat.id);
+              if (items.length === 0) return null;
+              return (
+                <optgroup key={cat.id} label={cat.groupTitle}>
+                  {items.map((v) => (
+                    <option key={v.profile_id} value={v.profile_id}>
+                      {stripLeadingEmoji(v.display_name)}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })
+          : effectiveVoices.map((v) => (
+              <option key={v.profile_id} value={v.profile_id}>
+                {stripLeadingEmoji(v.display_name)}
+              </option>
+            ))}
       </select>
 
-      {selectedVoiceObj?.emotion_prompt && (
-        <div className="text-muted" style={{ fontSize: 11.8, lineHeight: 1.35 }}>
-          Phong cách: {selectedVoiceObj.emotion_prompt}
+      {selectedVoiceObj && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {Array.isArray(selectedVoiceObj.tags) && selectedVoiceObj.tags.length > 0 && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {selectedVoiceObj.tags.map((tg, i) => (
+                <span key={i} className="badge badge-info" style={{ fontSize: 10.6, padding: '2px 7px' }}>
+                  {tg}
+                </span>
+              ))}
+            </div>
+          )}
+          {selectedVoiceObj.emotion_prompt && (
+            <div className="text-muted" style={{ fontSize: 11.8, lineHeight: 1.35 }}>
+              Phong cách: {selectedVoiceObj.emotion_prompt}
+            </div>
+          )}
         </div>
       )}
 

@@ -120,6 +120,15 @@ class VoiceTier(str, Enum):
     CLOUD_API = "CLOUD_API"
 
 
+class VoiceUseCaseCategory(str, Enum):
+    """Platform & content-format grouping for fast narrator selection."""
+
+    MOVIE_DUB = "MOVIE_DUB"
+    TIKTOK_SHORT = "TIKTOK_SHORT"
+    YOUTUBE_SHORT = "YOUTUBE_SHORT"
+    ECOMMERCE_SALES = "ECOMMERCE_SALES"
+
+
 class LayoutType(str, Enum):
     """Vertical 9:16 framing templates."""
 

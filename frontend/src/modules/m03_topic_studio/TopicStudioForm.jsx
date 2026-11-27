@@ -62,12 +62,13 @@ export default function TopicStudioForm({
   const [keyPoints, setKeyPoints] = useState('');
   const [visualMode, setVisualMode] = useState('AI_IMAGE');
   const [voiceId, setVoiceId] = useState(
-    voices.find((v) => v.profile_id === 'edge_nam_nghe_nhan')?.profile_id ||
+    voices.find((v) => v.profile_id === 'edge_hoai_my_fast')?.profile_id ||
+      voices.find((v) => v.profile_id === 'gemini_yt_orus')?.profile_id ||
       voices[0]?.profile_id ||
-      'edge_nam_minh_movie'
+      'edge_hoai_my_fast'
   );
-  const [voiceSpeed, setVoiceSpeed] = useState(1.03);
-  const [voicePitch, setVoicePitch] = useState(-1.2);
+  const [voiceSpeed, setVoiceSpeed] = useState(1.15);
+  const [voicePitch, setVoicePitch] = useState(0.4);
   const [bgmPresetId, setBgmPresetId] = useState('bgm_lofi_story');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.08);
@@ -206,7 +207,8 @@ export default function TopicStudioForm({
             onSpeedChange={setVoiceSpeed}
             voicePitch={voicePitch}
             onPitchChange={setVoicePitch}
-            label="Giọng đọc dẫn chuyện"
+            defaultCategory="TIKTOK_SHORT"
+            label="Giọng đọc dẫn chuyện (Short TikTok / YouTube Shorts / Phim)"
             sampleText="Chỉ với ba lưu ý đơn giản dưới đây, bạn sẽ chọn được cây đàn ưng ý ngay từ lần đầu tiên."
             notify={notify}
           />

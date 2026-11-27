@@ -1007,6 +1007,13 @@ export default function ProjectWorkspaceView({
                       onSpeedChange={setGlobalVoiceSpeed}
                       voicePitch={globalVoicePitch}
                       onPitchChange={setGlobalVoicePitch}
+                      defaultCategory={
+                        detail.mode === 'MOVIE_CLIPPER'
+                          ? 'MOVIE_DUB'
+                          : detail.mode === 'PRODUCT_SHOWCASE'
+                          ? 'ECOMMERCE_SALES'
+                          : 'ALL'
+                      }
                       notify={notify}
                     />
                   </div>

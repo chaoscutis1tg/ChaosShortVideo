@@ -300,12 +300,10 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             finally:
                 sliced_wav.unlink(missing_ok=True)
 
-        # 2. Apply smooth 200ms envelope Audio Ducking where narrator or real demo plays
+        # 2. Apply Cinema Dynamic Auto-Ducking (ducks original movie audio ONLY during active speech,
+        #    smoothly swelling movie SFX & score back to 100% in natural breath pauses & silent scenes!)
         if placed_chunks:
-            envelope = np.ones(total_samples, dtype=np.float32)
-            fade_samples = max(1, int((DUCKING_FADE_MS / 1000.0) * MASTER_AUDIO_SAMPLE_RATE))
             duck_lvl = float(audio_config.ducking_ratio)
-
             loaded_narration: List[tuple[int, np.ndarray]] = []
             for start_ms, wav_p in placed_chunks:
                 s_idx = min(total_samples - 1, max(0, int((start_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE)))
@@ -313,17 +311,61 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 e_idx = min(total_samples, s_idx + arr.shape[0])
                 loaded_narration.append((s_idx, arr[: e_idx - s_idx]))
 
-                envelope[s_idx:e_idx] = np.minimum(envelope[s_idx:e_idx], duck_lvl)
-                # Ramp down before speech
-                ramp_s = max(0, s_idx - fade_samples)
-                if s_idx > ramp_s:
-                    ramp_down = np.linspace(1.0, duck_lvl, s_idx - ramp_s, dtype=np.float32)
-                    envelope[ramp_s:s_idx] = np.minimum(envelope[ramp_s:s_idx], ramp_down)
-                # Ramp up after speech
-                ramp_e = min(total_samples, e_idx + fade_samples)
-                if ramp_e > e_idx:
-                    ramp_up = np.linspace(duck_lvl, 1.0, ramp_e - e_idx, dtype=np.float32)
-                    envelope[e_idx:ramp_e] = np.minimum(envelope[e_idx:ramp_e], ramp_up)
+            if getattr(audio_config, "dynamic_cinema_ducking", True):
+                # Build 20ms frame-level voice activity curve across total_samples
+                frame_len = max(1, int(0.020 * MASTER_AUDIO_SAMPLE_RATE))
+                n_frames = (total_samples + frame_len - 1) // frame_len
+                voice_active = np.zeros(n_frames, dtype=np.float32)
+
+                for s_idx, arr in loaded_narration:
+                    mono = 0.5 * (np.abs(arr[:, 0]) + np.abs(arr[:, 1]))
+                    f_start = s_idx // frame_len
+                    for k in range(0, arr.shape[0], frame_len):
+                        fi = f_start + (k // frame_len)
+                        if fi >= n_frames:
+                            break
+                        seg = mono[k : k + frame_len]
+                        if seg.size > 0 and float(np.sqrt(np.mean(seg * seg))) > 0.012:
+                            voice_active[fi] = 1.0
+
+                # Bridge short micro-consonant gaps (< 260ms = 13 frames) so ducking never pumps mid-sentence
+                bridged = voice_active.copy()
+                bridge_frames = 13
+                last_on = -999
+                for fi in range(n_frames):
+                    if voice_active[fi] > 0.5:
+                        if 0 < (fi - last_on) <= bridge_frames:
+                            bridged[last_on:fi] = 1.0
+                        last_on = fi
+
+                # Asymmetric cinema envelope follower on 20ms frames: fast 160ms attack, smooth 340ms release
+                env_frames = np.ones(n_frames, dtype=np.float32)
+                cur_g = 1.0
+                attack_step = (1.0 - duck_lvl) / 8.0   # ~160ms smooth duck down before/at speech onset
+                release_step = (1.0 - duck_lvl) / 17.0  # ~340ms cinema swell back up when narrator pauses
+                # Pre-duck 3 frames (60ms) ahead of speech onset so first syllable is crystal-clear
+                padded_active = bridged.copy()
+                for fi in range(3, n_frames):
+                    if bridged[fi] > 0.5:
+                        padded_active[fi - 3 : fi] = 1.0
+
+                for fi in range(n_frames):
+                    target_g = duck_lvl if padded_active[fi] > 0.5 else 1.0
+                    if target_g < cur_g:
+                        cur_g = max(target_g, cur_g - attack_step)
+                    else:
+                        cur_g = min(target_g, cur_g + release_step)
+                    env_frames[fi] = cur_g
+
+                # Interpolate smoothly to sample accuracy
+                centers = np.minimum(total_samples - 1, np.arange(n_frames) * frame_len + frame_len // 2)
+                envelope = np.interp(
+                    np.arange(total_samples, dtype=np.float32),
+                    centers.astype(np.float32),
+                    env_frames,
+                ).astype(np.float32)
+            else:
+                envelope = np.full(total_samples, duck_lvl, dtype=np.float32)
 
             mix *= envelope[:, None]
             for s_idx, arr in loaded_narration:

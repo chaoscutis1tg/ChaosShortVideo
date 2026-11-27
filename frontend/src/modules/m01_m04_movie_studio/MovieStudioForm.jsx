@@ -64,12 +64,13 @@ export default function MovieStudioForm({
   // Step 2
   const [outputAudioSubMode, setOutputAudioSubMode] = useState('VIET_DUB_AND_SUB');
   const [voiceId, setVoiceId] = useState(
-    voices.find((v) => v.profile_id === 'edge_nam_minh_movie')?.profile_id ||
+    voices.find((v) => v.profile_id === 'gemini_uslt_mytam')?.profile_id ||
+      voices.find((v) => v.profile_id === 'edge_nam_minh_movie')?.profile_id ||
       voices[0]?.profile_id ||
-      'edge_nam_minh_movie'
+      'gemini_uslt_mytam'
   );
-  const [voiceSpeed, setVoiceSpeed] = useState(1.08);
-  const [voicePitch, setVoicePitch] = useState(-1.2);
+  const [voiceSpeed, setVoiceSpeed] = useState(1.02);
+  const [voicePitch, setVoicePitch] = useState(0.0);
   const [subtitleStyle, setSubtitleStyle] = useState('CINEMA');
   const [bgmPresetId, setBgmPresetId] = useState(null);
   const [customBgmPath, setCustomBgmPath] = useState(null);
@@ -212,7 +213,9 @@ export default function MovieStudioForm({
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <span className="badge badge-info">Độ dài cắt: {minSec}s – {maxSec}s</span>
-          <span className="badge badge-ok">Tự dìm nền gốc {Math.round(duckingRatio * 100)}%</span>
+          <span className="badge badge-ok">
+            Auto-Ducking Rạp Phim {Math.round(duckingRatio * 100)}%
+          </span>
         </div>
       </div>
 
@@ -353,8 +356,9 @@ export default function MovieStudioForm({
               onSpeedChange={setVoiceSpeed}
               voicePitch={voicePitch}
               onPitchChange={setVoicePitch}
-              label="Giọng đọc thuyết minh phim"
-              sampleText="Không ai ngờ người đàn ông trầm lặng này lại chính là chủ tịch tập đoàn."
+              defaultCategory="MOVIE_DUB"
+              label="Giọng đọc thuyết minh phim (Chuẩn Chiếu Rạp USLT / Phim Bộ)"
+              sampleText="Nhưng khi chính phủ chịu lắng nghe khoa học, thì nó đã quá muộn rồi. Đại dịch đã khiến xã hội ngưng lại đột ngột."
               notify={notify}
             />
           )}

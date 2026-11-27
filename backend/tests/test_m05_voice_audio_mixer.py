@@ -13,6 +13,8 @@ from app.m00_core_contracts import (
     MASTER_AUDIO_SAMPLE_RATE,
     NarrationLineDTO,
     SubtitleStyle,
+    VoiceTier,
+    VoiceUseCaseCategory,
 )
 from app.m05_voice_audio_mixer import (
     DramaticProsodyEnhancer,
@@ -103,4 +105,35 @@ async def test_m05_audio_ducking_and_karaoke_ass_contract(tmp_path: Path) -> Non
         assert wf.getnchannels() == 2
         pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
         assert np.max(np.abs(pcm)) > 500
+
+
+@pytest.mark.asyncio
+async def test_m05_voice_categories_and_multispeaker_offline_vits(tmp_path: Path) -> None:
+    """Verify 30 curated voices span all 4 platform categories and offline multi-speaker VIVOS works."""
+    assert len(DEFAULT_VOICE_PROFILES) >= 28
+    by_cat = {cat: 0 for cat in VoiceUseCaseCategory}
+    for vp in DEFAULT_VOICE_PROFILES:
+        by_cat[vp.category] += 1
+        assert len(vp.tags) >= 1
+
+    assert by_cat[VoiceUseCaseCategory.MOVIE_DUB] >= 8
+    assert by_cat[VoiceUseCaseCategory.TIKTOK_SHORT] >= 6
+    assert by_cat[VoiceUseCaseCategory.YOUTUBE_SHORT] >= 6
+    assert by_cat[VoiceUseCaseCategory.ECOMMERCE_SALES] >= 4
+
+    # Verify USLT signature voice & multi-speaker Southern offline voice synthesize cleanly
+    vivos_prof = next(
+        vp for vp in DEFAULT_VOICE_PROFILES if vp.profile_id == "local_vivos_saigon_male"
+    )
+    assert vivos_prof.tier == VoiceTier.LOCAL_ONNX_VITS
+    provider = TTSProviderFactory(allow_offline_fallback=True).get_provider(vivos_prof.tier)
+    out_wav = tmp_path / "vivos_saigon.wav"
+    chunk = await provider.synthesize(
+        "Nhưng khi chính phủ chịu lắng nghe khoa học thì nó đã quá muộn rồi.",
+        vivos_prof,
+        out_wav,
+    )
+    assert out_wav.exists() and out_wav.stat().st_size > 8000
+    assert chunk.duration_ms > 1200
+
 

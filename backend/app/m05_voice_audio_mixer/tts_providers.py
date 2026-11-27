@@ -87,25 +87,72 @@ def write_synthetic_speech_placeholder(dst_wav: Path, text: str, speed_rate: flo
 
 
 class LocalPiperVITSProvider(ITTSProvider):
-    """Instant 0.1s Offline Studio Vietnamese VITS Neural Narrator (`vi_VN-vais1000-medium`)."""
+    """Instant 0.1s Offline Studio Vietnamese VITS Neural Narrator (`vais1000`, `25hours_single`, `vivos`)."""
 
     _loaded_models: Dict[str, object] = {}
+    _HF_MODEL_URLS: Dict[str, str] = {
+        "vi_VN-vais1000-medium.onnx": (
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+            "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium"
+        ),
+        "vi_VN-25hours_single-low.onnx": (
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+            "vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low"
+        ),
+        "vi_VN-vivos-x_low.onnx": (
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+            "vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low"
+        ),
+    }
 
     def __init__(self, settings: Optional[StudioSettings] = None) -> None:
         self._settings = settings or get_settings()
 
     def is_model_available(self, model_name: str = "vi_VN-vais1000-medium.onnx") -> bool:
-        model_path = self._resolve_model_path(model_name)
+        model_path, _ = self._resolve_model_and_speaker(model_name)
         return model_path.exists() and model_path.stat().st_size > 100_000
 
-    def _resolve_model_path(self, model_ref: str) -> Path:
-        p = Path(model_ref)
+    def _resolve_model_and_speaker(self, model_ref: str) -> tuple[Path, Optional[int]]:
+        speaker_id: Optional[int] = None
+        clean_ref = (model_ref or "vi_VN-vais1000-medium.onnx").strip()
+        if "#" in clean_ref:
+            base_part, spk_part = clean_ref.rsplit("#", 1)
+            clean_ref = base_part.strip()
+            if spk_part.strip().isdigit():
+                speaker_id = int(spk_part.strip())
+
+        p = Path(clean_ref)
         if p.is_absolute() and p.exists():
-            return p
+            return p, speaker_id
         candidate = self._settings.assets_dir / "tts_models" / p.name
         if candidate.exists():
-            return candidate
-        return self._settings.workspace_root / "assets" / "tts_models" / "vi_VN-vais1000-medium.onnx"
+            return candidate, speaker_id
+        fallback_target = self._settings.workspace_root / "assets" / "tts_models" / (
+            p.name if p.name.endswith(".onnx") else "vi_VN-vais1000-medium.onnx"
+        )
+        return fallback_target, speaker_id
+
+    @staticmethod
+    def _patch_piper_json_phoneme_map(json_path: Path) -> None:
+        """Silence eSpeak tone-digit warnings on 25hours_single and vivos ONNX configs."""
+        if not json_path.exists():
+            return
+        try:
+            import json as _json
+
+            cfg = _json.loads(json_path.read_text(encoding="utf-8"))
+            id_map = cfg.get("phoneme_id_map") or {}
+            pmap = cfg.get("phoneme_map") or {}
+            changed = False
+            for ch in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u032a", "\u032f", "\u0329"):
+                if ch not in id_map and ch not in pmap:
+                    pmap[ch] = []
+                    changed = True
+            if changed:
+                cfg["phoneme_map"] = pmap
+                json_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     async def synthesize(
         self,
@@ -133,15 +180,15 @@ class LocalPiperVITSProvider(ITTSProvider):
         import urllib.request
         import piper  # type: ignore
 
-        model_path = self._resolve_model_path(profile.voice_id_or_sample_path)
+        model_path, speaker_id = self._resolve_model_and_speaker(profile.voice_id_or_sample_path)
+        json_cfg = model_path.with_suffix(model_path.suffix + ".json")
         if not model_path.exists():
             try:
                 model_path.parent.mkdir(parents=True, exist_ok=True)
-                base_hf = (
-                    "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
-                    "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium"
+                base_hf = self._HF_MODEL_URLS.get(
+                    model_path.name,
+                    self._HF_MODEL_URLS["vi_VN-vais1000-medium.onnx"],
                 )
-                json_cfg = model_path.with_suffix(model_path.suffix + ".json")
                 if not json_cfg.exists():
                     urllib.request.urlretrieve(f"{base_hf}.onnx.json", str(json_cfg))
                 urllib.request.urlretrieve(f"{base_hf}.onnx", str(model_path))
@@ -150,6 +197,7 @@ class LocalPiperVITSProvider(ITTSProvider):
                     f"Không tìm thấy và không thể tự tải mô hình giọng Offline ({model_path.name}): {dl_exc}"
                 ) from dl_exc
 
+        self._patch_piper_json_phoneme_map(json_cfg)
         key = str(model_path)
         if key not in self._loaded_models:
             self._loaded_models[key] = piper.PiperVoice.load(key)
@@ -158,12 +206,14 @@ class LocalPiperVITSProvider(ITTSProvider):
         raw_wav = out_wav_path.with_suffix(".piper_raw.wav")
         raw_wav.parent.mkdir(parents=True, exist_ok=True)
         try:
-            # Keep trained VITS variance intact (`noise_scale=0.5, noise_w_scale=0.333`) for clean tones
-            syn_cfg = piper.SynthesisConfig(
-                length_scale=1.0 / max(profile.speed_rate, 0.75),
-                noise_scale=0.50,
-                noise_w_scale=0.35,
-            )
+            syn_kwargs: Dict[str, object] = {
+                "length_scale": 1.0 / max(profile.speed_rate, 0.75),
+                "noise_scale": 0.50,
+                "noise_w_scale": 0.35,
+            }
+            if speaker_id is not None:
+                syn_kwargs["speaker_id"] = speaker_id
+            syn_cfg = piper.SynthesisConfig(**syn_kwargs)  # type: ignore[arg-type]
             with wave.open(str(raw_wav), "wb") as wf:
                 voice.synthesize_wav(enhanced_text, wf, syn_config=syn_cfg)  # type: ignore[attr-defined]
 
@@ -191,7 +241,8 @@ class EdgeTTSProvider(ITTSProvider):
 
     DRAGON_FALLBACKS = {
         "vi-vn-namminhneural": "en-US-BrianMultilingualNeural",
-        "de-de-seraphinamultilingualneural": "vi-VN-HoaiMyNeural",
+        "vi-vn-hoaimyneural": "en-US-AvaMultilingualNeural",
+        "de-de-seraphinamultilingualneural": "en-US-AvaMultilingualNeural",
     }
 
     def __init__(
@@ -299,6 +350,8 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
     (seamlessly falls back to Expressive DragonHD Neural if GEMINI_API_KEY is not configured yet).
     """
 
+    _FEMALE_GEMINI_ACTORS = {"kore", "aoede", "leda", "zephyr", "despina", "callirrhoe", "autonoe"}
+
     def __init__(
         self,
         edge_fallback: EdgeTTSProvider,
@@ -306,6 +359,20 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
     ) -> None:
         self._edge_fallback = edge_fallback
         self._settings = settings or get_settings()
+
+    def _pick_edge_fallback_voice(self, profile: VoiceProfileDTO) -> str:
+        actor = (profile.voice_id_or_sample_path or "").strip().lower()
+        is_female = (
+            actor in self._FEMALE_GEMINI_ACTORS
+            or "female" in (profile.dsp_preset or "").lower()
+            or "nữ" in (profile.display_name or "").lower()
+            or "nữ" in (profile.emotion_prompt or "").lower()
+        )
+        if is_female:
+            return "en-US-AvaMultilingualNeural"
+        if "miền nam" in (profile.emotion_prompt or "").lower() or "sài gòn" in (profile.display_name or "").lower():
+            return "ko-KR-HyunsuMultilingualNeural"
+        return "en-US-BrianMultilingualNeural"
 
     async def synthesize(
         self,
@@ -318,7 +385,7 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
             fallback_prof = profile.model_copy(
                 update={
                     "tier": VoiceTier.EDGE_TTS,
-                    "voice_id_or_sample_path": "en-US-BrianMultilingualNeural",
+                    "voice_id_or_sample_path": self._pick_edge_fallback_voice(profile),
                 }
             )
             return await self._edge_fallback.synthesize(text, fallback_prof, out_wav_path)
@@ -336,7 +403,7 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
             fallback_prof = profile.model_copy(
                 update={
                     "tier": VoiceTier.EDGE_TTS,
-                    "voice_id_or_sample_path": "en-US-BrianMultilingualNeural",
+                    "voice_id_or_sample_path": self._pick_edge_fallback_voice(profile),
                 }
             )
             return await self._edge_fallback.synthesize(text, fallback_prof, out_wav_path)
@@ -381,11 +448,12 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
                 wf.setframerate(24000)
                 wf.writeframes(pcm_bytes)
 
+            semitones = max(-3.0, min(3.0, float(profile.pitch_hz) * 0.45))
             return StudioVoiceMasteringDSP.master_audio(
                 src_audio=raw_pcm_wav,
                 dst_wav=out_wav_path,
                 speed_rate=profile.speed_rate,
-                pitch_semitones=0.0,
+                pitch_semitones=semitones,
                 preset=profile.dsp_preset or "movie_male_deep",
                 src_sample_rate=24000,
             )
@@ -394,35 +462,45 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
 
 
 class F5VoiceCloneGPUProvider(ITTSProvider):
-    """Tier 2: Local Voice Cloning on RTX 3060 (12GB VRAM) via F5-TTS Vietnamese."""
+    """Tier 2: Local Voice Cloning on RTX 3060 via F5-TTS + Acoustic-Matched Studio Cinema Fallback."""
 
     def __init__(
         self,
         gpu_manager: Optional[GPUResourceManager] = None,
         fallback_edge: Optional[EdgeTTSProvider] = None,
+        fallback_gemini: Optional[GeminiEmotionalTTSProvider] = None,
     ) -> None:
         self._gpu_manager = gpu_manager or GPUResourceManager()
         self._fallback_edge = fallback_edge
+        self._fallback_gemini = fallback_gemini
 
     @staticmethod
-    def prepare_reference_sample(src_media: Path, dst_sample_wav: Path) -> int:
-        """Denoise, trim (max 15s), and loudness-normalize a movie narrator reference clip."""
+    def prepare_reference_sample(
+        src_media: Path,
+        dst_sample_wav: Path,
+        start_sec: float = 0.0,
+        duration_sec: float = 15.0,
+    ) -> int:
+        """Denoise, isolate vocal band, trim (5–25s), and loudness-normalize a narrator reference clip."""
         if not src_media.exists():
             raise VoiceSynthesisError(f"Không tìm thấy tệp giọng mẫu: {src_media}")
         dst_sample_wav.parent.mkdir(parents=True, exist_ok=True)
+        clamp_dur = max(5.0, min(24.0, float(duration_sec)))
+        ss_args = ["-ss", f"{max(0.0, float(start_sec)):.2f}"] if start_sec > 0.05 else []
         cmd = [
             "ffmpeg",
             "-y",
             "-hide_banner",
             "-loglevel",
             "error",
+            *ss_args,
             "-i",
             str(src_media),
             "-t",
-            "15",
+            f"{clamp_dur:.2f}",
             "-vn",
             "-af",
-            "highpass=f=80,lowpass=f=8000,loudnorm=I=-16:TP=-1.5:LRA=11",
+            "highpass=f=90,lowpass=f=7600,afftdn=nf=-22,loudnorm=I=-16:TP=-1.5:LRA=11",
             "-acodec",
             "pcm_s16le",
             "-ar",
@@ -441,6 +519,85 @@ class F5VoiceCloneGPUProvider(ITTSProvider):
             )
         return dur_ms
 
+    @staticmethod
+    def analyze_voice_sample(wav_path: Path, transcript_text: str = "", dialect_hint: str = "auto") -> Dict[str, object]:
+        """Estimate fundamental frequency (F0), gender, register, and regional dialect of a sample WAV."""
+        import numpy as np
+
+        f0_median = 165.0
+        try:
+            with wave.open(str(wav_path), "rb") as wf:
+                sr = wf.getframerate()
+                raw = wf.readframes(wf.getnframes())
+            sig = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            win = int(0.04 * sr)
+            hop = int(0.02 * sr)
+            min_lag = max(1, int(sr / 320.0))
+            max_lag = max(min_lag + 2, int(sr / 75.0))
+            f0_vals: list[float] = []
+            for start in range(0, max(0, len(sig) - win), hop):
+                frame = sig[start : start + win]
+                if float(np.sqrt(np.mean(frame * frame))) < 0.025:
+                    continue
+                frame = frame - float(np.mean(frame))
+                corr = np.correlate(frame, frame, mode="full")[win - 1 :]
+                if corr[0] <= 1e-6 or len(corr) <= max_lag:
+                    continue
+                peak_lag = min_lag + int(np.argmax(corr[min_lag:max_lag]))
+                if corr[peak_lag] / corr[0] >= 0.28:
+                    f0_vals.append(float(sr) / float(peak_lag))
+            if f0_vals:
+                f0_median = float(np.median(f0_vals))
+        except Exception:
+            pass
+
+        is_female = f0_median >= 158.0
+        low_txt = (transcript_text or "").lower()
+        hint_low = (dialect_hint or "auto").lower()
+        if "nam" in hint_low or "south" in hint_low or "saigon" in hint_low:
+            dialect = "Miền Nam"
+        elif "bac" in hint_low or "north" in hint_low or "hanoi" in hint_low:
+            dialect = "Miền Bắc"
+        elif any(w in low_txt for w in ("ảnh ", "bả ", "ổng ", "nghen", "dậy", "thiệt", "hổng", "tụi ")):
+            dialect = "Miền Nam"
+        else:
+            # Default cinema movie dubs (like Public Media / USLT) to Southern unless Northern specified
+            dialect = "Miền Nam"
+
+        if is_female:
+            register = "trung trầm" if f0_median < 205.0 else "thanh sáng"
+            dsp = "cinema_uslt_female"
+            actor = "Kore" if dialect == "Miền Nam" else "Leda"
+            gender_vi = "Nữ"
+        else:
+            register = "trầm dày" if f0_median < 122.0 else "ấm rõ"
+            dsp = "cinema_uslt_male"
+            actor = "Fenrir" if dialect == "Miền Nam" else "Charon"
+            gender_vi = "Nam"
+
+        direction = (
+            f"Đọc bằng giọng {gender_vi.lower()} {dialect} ({register}, F0~{int(round(f0_median))}Hz), "
+            "điềm tĩnh, rõ từng chữ chuẩn thuyết minh phim chiếu rạp và video chuyên nghiệp"
+        )
+        return {
+            "f0_hz": round(f0_median, 1),
+            "gender": "female" if is_female else "male",
+            "dialect": dialect,
+            "register": register,
+            "recommended_actor": actor,
+            "dsp_preset": dsp,
+            "emotion_prompt": direction,
+            "tags": ["Giọng nhái mẫu", dialect, f"{gender_vi} {register}"],
+        }
+
+    def _pick_matched_gemini_actor(self, profile: VoiceProfileDTO) -> str:
+        meta = f"{profile.display_name} {profile.emotion_prompt} {' '.join(profile.tags)}".lower()
+        is_female = "nữ" in meta or "female" in (profile.dsp_preset or "").lower()
+        is_north = "miền bắc" in meta or "hà nội" in meta or "vtv" in meta
+        if is_female:
+            return "Leda" if is_north else "Kore"
+        return "Charon" if is_north else "Fenrir"
+
     async def synthesize(
         self,
         text: str,
@@ -448,27 +605,46 @@ class F5VoiceCloneGPUProvider(ITTSProvider):
         out_wav_path: Path,
     ) -> AudioChunkDTO:
         sample_path = Path(profile.voice_id_or_sample_path)
+        enhanced = DramaticProsodyEnhancer.enhance(text)
+
+        if sample_path.exists():
+            try:
+                return await asyncio.to_thread(
+                    self._infer_f5_sync, enhanced, profile, sample_path, out_wav_path
+                )
+            except ImportError:
+                pass
+
+        if self._fallback_gemini is not None:
+            actor = self._pick_matched_gemini_actor(profile)
+            gem_prof = profile.model_copy(
+                update={
+                    "tier": VoiceTier.GEMINI_EMOTIONAL,
+                    "voice_id_or_sample_path": actor,
+                }
+            )
+            return await self._fallback_gemini.synthesize(text, gem_prof, out_wav_path)
+
+        if self._fallback_edge is not None:
+            is_female = "nữ" in f"{profile.display_name} {profile.emotion_prompt}".lower() or "female" in (
+                profile.dsp_preset or ""
+            ).lower()
+            fallback_prof = profile.model_copy(
+                update={
+                    "tier": VoiceTier.EDGE_TTS,
+                    "voice_id_or_sample_path": (
+                        "en-US-AvaMultilingualNeural" if is_female else "ko-KR-HyunsuMultilingualNeural"
+                    ),
+                }
+            )
+            return await self._fallback_edge.synthesize(text, fallback_prof, out_wav_path)
+
         if not sample_path.exists():
             raise VoiceSynthesisError(f"Tệp mẫu giọng Clone không tồn tại: {sample_path}")
-
-        enhanced = DramaticProsodyEnhancer.enhance(text)
-        try:
-            return await asyncio.to_thread(
-                self._infer_f5_sync, enhanced, profile, sample_path, out_wav_path
-            )
-        except ImportError as exc:
-            if self._fallback_edge is not None:
-                fallback_prof = profile.model_copy(
-                    update={
-                        "tier": VoiceTier.EDGE_TTS,
-                        "voice_id_or_sample_path": "en-US-BrianMultilingualNeural",
-                    }
-                )
-                return await self._fallback_edge.synthesize(text, fallback_prof, out_wav_path)
-            raise VoiceSynthesisError(
-                "Chưa cài đặt gói `f5-tts` cho tính năng Voice Clone GPU "
-                "(chạy `pip install f5-tts` để kích hoạt)."
-            ) from exc
+        raise VoiceSynthesisError(
+            "Chưa cài đặt gói `f5-tts` cho tính năng Voice Clone GPU "
+            "(chạy `pip install --no-deps f5-tts` hoặc nhập GEMINI_API_KEY để kích hoạt)."
+        )
 
     def _infer_f5_sync(
         self,
@@ -613,7 +789,8 @@ class TTSProviderFactory:
         )
         self._gemini = GeminiEmotionalTTSProvider(edge_fallback=self._edge)
         self._f5 = F5VoiceCloneGPUProvider(
-            fallback_edge=self._edge if allow_offline_fallback else None
+            fallback_edge=self._edge if allow_offline_fallback else None,
+            fallback_gemini=self._gemini if allow_offline_fallback else None,
         )
         self._cloud = CloudAPITTSProvider()
 

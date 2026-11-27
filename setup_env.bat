@@ -119,3 +119,4 @@ exit /b 1
 echo [LOI] Qua trinh build giao dien Frontend that bai. Hay kiem tra Node.js / mang Internet.
 pause
 exit /b 1
+

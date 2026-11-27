@@ -561,6 +561,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 canvas_h=canvas_h,
                 use_nvenc=use_nvenc,
                 auto_skip_black_intro=bool(cfg_l.auto_skip_black_intro),
+                on_progress=on_progress,
             )
             clip_start_sec = 0.0
             raw_dur_ms = max(
@@ -601,6 +602,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 smart_camera_motion=bool(cfg_l.smart_camera_motion),
                 smart_micro_punch_in=bool(cfg_l.smart_micro_punch_in),
                 auto_skip_black_intro=bool(cfg_l.auto_skip_black_intro),
+                on_progress=on_progress,
             )
             clip_start_sec = 0.0
             raw_dur_ms = max(
@@ -763,6 +765,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         smart_camera_motion: bool = True,
         smart_micro_punch_in: bool = True,
         auto_skip_black_intro: bool = True,
+        on_progress: Optional[ProgressCallback] = None,
     ) -> Path:
         """Stream sub-pixel Saliency Camera frames, Micro Punch-ins & CapCut transitions to FFmpeg."""
         assembled = work_dir / "assembled_visuals.mp4"
@@ -948,9 +951,38 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             samplers.append(smp)
             cleanups.append(cln)
 
-        def _write_bgr(frame_arr: np.ndarray) -> None:
+        total_expected_frames = max(
+            1,
+            sum(counts[i] - transitions[i] for i in range(n_items))
+            + sum(transitions[: max(0, n_items - 1)]),
+        )
+        written_frames = 0
+        t_asm0 = time.perf_counter()
+        last_report_t = t_asm0
+        enc_tag = "NVENC GPU" if use_nvenc else "CPU x264"
+        if on_progress:
+            on_progress(
+                "ASSEMBLING_FRAMES",
+                1.0,
+                f"[Compositor] Đang dựng chuyển động Saliency 9:16 cho {n_items} cảnh ({total_expected_frames} frames • {enc_tag})...",
+            )
+
+        def _write_bgr(frame_arr: np.ndarray, scene_num: int) -> None:
+            nonlocal written_frames, last_report_t
             contig = np.ascontiguousarray(frame_arr)
             proc.stdin.write(memoryview(contig))
+            written_frames += 1
+            if on_progress:
+                now_t = time.perf_counter()
+                if (now_t - last_report_t) >= 0.42 or written_frames == total_expected_frames:
+                    last_report_t = now_t
+                    pct_f = min(100.0, (written_frames / float(total_expected_frames)) * 100.0)
+                    fps_cur = written_frames / max(0.05, now_t - t_asm0)
+                    on_progress(
+                        "ASSEMBLING_FRAMES",
+                        round(pct_f, 1),
+                        f"[Dựng 9:16] Khung {written_frames}/{total_expected_frames} ({pct_f:.0f}% • {fps_cur:.1f} fps • Cảnh {scene_num}/{n_items})",
+                    )
 
         try:
             for idx in range(n_items):
@@ -962,7 +994,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 # Body frames of clip `idx` continuing seamlessly after incoming transition `tr_prev`
                 for b_i in range(body_len):
                     frm = samplers[idx](tr_prev + b_i)
-                    _write_bgr(frm)
+                    _write_bgr(frm, idx + 1)
 
                 # Smooth CapCut / Auto-Director transition into clip `idx + 1`
                 if tr_out > 0 and (idx + 1) < n_items:
@@ -972,7 +1004,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                         frm_a = samplers[idx](tr_prev + body_len + k)
                         frm_b = samplers[idx + 1](k)
                         blended = _blend_capcut_transition(frm_a, frm_b, t_frac, scene_tr_style)
-                        _write_bgr(blended)
+                        _write_bgr(blended, idx + 1)
         finally:
             for cln in cleanups:
                 cln()
@@ -992,6 +1024,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     smart_camera_motion=smart_camera_motion,
                     smart_micro_punch_in=smart_micro_punch_in,
                     auto_skip_black_intro=auto_skip_black_intro,
+                    on_progress=on_progress,
                 )
             raise VideoCompositorError(
                 f"Ghép chuyển cảnh CapCut thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"
@@ -1011,6 +1044,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         canvas_h: int,
         use_nvenc: bool,
         auto_skip_black_intro: bool = True,
+        on_progress: Optional[ProgressCallback] = None,
     ) -> Path:
         """Loop background video at 1.0x real-time (100% original color fidelity) while animating
         floating RGBA Threads cards with Slide-up Spring entry, smooth eye-guide sentence crossfades,
@@ -1156,8 +1190,54 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         exit_frames = 5  # ~0.16s gentle float-out exit
         hl_fade_frames = 5  # ~0.16s smooth eye-guide sentence highlight glide
         prev_card_info = None
+        n_cards = len(card_items)
+        item_frame_counts: List[int] = []
+        for idx_c, it_c in enumerate(card_items):
+            f_first = (
+                idx_c == 0
+                or it_c.card_group_id is None
+                or it_c.card_group_id != card_items[idx_c - 1].card_group_id
+            )
+            f_last = (
+                idx_c == n_cards - 1
+                or it_c.card_group_id is None
+                or it_c.card_group_id != card_items[idx_c + 1].card_group_id
+            )
+            m_f = 18 if (f_first and f_last) else 10
+            item_frame_counts.append(max(m_f, int(round((it_c.duration_ms / 1000.0) * TARGET_FPS))))
+        outro_f_total = (
+            max(15, int(round((outro_extra_ms / 1000.0) * TARGET_FPS)))
+            if (outro_png is not None and outro_extra_ms > 0)
+            else 0
+        )
+        total_expected_frames = max(1, sum(item_frame_counts) + outro_f_total)
+        written_frames = 0
+        t_asm0 = time.perf_counter()
+        last_report_t = t_asm0
+        enc_tag = "NVENC GPU" if use_nvenc else "CPU x264"
+        if on_progress:
+            on_progress(
+                "ASSEMBLING_FRAMES",
+                1.0,
+                f"[Compositor] Đang ghép video nền thực 1.0x & thẻ nổi Slide-up ({total_expected_frames} frames • {enc_tag})...",
+            )
+
+        def _emit_threads_frame_progress(card_idx: int) -> None:
+            nonlocal last_report_t
+            if not on_progress:
+                return
+            now_t = time.perf_counter()
+            if (now_t - last_report_t) >= 0.42 or written_frames == total_expected_frames:
+                last_report_t = now_t
+                pct_f = min(100.0, (written_frames / float(total_expected_frames)) * 100.0)
+                fps_cur = written_frames / max(0.05, now_t - t_asm0)
+                on_progress(
+                    "ASSEMBLING_FRAMES",
+                    round(pct_f, 1),
+                    f"[Dựng 9:16] Khung {written_frames}/{total_expected_frames} ({pct_f:.0f}% • {fps_cur:.1f} fps • Nhịp thẻ {min(card_idx + 1, n_cards)}/{max(n_cards, 1)})",
+                )
+
         try:
-            n_cards = len(card_items)
             for idx, it in enumerate(card_items):
                 is_first_in_group = (
                     idx == 0
@@ -1169,8 +1249,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     or it.card_group_id is None
                     or it.card_group_id != card_items[idx + 1].card_group_id
                 )
-                min_f = 18 if (is_first_in_group and is_last_in_group) else 10
-                n_frames = max(min_f, int(round((it.duration_ms / 1000.0) * TARGET_FPS)))
+                n_frames = item_frame_counts[idx]
                 card_info = _load_card_roi(it.asset_path)
 
                 for f_i in range(n_frames):
@@ -1203,14 +1282,17 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                         composed = _blend_card_fast(bg_f, card_info, 1.0, 1.0, dy_px=0.0)
 
                     proc.stdin.write(memoryview(np.ascontiguousarray(composed)))
+                    written_frames += 1
+                    _emit_threads_frame_progress(idx)
 
                 prev_card_info = card_info
 
             if outro_png is not None and outro_extra_ms > 0:
                 outro_bgr = _load_unicode_image_bgr(outro_png, canvas_w, canvas_h)
-                outro_frames = max(15, int(round((outro_extra_ms / 1000.0) * TARGET_FPS)))
-                for _ in range(outro_frames):
+                for _ in range(outro_f_total):
                     proc.stdin.write(memoryview(np.ascontiguousarray(outro_bgr)))
+                    written_frames += 1
+                    _emit_threads_frame_progress(n_cards - 1)
         finally:
             stepper.release()
             proc.stdin.close()
@@ -1230,6 +1312,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     canvas_h=canvas_h,
                     use_nvenc=False,
                     auto_skip_black_intro=auto_skip_black_intro,
+                    on_progress=on_progress,
                 )
             raise VideoCompositorError(
                 f"Ghép thẻ bình luận Threads thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"
@@ -1406,6 +1489,13 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             ]
         )
 
+        if on_progress:
+            on_progress(
+                "RENDERING_NVENC",
+                2.0,
+                f"[FFmpeg {encoder}] Đang ghép âm thanh stereo, phủ lớp giao diện & đóng gói MP4...",
+            )
+
         proc = subprocess.Popen(
             cmd,
             cwd=str(work_dir),
@@ -1426,7 +1516,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     on_progress(
                         "RENDERING_NVENC",
                         pct,
-                        f"Đang xuất Phần {spec.clip.part_number} ({encoder})...",
+                        f"[FFmpeg {encoder}] Ghép âm thanh & đóng gói MP4: {cur_ms / 1000.0:.1f}s / {raw_dur_ms / 1000.0:.1f}s ({pct:.0f}%)",
                     )
         proc.wait()
         return proc.returncode == 0, "".join(stderr_lines[-25:])

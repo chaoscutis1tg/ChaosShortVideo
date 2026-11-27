@@ -541,11 +541,35 @@ export default function App() {
                   pinnedJob.state}
               </div>
 
+              {pinnedJob.live_progress?.message && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "Consolas, 'JetBrains Mono', monospace",
+                    color: 'var(--brand-text)',
+                    background: 'rgba(15, 23, 42, 0.55)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 5,
+                    padding: '3px 6px',
+                    marginTop: 4,
+                    marginBottom: 4,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  title={pinnedJob.live_progress.message}
+                >
+                  &gt; {pinnedJob.live_progress.message}
+                </div>
+              )}
+
               <div className="progress-track">
                 <div
-                  className={`progress-fill ${pinnedJob.state === 'PAUSED' ? 'paused' : ''}`}
+                  className={`progress-fill ${
+                    pinnedJob.state === 'PAUSED' ? 'paused' : 'is-live-shimmer'
+                  }`}
                   style={{
-                    width: `${Math.max(4, Math.min(100, pinnedJob.live_progress?.percent || 4))}%`,
+                    width: `${Math.max(2.5, Math.min(100, pinnedJob.live_progress?.percent || 2.5))}%`,
                   }}
                 />
               </div>
@@ -559,7 +583,7 @@ export default function App() {
                   marginBottom: 9,
                 }}
               >
-                <strong>{pinnedJob.live_progress?.percent || 0}%</strong>
+                <strong>{Number(pinnedJob.live_progress?.percent || 0).toFixed(1)}%</strong>
                 <span style={{ color: 'var(--success-text)', fontWeight: 600 }}>
                   {pinnedJob.live_progress?.eta_sec !== null &&
                   pinnedJob.live_progress?.eta_sec !== undefined

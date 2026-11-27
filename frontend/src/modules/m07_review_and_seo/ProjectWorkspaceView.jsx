@@ -27,6 +27,7 @@ import {
   Search,
   ShoppingBag,
   Square,
+  Terminal,
   Trash2,
   Volume2,
   Wand2,
@@ -129,6 +130,10 @@ export default function ProjectWorkspaceView({
   const [busyAction, setBusyAction] = useState(false);
   const [pubNoteDraft, setPubNoteDraft] = useState('');
   const [savingPubStatus, setSavingPubStatus] = useState(false);
+  const [consoleExpanded, setConsoleExpanded] = useState(true);
+  const [liveTickOffsetSec, setLiveTickOffsetSec] = useState(0);
+  const progressAnchorMonoRef = useRef(Date.now());
+  const consoleBodyRef = useRef(null);
 
   const groupMap = useMemo(() => {
     const map = {};
@@ -256,6 +261,10 @@ export default function ProjectWorkspaceView({
       if (forceRebuildEditor) {
         setPubNoteDraft(d.published_note || '');
       }
+      if (d.live_progress) {
+        progressAnchorMonoRef.current = Date.now();
+        setLiveTickOffsetSec(0);
+      }
       setLiveProgress(d.live_progress || null);
 
       // Smart Preview Frame Sync: load cover/preview into the 9:16 Inspector so it's never blank!
@@ -300,6 +309,8 @@ export default function ProjectWorkspaceView({
     loadDetail(activeProjectId, true);
 
     const ws = studioApi.connectProgressSocket(activeProjectId, (ev) => {
+      progressAnchorMonoRef.current = Date.now();
+      setLiveTickOffsetSec(0);
       setLiveProgress(ev);
       if (['AWAITING_REVIEW', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(ev.stage)) {
         loadDetail(activeProjectId, ev.stage === 'AWAITING_REVIEW');
@@ -311,18 +322,34 @@ export default function ProjectWorkspaceView({
     };
   }, [activeProjectId]);
 
-  // Idle-Aware Smart Polling: ONLY poll every 2.5s while the selected project is actively running!
+  // Idle-Aware Smart Polling + Smooth 1-Second Real Elapsed Timer & Auto-Scroll Console
   useEffect(() => {
     if (!activeProjectId || !detail || !RUNNING_STATES.includes(detail.state)) {
+      setLiveTickOffsetSec(0);
       return undefined;
     }
-    const timer = setInterval(() => {
+    const pollTimer = setInterval(() => {
       if (!document.hidden) {
         loadDetail(activeProjectId, false);
       }
     }, 2500);
-    return () => clearInterval(timer);
-  }, [activeProjectId, detail?.state]);
+    const secTicker = setInterval(() => {
+      if (detail.is_active_in_memory && detail.state !== 'PAUSED' && detail.state !== 'QUEUED') {
+        const diff = Math.max(0, Math.floor((Date.now() - progressAnchorMonoRef.current) / 1000));
+        setLiveTickOffsetSec(diff);
+      }
+    }, 1000);
+    return () => {
+      clearInterval(pollTimer);
+      clearInterval(secTicker);
+    };
+  }, [activeProjectId, detail?.state, detail?.is_active_in_memory]);
+
+  useEffect(() => {
+    if (consoleExpanded && consoleBodyRef.current) {
+      consoleBodyRef.current.scrollTop = consoleBodyRef.current.scrollHeight;
+    }
+  }, [liveProgress?.logs?.length, liveProgress?.message, consoleExpanded]);
 
   const filteredProjects = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1401,64 +1428,244 @@ export default function ProjectWorkspaceView({
                 </div>
               </div>
 
-              {/* LIVE PROGRESS + ETA */}
+              {/* REAL-TIME TELEMETRY PROGRESS BAR + STREAMING CONSOLE LOG TERMINAL */}
               {(isRunning ||
                 isPaused ||
                 isInterruptedFromOldSession ||
-                detail.state === 'QUEUED') && (
-                <div className="step-box" style={{ marginBottom: 16 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                      marginBottom: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 13.6, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {isInterruptedFromOldSession
-                        ? 'Dự án tạm dừng từ phiên trước — bấm nút Tiếp tục để xuất nốt các phần còn thiếu.'
-                        : liveProgress?.message || STAGE_LABELS[detail.state]}
-                    </div>
+                detail.state === 'QUEUED' ||
+                (liveProgress?.logs?.length > 0 && detail.state === 'FAILED')) && (() => {
+                const consoleLogs = Array.isArray(liveProgress?.logs) ? liveProgress.logs : [];
+                const realElapsedSec =
+                  (liveProgress?.elapsed_sec || 0) + (isRunning ? liveTickOffsetSec : 0);
+                const realEtaSec =
+                  liveProgress?.eta_sec !== null && liveProgress?.eta_sec !== undefined
+                    ? Math.max(1, liveProgress.eta_sec - (isRunning ? liveTickOffsetSec : 0))
+                    : null;
+                const curStage = liveProgress?.stage || detail.state;
+                const pipelinePhases = [
+                  { key: 'PREP', label: '1. Kịch bản & Nguồn', match: ['INGESTING', 'TRANSCRIBING_GPU', 'AI_ANALYZING'] },
+                  { key: 'AUDIO', label: '2. Thu giọng & Trộn âm', match: ['GENERATING_AUDIO', 'GENERATING_ASSETS'] },
+                  { key: 'VISUAL', label: '3. Vẽ thẻ / Hình ảnh', match: ['GENERATING_VISUALS'] },
+                  { key: 'COMP', label: '4. Dựng khung 9:16', match: ['ASSEMBLING_FRAMES'] },
+                  { key: 'MUX', label: '5. Xuất MP4 & SEO', match: ['RENDERING_NVENC', 'PACKAGING_SEO'] },
+                ];
+                const activePhaseIdx = Math.max(
+                  0,
+                  pipelinePhases.findIndex((ph) => ph.match.includes(curStage))
+                );
+                const stageBadgeMeta = (st) => {
+                  if (st === 'INGESTING' || st === 'TRANSCRIBING_GPU') return ['NGUỒN', '#38bdf8'];
+                  if (st === 'AI_ANALYZING') return ['AI BRAIN', '#a78bfa'];
+                  if (st === 'GENERATING_AUDIO' || st === 'GENERATING_ASSETS') return ['TTS AUDIO', '#34d399'];
+                  if (st === 'GENERATING_VISUALS') return ['VISUAL', '#fbbf24'];
+                  if (st === 'ASSEMBLING_FRAMES') return ['9:16 FPS', '#f472b6'];
+                  if (st === 'RENDERING_NVENC') return ['NVENC MP4', '#22d3ee'];
+                  if (st === 'PACKAGING_SEO') return ['SEO PACK', '#fde047'];
+                  if (st === 'COMPLETED') return ['HOÀN TẤT', '#4ade80'];
+                  if (st === 'FAILED' || st === 'CANCELLED') return ['DỪNG/LỖI', '#f87171'];
+                  return [st || 'STUDIO', '#94a3b8'];
+                };
+
+                return (
+                  <div className="step-box" style={{ marginBottom: 16 }}>
+                    {/* 5-Stage Visual Pipeline Stepper */}
                     <div
-                      className="text-sub"
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        fontSize: 12.6,
-                        flexWrap: 'wrap',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))',
+                        gap: 6,
+                        marginBottom: 10,
                       }}
                     >
-                      {liveProgress?.step_label && (
-                        <span className="badge badge-info">{liveProgress.step_label}</span>
-                      )}
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <Clock size={13} /> Đã chạy:{' '}
-                        <strong>{formatSecondsVi(liveProgress?.elapsed_sec || 0)}</strong>
-                      </span>
-                      <span style={{ color: 'var(--success-text)' }}>
-                        Ước tính còn:{' '}
-                        <strong>
-                          {liveProgress?.eta_sec !== null && liveProgress?.eta_sec !== undefined
-                            ? `~${formatSecondsVi(liveProgress.eta_sec)}`
-                            : 'Đang tính...'}
+                      {pipelinePhases.map((ph, pIdx) => {
+                        const isDonePhase = !isInterruptedFromOldSession && pIdx < activePhaseIdx;
+                        const isCurPhase = !isInterruptedFromOldSession && pIdx === activePhaseIdx && detail.state !== 'QUEUED';
+                        return (
+                          <div
+                            key={ph.key}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: 7,
+                              fontSize: 11.4,
+                              fontWeight: isCurPhase ? 700 : 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              border: isCurPhase
+                                ? '1px solid var(--brand)'
+                                : isDonePhase
+                                ? '1px solid rgba(16, 185, 129, 0.45)'
+                                : '1px solid var(--border-subtle)',
+                              background: isCurPhase
+                                ? 'var(--brand-soft)'
+                                : isDonePhase
+                                ? 'rgba(16, 185, 129, 0.10)'
+                                : 'var(--bg-elevated)',
+                              color: isCurPhase
+                                ? 'var(--brand-text)'
+                                : isDonePhase
+                                ? 'var(--success-text)'
+                                : 'var(--text-muted)',
+                            }}
+                          >
+                            {isDonePhase ? (
+                              <CheckCircle2 size={12} />
+                            ) : isCurPhase && isRunning ? (
+                              <Loader2 size={12} className="spin" />
+                            ) : (
+                              <Clock size={11} />
+                            )}
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {ph.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginBottom: 7,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13.6,
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                      >
+                        {isRunning && <Loader2 size={15} className="spin" style={{ color: 'var(--brand)', flexShrink: 0 }} />}
+                        <span style={{ wordBreak: 'break-word' }}>
+                          {isInterruptedFromOldSession
+                            ? 'Dự án tạm dừng từ phiên trước — bấm nút Tiếp tục để xuất nốt các phần còn thiếu.'
+                            : liveProgress?.message || STAGE_LABELS[detail.state]}
+                        </span>
+                      </div>
+                      <div
+                        className="text-sub"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 11,
+                          fontSize: 12.5,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {liveProgress?.step_label && (
+                          <span className="badge badge-info">{liveProgress.step_label}</span>
+                        )}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <Clock size={13} /> Đã chạy:{' '}
+                          <strong>{formatSecondsVi(realElapsedSec)}</strong>
+                        </span>
+                        <span style={{ color: 'var(--success-text)' }}>
+                          Ước tính còn:{' '}
+                          <strong>
+                            {realEtaSec !== null ? `~${formatSecondsVi(realEtaSec)}` : 'Đang đo tốc độ thực...'}
+                          </strong>
+                        </span>
+                        <strong style={{ color: 'var(--brand-text)', fontSize: 14 }}>
+                          {Number(pctVal).toFixed(1)}%
                         </strong>
-                      </span>
-                      <strong style={{ color: 'var(--text-primary)' }}>{pctVal}%</strong>
+                      </div>
+                    </div>
+
+                    <div className="progress-track" style={{ height: 11, marginBottom: 11 }}>
+                      <div
+                        className={`progress-fill ${isPaused ? 'paused' : isRunning ? 'is-live-shimmer' : ''}`}
+                        style={{ width: `${Math.max(2.5, pctVal)}%` }}
+                      />
+                    </div>
+
+                    {/* LIVE STREAMING CONSOLE LOG VIEWER */}
+                    <div className="live-console-terminal">
+                      <div className="live-console-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="console-traffic-dots">
+                            <i style={{ background: '#ef4444' }} />
+                            <i style={{ background: '#f59e0b' }} />
+                            <i style={{ background: '#22c55e' }} />
+                          </span>
+                          <Terminal size={13} style={{ color: '#38bdf8' }} />
+                          <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 11.8 }}>
+                            NHẬT KÝ CHẠY THỰC TẾ (LIVE CONSOLE)
+                          </span>
+                          {isRunning && (
+                            <span className="console-live-pill">
+                              <span className="console-live-dot" /> Đang xử lý trực tiếp
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setConsoleExpanded((p) => !p)}
+                          style={{
+                            background: 'rgba(148, 163, 184, 0.14)',
+                            border: '1px solid rgba(148, 163, 184, 0.28)',
+                            color: '#cbd5e1',
+                            borderRadius: 5,
+                            padding: '2px 8px',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {consoleExpanded
+                            ? `Thu gọn (${consoleLogs.length} dòng)`
+                            : `Mở rộng Console (${consoleLogs.length} dòng)`}
+                        </button>
+                      </div>
+
+                      {consoleExpanded && (
+                        <div className="live-console-body" ref={consoleBodyRef}>
+                          {consoleLogs.length === 0 ? (
+                            <div className="console-log-row">
+                              <span className="console-ts">[{new Date().toLocaleTimeString('vi-VN', { hour12: false })}]</span>
+                              <span className="console-tag" style={{ color: '#38bdf8' }}>[INIT]</span>
+                              <span className="console-msg">
+                                {isInterruptedFromOldSession
+                                  ? 'Phiên làm việc trước đã dừng — sẵn sàng nhận lệnh Tiếp tục từ bạn.'
+                                  : liveProgress?.message || 'Đang kết nối luồng nhật ký thực thi từ máy chủ...'}
+                                {isRunning && <span className="console-cursor-blink">▋</span>}
+                              </span>
+                            </div>
+                          ) : (
+                            consoleLogs.map((entry, lIdx) => {
+                              const [tagLbl, tagColor] = stageBadgeMeta(entry.stage);
+                              const isLastLine = lIdx === consoleLogs.length - 1;
+                              return (
+                                <div key={entry.seq || lIdx} className="console-log-row">
+                                  <span className="console-ts">[{entry.ts || '--:--:--'}]</span>
+                                  <span className="console-tag" style={{ color: tagColor }}>
+                                    [{tagLbl}]
+                                  </span>
+                                  <span className="console-pct">{Number(entry.percent ?? 0).toFixed(1)}%</span>
+                                  <span className="console-msg">
+                                    {entry.text}
+                                    {isLastLine && isRunning && (
+                                      <span className="console-cursor-blink">▋</span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  <div className="progress-track" style={{ height: 10 }}>
-                    <div
-                      className={`progress-fill ${isPaused ? 'paused' : ''}`}
-                      style={{ width: `${Math.max(4, pctVal)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {detail.state === 'FAILED' && (
                 <div

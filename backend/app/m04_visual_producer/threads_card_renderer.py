@@ -641,6 +641,13 @@ class ThreadsCardVisualRenderer:
         items: List[SceneVisualItemDTO] = []
         cmt_counter = 0
 
+        if on_progress:
+            on_progress(
+                "GENERATING_VISUALS",
+                2.0,
+                f"[Threads Card] Đang kết xuất {len(clip.lines)} thẻ bình luận RGBA 1080p & nhịp dẫn mắt...",
+            )
+
         for idx, ln in enumerate(clip.lines):
             if not ln.is_op_post:
                 cmt_counter += 1
@@ -712,9 +719,9 @@ class ThreadsCardVisualRenderer:
             if on_progress:
                 pct = round(((idx + 1) / max(len(clip.lines), 1)) * 100.0, 1)
                 on_progress(
-                    "GENERATING_ASSETS",
+                    "GENERATING_VISUALS",
                     pct,
-                    f"Đã thiết kế thẻ Threads dẫn mắt {idx + 1}/{len(clip.lines)}",
+                    f"[Threads Card {idx + 1}/{len(clip.lines)}] Đã vẽ xong thẻ {ln.speaker_handle or f'#{idx + 1}'} ({len(beats)} nhịp dẫn mắt)",
                 )
 
         return VisualAssetListDTO(clip_id=clip.clip_id, items=items)

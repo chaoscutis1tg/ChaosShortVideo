@@ -646,9 +646,19 @@ class PipelineOrchestrator:
             outputs.append(rendered)
 
             self.repo.update_project_state(project_id, JobState.PACKAGING_SEO)
+            cb(
+                "PACKAGING_SEO",
+                35.0,
+                f"[SEO] Đang tạo Tiêu đề, Mô tả & bộ Hashtag chuẩn YouTube Shorts + TikTok cho Phần {clip.part_number}...",
+            )
             seo = await self.brain.build_seo(effective_clip, mode_label=cut_plan.mode.value)
             self.repo.save_seo_package(seo)
             seo_packages.append(seo)
+            cb(
+                "PACKAGING_SEO",
+                95.0,
+                f"[SEO] Đã lưu gói nội dung đăng kênh & ảnh bìa Phần {clip.part_number}.",
+            )
 
         self._write_seo_text_bundle(project_out_dir, seo_packages)
         self.repo.update_project_state(project_id, JobState.COMPLETED)

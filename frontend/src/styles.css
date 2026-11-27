@@ -111,6 +111,154 @@ body {
   background: var(--border-strong);
   border-radius: 999px;
 }
+
+/* ================= LIVE CONSOLE TERMINAL & REAL-TIME SHIMMER PROGRESS ================= */
+.progress-fill.is-live-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    #0284c7 0%,
+    #38bdf8 45%,
+    #7dd3fc 52%,
+    #38bdf8 60%,
+    #0284c7 100%
+  );
+  background-size: 220% 100%;
+  animation: progressLiveWave 1.6s linear infinite;
+  transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes progressLiveWave {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -20% 0;
+  }
+}
+
+.live-console-terminal {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #1e293b;
+  background: #090d16;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.live-console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  flex-wrap: wrap;
+}
+
+.console-traffic-dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.console-traffic-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+  opacity: 0.85;
+}
+
+.console-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  color: #4ade80;
+  font-size: 10.8px;
+  font-weight: 700;
+}
+
+.console-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+  animation: consoleDotPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes consoleDotPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+}
+
+.live-console-body {
+  max-height: 215px;
+  overflow-y: auto;
+  padding: 9px 12px;
+  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #e2e8f0;
+  display: grid;
+  gap: 3px;
+}
+
+.console-log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  word-break: break-word;
+}
+
+.console-ts {
+  color: #64748b;
+  flex-shrink: 0;
+  font-size: 11.2px;
+}
+
+.console-tag {
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 11.3px;
+}
+
+.console-pct {
+  color: #94a3b8;
+  flex-shrink: 0;
+  min-width: 42px;
+  text-align: right;
+  font-size: 11.2px;
+}
+
+.console-msg {
+  color: #f1f5f9;
+  flex: 1;
+}
+
+.console-cursor-blink {
+  display: inline-block;
+  margin-left: 5px;
+  color: #38bdf8;
+  animation: consoleBlink 0.9s steps(2, start) infinite;
+}
+
+@keyframes consoleBlink {
+  to {
+    visibility: hidden;
+  }
+}
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-hover);
 }

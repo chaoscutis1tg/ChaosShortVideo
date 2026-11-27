@@ -186,6 +186,12 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         cursor_shift_ms = 0
 
         total_lines = max(len(clip.lines), 1)
+        if on_progress:
+            on_progress(
+                "GENERATING_AUDIO",
+                1.0,
+                f"[Audio] Bắt đầu tổng hợp giọng đọc cho {total_lines} câu thoại...",
+            )
         for idx, line in enumerate(clip.lines):
             eff_start_ms = line.rel_start_ms + cursor_shift_ms
             orig_line_dur = max(500, line.rel_end_ms - line.rel_start_ms)
@@ -265,6 +271,15 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                     if click_wav is not None and bool(line.card_image_path):
                         smart_sfx_cues.append((eff_start_ms + 130, click_wav, sfx_gain))
 
+                if on_progress:
+                    short_vname = eff_profile.display_name.split("—")[0].strip()[:28]
+                    preview_snip = " ".join(line.vi_text.split())[:46]
+                    on_progress(
+                        "GENERATING_AUDIO",
+                        round((idx / total_lines) * 82.0, 1),
+                        f'[TTS {idx + 1}/{total_lines}] Đang thu giọng ({short_vname} • {eff_speed:.2f}x): "{preview_snip}..."',
+                    )
+
                 chunk = await line_provider.synthesize(line.vi_text, eff_profile, raw_wav)
                 chunk = await asyncio.to_thread(self._fit_chunk_to_slot, chunk, slot_ms)
                 placed_chunks.append((eff_start_ms + speech_offset_ms, chunk.audio_path))
@@ -286,8 +301,13 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             )
 
             if on_progress:
-                pct = round(((idx + 1) / total_lines) * 80.0, 1)
-                on_progress("GENERATING_ASSETS", pct, f"Đã thu thuyết minh câu {idx + 1}/{total_lines}")
+                pct = round(((idx + 1) / total_lines) * 82.0, 1)
+                dur_disp = max(0.2, (ev_end - eff_start_ms) / 1000.0)
+                on_progress(
+                    "GENERATING_AUDIO",
+                    pct,
+                    f"[TTS {idx + 1}/{total_lines}] Đã thu xong câu #{idx + 1} ({dur_disp:.1f}s âm thanh)",
+                )
 
         speech_target_ms = max(
             clip.duration_ms + cursor_shift_ms,
@@ -296,6 +316,12 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         outro_tail_ms = max(0, int(audio_config.outro_tail_ms))
         total_target_ms = speech_target_ms + outro_tail_ms
         master_wav = clip_dir / "master_audio.wav"
+        if on_progress:
+            on_progress(
+                "GENERATING_AUDIO",
+                88.0,
+                f"[Audio Mix] Đang trộn {len(placed_chunks)} câu thoại, nhạc nền Lofi & hiệu ứng Micro-SFX ({total_target_ms / 1000.0:.1f}s)...",
+            )
         actual_dur_ms = await asyncio.to_thread(
             self._mix_tracks_sync,
             clip=clip,
@@ -310,6 +336,12 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             smart_sfx_cues=smart_sfx_cues,
         )
 
+        if on_progress and audio_config.subtitle_style.value != "NONE":
+            on_progress(
+                "GENERATING_AUDIO",
+                95.0,
+                "[Subtitle] Đang sinh phụ đề .ass đồng bộ mili-giây & tô sáng từ khóa...",
+            )
         ass_path = await asyncio.to_thread(
             ASSSubtitleBuilder.build_ass_file,
             events=timed_events,
@@ -323,7 +355,11 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         )
 
         if on_progress:
-            on_progress("GENERATING_ASSETS", 100.0, "Hoàn tất trộn âm Audio Ducking & phụ đề .ass")
+            on_progress(
+                "GENERATING_AUDIO",
+                100.0,
+                f"[Audio Mix] Hoàn tất bản thu master_audio.wav ({actual_dur_ms / 1000.0:.1f}s • 44.1kHz Stereo)",
+            )
 
         # Build contiguous scene spans matching exact spoken start times (excluding optional Outro tail)
         speech_end_ms = max(speech_target_ms, actual_dur_ms - outro_tail_ms)

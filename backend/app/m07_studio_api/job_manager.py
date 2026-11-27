@@ -36,6 +36,9 @@ class ActiveJobRuntime:
     overall_pct: float = 1.0
     baseline_pct: float = 0.0
     smoothed_eta_sec: Optional[int] = None
+    last_message: str = "Đang khởi tạo tiến trình..."
+    last_step_label: str = "Khởi động"
+    last_progress_mono: float = field(default_factory=time.monotonic)
 
     def __post_init__(self) -> None:
         self.pause_event.set()
@@ -46,7 +49,7 @@ class ActiveJobRuntime:
         return max(0, int(round(now - self.started_mono - self.paused_accum_sec - extra_pause)))
 
     def compute_overall_and_eta(self, stage: str, stage_pct: float) -> Tuple[float, Optional[int], str]:
-        """Convert per-stage percentage into monotonic overall 0..100% + smoothed remaining seconds."""
+        """Convert real per-stage percentage into monotonic overall 0..100% + accurate remaining seconds."""
         s_frac = min(1.0, max(0.0, float(stage_pct) / 100.0))
         n_clips = max(1, self.total_clips)
         c_idx = min(n_clips, max(1, self.current_clip_idx))
@@ -60,39 +63,60 @@ class ActiveJobRuntime:
         if stage in ("FAILED", "CANCELLED"):
             return self.overall_pct, None, stage
 
-        # Render span allocation
+        # Accurate non-overlapping stage weights matching real wall-clock GPU/CPU execution
         render_base = (
             0.0
             if self.is_render_only
-            else (42.0 if self.mode == ProjectMode.MOVIE_CLIPPER else 16.0)
+            else (38.0 if self.mode == ProjectMode.MOVIE_CLIPPER else 16.0)
         )
-        render_span = 99.0 - render_base
+        render_span = 99.2 - render_base
 
         if stage == "INGESTING":
-            raw_overall = s_frac * 14.0
-            step_lbl = "Bước 1/4 • Tải & kiểm tra video"
+            span_ing = 12.0 if self.mode == ProjectMode.MOVIE_CLIPPER else 9.0
+            raw_overall = s_frac * span_ing
+            step_lbl = "Bước 1 • Kiểm tra & chuẩn bị video"
         elif stage == "TRANSCRIBING_GPU":
-            raw_overall = 14.0 + s_frac * 20.0
-            step_lbl = "Bước 2/4 • Tách thoại AI (Whisper)"
+            raw_overall = 12.0 + s_frac * 18.0
+            step_lbl = "Bước 2 • Tách thoại GPU (Whisper)"
         elif stage == "AI_ANALYZING":
             if self.mode == ProjectMode.MOVIE_CLIPPER:
-                raw_overall = 34.0 + s_frac * 8.0
-                step_lbl = "Bước 3/4 • Dịch Vietsub & chia tập"
+                raw_overall = 30.0 + s_frac * 8.0
+                step_lbl = "Bước 3 • Dịch ngữ cảnh & chia tập"
+            elif self.mode == ProjectMode.THREADS_TOPIC:
+                raw_overall = 9.0 + s_frac * 7.0
+                step_lbl = "Bước 2 • Dàn kịch bản thẻ bình luận"
             else:
                 raw_overall = s_frac * 16.0
-                step_lbl = "Bước 1/3 • AI lên kịch bản"
-        elif stage in ("GENERATING_ASSETS", "RENDERING_NVENC", "PACKAGING_SEO"):
+                step_lbl = "Bước 1 • AI phân tích & viết kịch bản"
+        elif stage in (
+            "GENERATING_AUDIO",
+            "GENERATING_VISUALS",
+            "GENERATING_ASSETS",
+            "ASSEMBLING_FRAMES",
+            "RENDERING_NVENC",
+            "PACKAGING_SEO",
+        ):
             clip_slice = render_span / float(n_clips)
             clip_origin = render_base + (c_idx - 1) * clip_slice
-            if stage == "GENERATING_ASSETS":
-                sub_frac = s_frac * 0.45
+            if stage == "GENERATING_AUDIO":
+                sub_frac = s_frac * 0.34
+                sub_name = "Thu giọng đọc & trộn âm"
+            elif stage == "GENERATING_VISUALS":
+                sub_frac = 0.34 + s_frac * 0.18
+                sub_name = "Thiết kế thẻ & hình ảnh"
+            elif stage == "GENERATING_ASSETS":
+                # Legacy fallback if called directly
+                sub_frac = s_frac * 0.50
                 sub_name = "Thu giọng & dựng cảnh"
+            elif stage == "ASSEMBLING_FRAMES":
+                sub_frac = 0.52 + s_frac * 0.32
+                sub_name = "Dựng chuyển động 9:16"
             elif stage == "RENDERING_NVENC":
-                sub_frac = 0.45 + s_frac * 0.50
-                sub_name = "Kết xuất MP4 9:16"
+                sub_frac = 0.84 + s_frac * 0.12
+                sub_name = "Mã hóa MP4 (FFmpeg/NVENC)"
             else:
-                sub_frac = 0.95 + s_frac * 0.05
-                sub_name = "Đóng gói SEO"
+                sub_frac = 0.96 + s_frac * 0.04
+                sub_name = "Ảnh bìa & Gói SEO"
             raw_overall = clip_origin + clip_slice * sub_frac
             part_tag = f"Phần {c_idx}/{n_clips}" if n_clips > 1 else "Video chính"
             step_lbl = f"{part_tag} • {sub_name}"
@@ -100,18 +124,20 @@ class ActiveJobRuntime:
             raw_overall = self.overall_pct
             step_lbl = stage
 
-        self.overall_pct = round(min(99.4, max(self.overall_pct, raw_overall)), 1)
+        self.overall_pct = round(min(99.5, max(self.overall_pct, raw_overall)), 1)
+        self.last_step_label = step_lbl
         elapsed = self.active_elapsed_sec()
         delta_pct = self.overall_pct - self.baseline_pct
 
         eta_out: Optional[int] = self.smoothed_eta_sec
-        if elapsed >= 2 and delta_pct >= 1.5 and self.overall_pct < 99.5:
+        if elapsed >= 2 and delta_pct >= 2.0 and self.overall_pct < 99.5:
             raw_eta = elapsed * ((100.0 - self.overall_pct) / max(delta_pct, 1.0))
-            raw_eta_clamped = int(min(7200, max(1, round(raw_eta))))
+            # Responsive ETA without wild multi-hour inflation if a single step paused briefly
+            raw_eta_clamped = int(min(1800, max(1, round(raw_eta))))
             if self.smoothed_eta_sec is None:
                 eta_out = raw_eta_clamped
             else:
-                eta_out = int(round(0.68 * self.smoothed_eta_sec + 0.32 * raw_eta_clamped))
+                eta_out = int(round(0.55 * self.smoothed_eta_sec + 0.45 * raw_eta_clamped))
             self.smoothed_eta_sec = eta_out
 
         return self.overall_pct, eta_out, step_lbl
@@ -171,12 +197,18 @@ class JobExecutionManager:
             raise JobCancelledException("Dự án đã dừng theo yêu cầu người dùng.")
 
     def report_progress(self, project_id: str, stage: str, stage_pct: float, message: str) -> None:
-        """Enrich progress with overall %, elapsed_sec, eta_sec, and step_label before broadcasting."""
+        """Enrich progress with real overall %, elapsed_sec, eta_sec, step_label & console log."""
         self.checkpoint_sync(project_id)
+        is_transient_frame = stage in ("ASSEMBLING_FRAMES", "RENDERING_NVENC") and (
+            "Khung " in message or "Ghép âm thanh &" in message or "Đang xuất Phần" in message
+        )
         rt = self._runtimes.get(project_id)
         if rt is not None:
+            now_m = time.monotonic()
             if stage not in ("PAUSED", "CANCELLED", "FAILED"):
                 rt.last_active_stage = stage
+            rt.last_message = message
+            rt.last_progress_mono = now_m
             overall_pct, eta_sec, step_lbl = rt.compute_overall_and_eta(stage, stage_pct)
             self.hub.publish_sync(
                 project_id=project_id,
@@ -186,9 +218,18 @@ class JobExecutionManager:
                 elapsed_sec=rt.active_elapsed_sec(),
                 eta_sec=eta_sec,
                 step_label=step_lbl,
+                stage_percent=stage_pct,
+                replace_last_transient=is_transient_frame,
             )
         else:
-            self.hub.publish_sync(project_id, stage, stage_pct, message)
+            self.hub.publish_sync(
+                project_id,
+                stage,
+                stage_pct,
+                message,
+                stage_percent=stage_pct,
+                replace_last_transient=is_transient_frame,
+            )
 
     def enqueue_job(
         self,
@@ -222,12 +263,49 @@ class JobExecutionManager:
         asyncio.create_task(self._execute_and_advance(project_id, coro_factory))
         return JobState.INGESTING.value if mode == ProjectMode.MOVIE_CLIPPER and not is_render_only else JobState.AI_ANALYZING.value
 
+    async def _heartbeat_loop(self, project_id: str, stop_ev: asyncio.Event) -> None:
+        """Emit live 1.5s elapsed-time telemetry & active watchdog heartbeat during heavy GPU/API calls."""
+        while not stop_ev.is_set():
+            try:
+                await asyncio.wait_for(stop_ev.wait(), timeout=1.5)
+                break
+            except asyncio.TimeoutError:
+                pass
+            rt = self._runtimes.get(project_id)
+            if rt is None or not rt.pause_event.is_set() or rt.cancelled:
+                continue
+            idle_sec = time.monotonic() - rt.last_progress_mono
+            if idle_sec >= 4.5:
+                hb_msg = (
+                    f"{rt.last_message} (đang xử lý bước hiện tại: {int(round(idle_sec))}s)"
+                )
+                self.hub.publish_sync(
+                    project_id=project_id,
+                    stage=rt.last_active_stage,
+                    percent=rt.overall_pct,
+                    message=hb_msg,
+                    elapsed_sec=rt.active_elapsed_sec(),
+                    eta_sec=rt.smoothed_eta_sec,
+                    step_label=rt.last_step_label,
+                    replace_last_transient=True,
+                )
+
     async def _execute_and_advance(
         self,
         project_id: str,
         coro_factory: Callable[[], Coroutine[Any, Any, Any]],
     ) -> None:
+        stop_hb = asyncio.Event()
+        hb_task = asyncio.create_task(self._heartbeat_loop(project_id, stop_hb))
         try:
+            self.hub.publish_sync(
+                project_id=project_id,
+                stage="INGESTING",
+                percent=1.0,
+                message="🚀 Đã khởi chạy tiến trình xử lý tự động...",
+                elapsed_sec=0,
+                step_label="Khởi động pipeline",
+            )
             await coro_factory()
         except JobCancelledException as cancel_exc:
             self.repo.update_project_state(project_id, JobState.CANCELLED, error_message=str(cancel_exc))
@@ -241,6 +319,8 @@ class JobExecutionManager:
             # PipelineOrchestrator already sets FAILED state & broadcasts error
             pass
         finally:
+            stop_hb.set()
+            hb_task.cancel()
             next_item: Optional[Tuple[str, ProjectMode, bool, Callable[[], Coroutine[Any, Any, Any]]]] = None
             with self._lock:
                 self._runtimes.pop(project_id, None)

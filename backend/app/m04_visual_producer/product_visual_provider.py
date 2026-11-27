@@ -339,9 +339,9 @@ class ProductPhotoShowcaseProvider:
             if on_progress:
                 pct = round(((idx + 1) / total) * 100.0, 1)
                 on_progress(
-                    "GENERATING_ASSETS",
+                    "GENERATING_VISUALS",
                     pct,
-                    f"Đã dàn trang cảnh sản phẩm ({idx + 1}/{total})",
+                    f"[Product Visual {idx + 1}/{total}] Đã dàn trang cảnh sản phẩm #{idx + 1}/{total}",
                 )
 
         return VisualAssetListDTO(clip_id=clip.clip_id, items=items)

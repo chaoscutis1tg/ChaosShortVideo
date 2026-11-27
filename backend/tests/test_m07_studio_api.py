@@ -1163,6 +1163,164 @@ async def test_m03_m05_m07_smart_sfx_keyword_highlight_reddit_vi_and_publish_tra
         assert matched["published_note"] == "Đã lên lịch 20h tối nay"
 
 
+@pytest.mark.asyncio
+async def test_m07_real_progress_console_logs_and_tts_circuit_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify:
+    1. Live Console ring-buffer (`live_progress['logs']`) records every real stage (`[TTS`, `[Threads Card`,
+       `[Dựng 9:16]`, `[FFmpeg]`, `[SEO]`) with strictly monotonic overall percentages reaching 100.0%.
+    2. `GeminiEmotionalTTSProvider` trips its 90s quota/timeout circuit-breaker and falls back immediately
+       without hanging on `429 RESOURCE_EXHAUSTED`.
+    """
+    from app.m00_core_contracts import AudioChunkDTO, VoiceProfileDTO, VoiceTier, WordTimestampDTO
+    from app.m05_voice_audio_mixer.tts_providers import (
+        EdgeTTSProvider,
+        GeminiEmotionalTTSProvider,
+        write_synthetic_speech_placeholder,
+    )
+
+    # 1. Verify GeminiEmotionalTTSProvider quota circuit-breaker never hangs
+    GeminiEmotionalTTSProvider._quota_cooldown_until = 0.0
+    fake_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_prog.db",
+        gemini_api_key="AIza_fake_test_key_for_circuit_breaker",
+        prefer_nvenc_gpu=False,
+    )
+
+    class _InstantFallbackEdge(EdgeTTSProvider):
+        async def synthesize(self, text: str, profile: VoiceProfileDTO, out_wav_path: Path) -> AudioChunkDTO:
+            dur = write_synthetic_speech_placeholder(out_wav_path, text, 1.0)
+            return AudioChunkDTO(
+                audio_path=out_wav_path,
+                duration_ms=dur,
+                word_timestamps=[WordTimestampDTO(word="Thử", start_ms=0, end_ms=dur)],
+            )
+
+    gem_tts = GeminiEmotionalTTSProvider(edge_fallback=_InstantFallbackEdge(), settings=fake_settings)
+    calls = {"gemini": 0}
+
+    def _raise_429(enhanced: str, profile: VoiceProfileDTO, out_wav_path: Path) -> int:
+        calls["gemini"] += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED: Quota exceeded for gemini-2.5-flash-preview-tts")
+
+    monkeypatch.setattr(gem_tts, "_call_gemini_tts_sync", _raise_429)
+    prof = VoiceProfileDTO(
+        profile_id="gem_test",
+        display_name="Nữ Cảm Xúc",
+        tier=VoiceTier.GEMINI_EMOTIONAL,
+        voice_id_or_sample_path="Kore",
+    )
+    c1 = await gem_tts.synthesize("Câu thứ nhất kiểm tra ngắt mạch.", prof, tmp_path / "tts_cb_1.wav")
+    c2 = await gem_tts.synthesize("Câu thứ hai bỏ qua ngay không treo.", prof, tmp_path / "tts_cb_2.wav")
+    assert c1.audio_path.exists() and c2.audio_path.exists()
+    assert calls["gemini"] == 1  # Second sentence skipped Gemini immediately via cooldown!
+    GeminiEmotionalTTSProvider._quota_cooldown_until = 0.0
+
+    # 2. Verify full end-to-end Real Progress Bar & Live Console logs on THREADS_TOPIC
+    bg_mp4 = tmp_path / "console_bg.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=360x640:rate=30:duration=1.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=320:sample_rate=44100:duration=1.5",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(bg_mp4),
+        ],
+        check=True,
+    )
+
+    real_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_prog.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=real_settings)
+    with TestClient(studio_app) as client:
+        ext = client.post(
+            "/api/threads/extract",
+            json={
+                "post_url": "",
+                "raw_pasted_text": (
+                    "@crush_story: Những hành động nhỏ của Crush khiến tim đập loạn nhịp\n\n"
+                    "@ban_tre_1: Nhớ nhất lúc trời mưa bạn ấy nghiêng ô về phía mình suốt cả quãng đường."
+                ),
+                "max_comments": 1,
+                "expand_slang_and_translate": True,
+                "host_voice_id": "local_vais_studio",
+                "male_voice_id": "local_vais_studio",
+                "female_voice_id": "local_vais_studio",
+            },
+        ).json()
+        ext["op_voice_profile_id"] = "local_vais_studio"
+        for item in ext["comments"]:
+            item["voice_profile_id"] = "local_vais_studio"
+
+        st = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": ext,
+                "bg_source_type": "LOCAL_FILE",
+                "bg_path_or_url": str(bg_mp4),
+                "voice_profile_id": "local_vais_studio",
+                "voice_speed_global": 1.3,
+                "bgm_preset_id": "",
+                "subtitle_style": "NONE",
+                "auto_one_click": True,
+            },
+        )
+        assert st.status_code == 200
+        pid = st.json()["project_id"]
+
+        detail = {}
+        for _ in range(120):
+            detail = client.get(f"/api/projects/{pid}").json()
+            if detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.25)
+
+        assert detail["state"] == "COMPLETED", detail.get("error_message")
+        live = detail.get("live_progress") or {}
+        assert live.get("percent") == 100.0
+        logs = live.get("logs") or []
+        assert len(logs) >= 6
+
+        joined_msgs = "\n".join(entry.get("text", "") for entry in logs)
+        assert "[TTS 1/" in joined_msgs
+        assert "[Threads Card" in joined_msgs
+        assert "[Dựng 9:16]" in joined_msgs
+        assert "[FFmpeg" in joined_msgs
+        assert "[SEO]" in joined_msgs
+
+        pcts = [float(entry.get("percent", 0.0)) for entry in logs]
+        assert pcts == sorted(pcts), f"Expected strictly non-decreasing progress percentages, got {pcts}"
+        assert pcts[-1] == 100.0
+
+
+
 
 
 

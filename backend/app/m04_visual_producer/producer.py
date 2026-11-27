@@ -56,6 +56,12 @@ class VisualProducerFacade(IVisualProducer):
         clip_dir.mkdir(parents=True, exist_ok=True)
 
         total = max(len(clip.lines), 1)
+        if on_progress:
+            on_progress(
+                "GENERATING_VISUALS",
+                2.0,
+                f"[Visual] Đang sinh hình ảnh / tải clip minh họa cho {total} phân cảnh...",
+            )
         ordered_items: List[Optional[SceneVisualItemDTO]] = [None] * len(clip.lines)
         sem = asyncio.Semaphore(SCENE_CONCURRENCY_LIMIT)
         done_count = 0
@@ -77,9 +83,9 @@ class VisualProducerFacade(IVisualProducer):
                 if on_progress:
                     pct = round((done_count / total) * 100.0, 1)
                     on_progress(
-                        "GENERATING_ASSETS",
+                        "GENERATING_VISUALS",
                         pct,
-                        f"Đã vẽ hình minh họa khớp nội dung cảnh {done_count}/{total}",
+                        f"[Visual {done_count}/{total}] Đã tạo xong hình ảnh minh họa cảnh #{done_count}/{total}",
                     )
 
         await asyncio.gather(*(_build_one(idx, ln) for idx, ln in enumerate(clip.lines)))

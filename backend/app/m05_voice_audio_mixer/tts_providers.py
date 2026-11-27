@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import struct
 import subprocess
+import time
 from typing import Dict, List, Optional
 import wave
 import httpx
@@ -314,7 +315,7 @@ class EdgeTTSProvider(ITTSProvider):
                             if chunk.get("type") == "audio":
                                 f_mp3.write(chunk["data"])
 
-                await asyncio.wait_for(_download_mp3(), timeout=14.0)
+                await asyncio.wait_for(_download_mp3(), timeout=9.0)
                 if not tmp_mp3.exists() or tmp_mp3.stat().st_size < 256:
                     raise VoiceSynthesisError("Dữ liệu âm thanh trả về rỗng.")
 
@@ -361,10 +362,11 @@ class EdgeTTSProvider(ITTSProvider):
 
 class GeminiEmotionalTTSProvider(ITTSProvider):
     """Ultra-emotional AI Voice Actor powered by `gemini-2.5-flash-preview-tts`
-    (seamlessly falls back to Expressive DragonHD Neural if GEMINI_API_KEY is not configured yet).
+    (with strict 14s timeout + 90s quota cooldown circuit-breaker so it NEVER hangs).
     """
 
     _FEMALE_GEMINI_ACTORS = {"kore", "aoede", "leda", "zephyr", "despina", "callirrhoe", "autonoe"}
+    _quota_cooldown_until: float = 0.0
 
     def __init__(
         self,
@@ -395,7 +397,10 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
         out_wav_path: Path,
     ) -> AudioChunkDTO:
         enhanced = DramaticProsodyEnhancer.enhance(text)
-        if not self._settings.gemini_api_key:
+        if (
+            not self._settings.gemini_api_key
+            or time.monotonic() < GeminiEmotionalTTSProvider._quota_cooldown_until
+        ):
             fallback_prof = profile.model_copy(
                 update={
                     "tier": VoiceTier.EDGE_TTS,
@@ -405,8 +410,9 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
             return await self._edge_fallback.synthesize(text, fallback_prof, out_wav_path)
 
         try:
-            dur_ms = await asyncio.to_thread(
-                self._call_gemini_tts_sync, enhanced, profile, out_wav_path
+            dur_ms = await asyncio.wait_for(
+                asyncio.to_thread(self._call_gemini_tts_sync, enhanced, profile, out_wav_path),
+                timeout=14.0,
             )
             return AudioChunkDTO(
                 audio_path=out_wav_path,
@@ -414,6 +420,8 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
                 word_timestamps=_proportional_words(text, dur_ms),
             )
         except Exception:
+            # Trip 90s circuit breaker so remaining lines in the clip synthesize immediately via Neural TTS
+            GeminiEmotionalTTSProvider._quota_cooldown_until = time.monotonic() + 90.0
             fallback_prof = profile.model_copy(
                 update={
                     "tier": VoiceTier.EDGE_TTS,
@@ -428,7 +436,10 @@ class GeminiEmotionalTTSProvider(ITTSProvider):
         from google import genai  # type: ignore
         from google.genai import types  # type: ignore
 
-        client = genai.Client(api_key=self._settings.gemini_api_key)
+        client = genai.Client(
+            api_key=self._settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=13_000),
+        )
         direction = (
             profile.emotion_prompt
             or "Đọc bằng giọng thuyết minh phim bộ trầm ấm, nhấn nhá kịch tính đầy cảm xúc"

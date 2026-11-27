@@ -96,22 +96,45 @@ body {
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
   transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+/* Subtle Studio Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ================= LOCKED 100VH DESKTOP STUDIO APPSHELL ================= */
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-app);
 }
 
 /* ================= TOP HEADER ================= */
 .studio-header {
-  min-height: 62px;
+  height: 60px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 8px 24px;
+  padding: 6px 20px;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
   z-index: 60;
   backdrop-filter: blur(14px);
 }
@@ -172,46 +195,70 @@ body {
   flex-wrap: wrap;
 }
 
-/* ================= 3-COLUMN STABLE STUDIO SHELL ================= */
+/* ================= 3-PANE INDEPENDENT SCROLL STUDIO SHELL ================= */
 .studio-layout-3col {
-  max-width: 1680px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 1840px;
   margin: 0 auto;
-  padding: 20px 22px 48px;
+  padding: 0;
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr) 364px;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: 248px minmax(0, 1fr) 356px;
+  overflow: hidden;
+}
+
+.studio-layout-3col.inspector-collapsed {
+  grid-template-columns: 248px minmax(0, 1fr);
 }
 
 .studio-sidebar {
-  position: sticky;
-  top: 80px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 14px 24px 18px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 14px;
 }
 
+.studio-center-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 32px;
+  min-width: 0;
+}
+
 .right-dock-desktop {
-  position: sticky;
-  top: 80px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 18px 28px 14px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-subtle);
 }
 
 .mobile-bottom-nav {
   display: none;
 }
 
-.floating-preview-fab {
+.btn.floating-preview-fab {
   display: none;
 }
 
-@media (max-width: 1220px) {
-  .studio-layout-3col {
+@media (max-width: 1180px) {
+  .studio-layout-3col,
+  .studio-layout-3col.inspector-collapsed {
     grid-template-columns: 224px minmax(0, 1fr);
   }
   .right-dock-desktop {
     display: none;
   }
-  .floating-preview-fab {
+  .btn.floating-preview-fab {
     display: inline-flex;
     position: fixed;
     right: 18px;
@@ -222,26 +269,42 @@ body {
 }
 
 @media (max-width: 767px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
   .studio-header {
+    position: sticky;
+    top: 0;
     padding: 6px 12px;
+    height: auto;
     min-height: 54px;
   }
   .brand-sub,
   .hide-on-mobile {
     display: none !important;
   }
-  .studio-layout-3col {
+  .studio-layout-3col,
+  .studio-layout-3col.inspector-collapsed {
     grid-template-columns: 1fr;
-    padding: 12px 12px 88px;
-    gap: 12px;
+    overflow: visible;
   }
   .studio-sidebar {
-    position: static;
+    height: auto;
+    overflow: visible;
+    padding: 10px 12px 0;
+    border-right: none;
   }
   .studio-sidebar .nav-rail {
     display: none;
   }
-  .floating-preview-fab {
+  .studio-center-scroll {
+    height: auto;
+    overflow: visible;
+    padding: 12px 12px 92px;
+  }
+  .btn.floating-preview-fab {
     bottom: 74px;
     right: 14px;
   }
@@ -974,6 +1037,127 @@ input[type='range'] {
   z-index: 150;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
   max-width: 92vw;
+}
+
+/* Sticky Bottom Action Bar inside scrollable forms */
+.sticky-action-bar {
+  position: sticky;
+  bottom: -20px;
+  z-index: 30;
+  background: var(--bg-header);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border-strong);
+  padding: 12px 18px;
+  margin: 14px -22px -22px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  box-shadow: 0 -6px 18px rgba(2, 6, 23, 0.2);
+}
+
+/* Master-Detail 2-Column Project Workspace */
+.workspace-split-2col {
+  display: grid;
+  grid-template-columns: 336px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.workspace-master-pane {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.workspace-master-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 3px;
+  margin-top: 10px;
+}
+
+.workspace-detail-pane {
+  min-width: 0;
+}
+
+.parent-groups-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-step);
+  color: var(--text-secondary);
+  font-size: 12.6px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.group-chip:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.group-chip.active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-text);
+  font-weight: 700;
+}
+
+.group-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .workspace-split-2col {
+    grid-template-columns: 1fr;
+  }
+  .workspace-master-pane {
+    position: static;
+    max-height: 340px;
+  }
+  .sticky-action-bar {
+    position: static;
+    margin: 14px 0 0;
+    padding: 12px 0 0;
+    background: transparent;
+    box-shadow: none;
+  }
 }
 
 @media (max-width: 767px) {

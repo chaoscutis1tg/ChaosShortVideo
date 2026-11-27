@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Clapperboard,
   Copy,
@@ -8,6 +8,8 @@ import {
   FolderKanban,
   Mic,
   Moon,
+  PanelRightClose,
+  PanelRightOpen,
   Pause,
   Play,
   QrCode,
@@ -33,7 +35,7 @@ import ProjectWorkspaceView from './modules/m07_review_and_seo/ProjectWorkspaceV
 import SettingsModal from './modules/m07_review_and_seo/SettingsModal';
 import ProductStudioForm from './modules/m08_product_studio/ProductStudioForm';
 
-const ACTIVE_OR_PAUSED = [
+const ACTIVE_STATES = [
   'QUEUED',
   'INGESTING',
   'TRANSCRIBING_GPU',
@@ -41,17 +43,46 @@ const ACTIVE_OR_PAUSED = [
   'GENERATING_ASSETS',
   'RENDERING_NVENC',
   'PACKAGING_SEO',
-  'PAUSED',
 ];
+const ACTIVE_OR_PAUSED = [...ACTIVE_STATES, 'PAUSED'];
+
+function playCompletionChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [523.25, 659.25];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.055, ctx.currentTime + idx * 0.12 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.12 + 0.28);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.12);
+      osc.stop(ctx.currentTime + idx * 0.12 + 0.3);
+    });
+  } catch {
+    // ignore autoplay restriction
+  }
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('product');
+  const [activeTab, setActiveTab] = useState('topic');
   const [theme, setTheme] = useState(() => localStorage.getItem('chaos_theme') || 'dark');
   const [systemStatus, setSystemStatus] = useState(null);
   const [voices, setVoices] = useState([]);
   const [bgmPresets, setBgmPresets] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [projectGroups, setProjectGroups] = useState([]);
+  const [activeGroupId, setActiveGroupId] = useState('ALL');
   const [activeProjectId, setActiveProjectId] = useState('');
+  const [workspaceEditingMode, setWorkspaceEditingMode] = useState(null);
+  const [inspectorManualOverride, setInspectorManualOverride] = useState(null);
+
   const [layoutConfig, setLayoutConfig] = useState(DEFAULT_LAYOUT_CONFIG);
   const [previewFramesByTab, setPreviewFramesByTab] = useState({
     movie: '',
@@ -65,6 +96,9 @@ export default function App() {
   const [showMobilePreviewDrawer, setShowMobilePreviewDrawer] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
 
+  const prevStatesRef = useRef({});
+  const hasRunningRef = useRef(false);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('chaos_theme', theme);
@@ -72,28 +106,48 @@ export default function App() {
 
   const notify = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3400);
+    setTimeout(() => setToastMsg(''), 3600);
   };
 
   const setTabPreviewFrame = (tabKey, url) => {
     setPreviewFramesByTab((prev) => ({ ...prev, [tabKey]: url || '' }));
   };
 
-  const refreshAllData = async () => {
+  const syncProjectsWithCompletionAlert = (pList, isInitial = false) => {
+    setProjects(pList);
+    hasRunningRef.current = pList.some((p) => ACTIVE_STATES.includes(p.state));
+    const prevMap = prevStatesRef.current;
+    if (!isInitial) {
+      for (const p of pList) {
+        const oldState = prevMap[p.id];
+        if (oldState && ACTIVE_STATES.includes(oldState) && p.state === 'COMPLETED') {
+          playCompletionChime();
+          notify(`Đã xuất xong video: "${p.name}"!`);
+        }
+      }
+    }
+    const nextMap = {};
+    for (const p of pList) nextMap[p.id] = p.state;
+    prevStatesRef.current = nextMap;
+  };
+
+  const refreshAllData = async (isInitial = false) => {
     try {
-      const [st, vList, pList, bList] = await Promise.all([
+      const [st, vList, pList, bList, gList] = await Promise.all([
         studioApi.getSystemStatus(),
         studioApi.listVoices(),
         studioApi.listProjects(),
         studioApi.listBgmPresets(),
+        studioApi.listProjectGroups(),
       ]);
       setSystemStatus(st);
       if (st?.lan_urls?.[0] && !selectedLanUrl) {
         setSelectedLanUrl(st.lan_urls[0]);
       }
       setVoices(vList);
-      setProjects(pList);
+      syncProjectsWithCompletionAlert(pList, isInitial);
       setBgmPresets(bList);
+      setProjectGroups(gList);
       if (!activeProjectId && pList.length > 0) {
         setActiveProjectId(pList[0].id);
       }
@@ -102,27 +156,87 @@ export default function App() {
     }
   };
 
+  const refreshGroupsAndProjects = async () => {
+    try {
+      const [pList, gList] = await Promise.all([
+        studioApi.listProjects(),
+        studioApi.listProjectGroups(),
+      ]);
+      syncProjectsWithCompletionAlert(pList, false);
+      setProjectGroups(gList);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Smart Adaptive Polling: 2.6s ONLY when a job is actively running & tab is visible; 18s when idle!
   useEffect(() => {
-    refreshAllData();
-    const timer = setInterval(async () => {
-      try {
-        const [st, pList] = await Promise.all([
-          studioApi.getSystemStatus(),
-          studioApi.listProjects(),
-        ]);
-        setSystemStatus(st);
-        setProjects(pList);
-      } catch {
-        // ignore
-      }
-    }, 3500);
-    return () => clearInterval(timer);
+    refreshAllData(true);
+    let timerId = null;
+    let cancelled = false;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const delay = document.hidden ? 25000 : hasRunningRef.current ? 2600 : 18000;
+      timerId = setTimeout(async () => {
+        if (!document.hidden) {
+          try {
+            const [st, pList, gList] = await Promise.all([
+              studioApi.getSystemStatus(),
+              studioApi.listProjects(),
+              studioApi.listProjectGroups(),
+            ]);
+            if (!cancelled) {
+              setSystemStatus(st);
+              syncProjectsWithCompletionAlert(pList, false);
+              setProjectGroups(gList);
+            }
+          } catch {
+            // ignore transient network blip
+          }
+        }
+        scheduleNext();
+      }, delay);
+    };
+
+    scheduleNext();
+    const onVisChange = () => {
+      if (!document.hidden) refreshGroupsAndProjects();
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', onVisChange);
+    };
   }, []);
+
+  // Global Studio Keyboard Shortcuts (Esc closes modals)
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (showSettings) setShowSettings(false);
+        else if (showLanQrModal) setShowLanQrModal(false);
+        else if (showMobilePreviewDrawer) setShowMobilePreviewDrawer(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSettings, showLanQrModal, showMobilePreviewDrawer]);
+
+  const handleTabSwitch = (nextTab) => {
+    setActiveTab(nextTab);
+    setInspectorManualOverride(null);
+    if (nextTab === 'workspace') {
+      refreshGroupsAndProjects();
+    }
+  };
 
   const handleProjectStarted = async (projectId, initialState) => {
     setActiveProjectId(projectId);
     setActiveTab('workspace');
-    await refreshAllData();
+    setInspectorManualOverride(null);
+    await refreshAllData(false);
     if (initialState === 'QUEUED') {
       notify('Đã đưa dự án vào hàng đợi tự động.');
     } else {
@@ -138,6 +252,29 @@ export default function App() {
   const queuedCount = projects.filter((p) => p.state === 'QUEUED').length;
   const currentPreviewFrameUrl = previewFramesByTab[activeTab] || '';
 
+  // Smart Context-Aware Inspector: Auto-open on creation tabs or when Quick Re-Edit is open in Workspace;
+  // Auto-collapse on Voices Lab and Workspace browsing so 2-column Master-Detail has generous space!
+  const autoShowInspector =
+    activeTab === 'product' ||
+    activeTab === 'movie' ||
+    activeTab === 'topic' ||
+    (activeTab === 'workspace' && Boolean(workspaceEditingMode));
+  const showDesktopInspector =
+    inspectorManualOverride !== null ? inspectorManualOverride : autoShowInspector;
+
+  const inspectorContextMode =
+    activeTab === 'workspace'
+      ? workspaceEditingMode === 'MOVIE_CLIPPER'
+        ? 'movie'
+        : workspaceEditingMode === 'PRODUCT_SHOWCASE'
+        ? 'product'
+        : 'topic'
+      : activeTab === 'movie'
+      ? 'movie'
+      : activeTab === 'topic'
+      ? 'topic'
+      : 'product';
+
   const handleQuickPauseResume = async (job) => {
     try {
       if (job.state === 'PAUSED') {
@@ -147,16 +284,16 @@ export default function App() {
         await studioApi.pauseProject(job.id);
         notify('Đã tạm dừng dự án.');
       }
-      refreshAllData();
+      refreshGroupsAndProjects();
     } catch (err) {
       notify(`Lỗi điều khiển: ${err.message}`);
     }
   };
 
   const navItems = [
+    { id: 'topic', label: 'Tạo Từ Chủ Đề', shortLabel: 'Chủ Đề', icon: FileText },
     { id: 'product', label: 'Video Bán Hàng', shortLabel: 'Bán Hàng', icon: ShoppingBag },
     { id: 'movie', label: 'Cắt & Dịch Video', shortLabel: 'Cắt Video', icon: Film },
-    { id: 'topic', label: 'Tạo Từ Chủ Đề', shortLabel: 'Chủ Đề', icon: FileText },
     {
       id: 'workspace',
       label: 'Danh Sách Dự Án',
@@ -174,8 +311,8 @@ export default function App() {
   ];
 
   return (
-    <div>
-      {/* TOP HIGH-CLARITY STUDIO HEADER */}
+    <div className="app-shell">
+      {/* PINNED TOP STUDIO HEADER */}
       <header className="studio-header">
         <div className="brand-wrap">
           <div className="brand-mark">
@@ -184,10 +321,10 @@ export default function App() {
           <div style={{ minWidth: 0 }}>
             <div className="brand-title">
               ChaosShortVideo
-              <span className="brand-version-pill">Studio v3.1</span>
+              <span className="brand-version-pill">Studio v3.3</span>
             </div>
             <div className="brand-sub">
-              Hệ thống dựng video bán hàng, cắt dịch phim & sáng tạo nội dung ngắn đa nền tảng
+              Phân tích ý tưởng bằng AI, dựng video bán hàng, cắt dịch phim & quản lý dự án đa tầng
             </div>
           </div>
         </div>
@@ -216,6 +353,16 @@ export default function App() {
 
           <button
             type="button"
+            className={`btn btn-sm ${showDesktopInspector ? 'btn-primary' : 'btn-secondary'} hide-on-mobile`}
+            onClick={() => setInspectorManualOverride(!showDesktopInspector)}
+            title="Đóng / Mở bảng mô phỏng khung 9:16 và theo dõi phần cứng bên phải"
+          >
+            {showDesktopInspector ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            <span>Khung 9:16 &amp; GPU</span>
+          </button>
+
+          <button
+            type="button"
             className="btn btn-secondary btn-sm"
             onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
             title="Chuyển đổi giao diện Tối / Sáng dễ nhìn"
@@ -233,56 +380,99 @@ export default function App() {
 
           <button className="btn btn-secondary btn-sm" onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={14} />{' '}
-            <span className="hide-on-mobile">API & Sao lưu</span>
+            <span className="hide-on-mobile">API &amp; Sao lưu</span>
           </button>
         </div>
       </header>
 
-      {/* MAIN 3-COLUMN STABLE STUDIO LAYOUT */}
-      <div className="studio-layout-3col">
-        {/* LEFT SIDEBAR RAIL */}
+      {/* LOCKED 3-PANE INDEPENDENT SCROLL WORKSPACE */}
+      <div className={`studio-layout-3col ${showDesktopInspector ? '' : 'inspector-collapsed'}`}>
+        {/* LEFT FIXED SIDEBAR */}
         <aside className="studio-sidebar">
-          <nav className="nav-rail">
-            <div className="nav-section-label">Công cụ sản xuất</div>
-            {navItems.slice(0, 3).map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  className={`rail-btn ${activeTab === item.id ? 'active' : ''}`}
-                  onClick={() => setActiveTab(item.id)}
-                >
-                  <span className="rail-btn-left">
-                    <Icon size={18} strokeWidth={1.9} />
-                    <span>{item.label}</span>
-                  </span>
-                </button>
-              );
-            })}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <nav className="nav-rail">
+              <div className="nav-section-label">Công cụ sản xuất</div>
+              {navItems.slice(0, 3).map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    className={`rail-btn ${activeTab === item.id ? 'active' : ''}`}
+                    onClick={() => handleTabSwitch(item.id)}
+                  >
+                    <span className="rail-btn-left">
+                      <Icon size={18} strokeWidth={1.9} />
+                      <span>{item.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
 
-            <div className="nav-section-label" style={{ marginTop: 8 }}>
-              Quản lý & Thư viện
-            </div>
-            {navItems.slice(3).map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  className={`rail-btn ${activeTab === item.id ? 'active' : ''}`}
-                  onClick={() => {
-                    if (item.id === 'workspace') refreshAllData();
-                    setActiveTab(item.id);
-                  }}
-                >
-                  <span className="rail-btn-left">
-                    <Icon size={18} strokeWidth={1.9} />
-                    <span>{item.label}</span>
-                  </span>
-                  {item.count !== undefined && <span className="rail-count">{item.count}</span>}
-                </button>
-              );
-            })}
-          </nav>
+              <div className="nav-section-label" style={{ marginTop: 8 }}>
+                Quản lý &amp; Thư viện
+              </div>
+              {navItems.slice(3).map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    className={`rail-btn ${activeTab === item.id ? 'active' : ''}`}
+                    onClick={() => handleTabSwitch(item.id)}
+                  >
+                    <span className="rail-btn-left">
+                      <Icon size={18} strokeWidth={1.9} />
+                      <span>{item.label}</span>
+                    </span>
+                    {item.count !== undefined && <span className="rail-count">{item.count}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* QUICK PARENT PROJECT GROUPS NAVIGATION IN SIDEBAR */}
+            {projectGroups.length > 0 && (
+              <div className="nav-rail hide-on-mobile" style={{ padding: '10px 10px 12px' }}>
+                <div className="nav-section-label" style={{ paddingTop: 2 }}>
+                  Dự án cha ({projectGroups.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {projectGroups.slice(0, 6).map((grp) => (
+                    <button
+                      key={grp.group_id}
+                      type="button"
+                      className={`rail-btn ${
+                        activeTab === 'workspace' && activeGroupId === grp.group_id ? 'active' : ''
+                      }`}
+                      style={{ padding: '7px 10px', fontSize: 12.8 }}
+                      onClick={() => {
+                        setActiveGroupId(grp.group_id);
+                        handleTabSwitch('workspace');
+                      }}
+                    >
+                      <span className="rail-btn-left">
+                        <span
+                          className="group-dot"
+                          style={{ background: grp.color_tag || '#0ea5e9' }}
+                        />
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {grp.name}
+                        </span>
+                      </span>
+                      <span className="rail-count" style={{ fontSize: 10.8, padding: '1px 6px' }}>
+                        {grp.project_count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* PINNED LIVE PROGRESS WIDGET */}
           {pinnedJob && (
@@ -374,7 +564,7 @@ export default function App() {
                   className="btn btn-primary btn-sm"
                   onClick={() => {
                     setActiveProjectId(pinnedJob.id);
-                    setActiveTab('workspace');
+                    handleTabSwitch('workspace');
                   }}
                 >
                   Chi tiết
@@ -384,49 +574,55 @@ export default function App() {
           )}
         </aside>
 
-        {/* CENTER STAGE */}
-        <main style={{ minWidth: 0 }}>
-          {activeTab === 'movie' && (
-            <MovieStudioForm
+        {/* CENTER INDEPENDENT SCROLL WORKSPACE (Forms Stay Mounted -> Zero Data Loss!) */}
+        <main className="studio-center-scroll">
+          <div style={{ display: activeTab === 'topic' ? 'block' : 'none' }}>
+            <TopicStudioForm
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
-              onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
+              projectGroups={projectGroups}
+              onGroupsChanged={refreshGroupsAndProjects}
               onProjectStarted={handleProjectStarted}
               notify={notify}
+              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+              onOpenApiSettings={() => setShowSettings(true)}
             />
-          )}
+          </div>
 
-          {activeTab === 'product' && (
+          <div style={{ display: activeTab === 'product' ? 'block' : 'none' }}>
             <ProductStudioForm
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
               setLayoutConfig={setLayoutConfig}
+              projectGroups={projectGroups}
+              onGroupsChanged={refreshGroupsAndProjects}
               onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
               apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
               onOpenApiSettings={() => setShowSettings(true)}
             />
-          )}
+          </div>
 
-          {activeTab === 'topic' && (
-            <TopicStudioForm
+          <div style={{ display: activeTab === 'movie' ? 'block' : 'none' }}>
+            <MovieStudioForm
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
+              projectGroups={projectGroups}
+              onGroupsChanged={refreshGroupsAndProjects}
+              onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
-              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
-              onOpenApiSettings={() => setShowSettings(true)}
             />
-          )}
+          </div>
 
           {activeTab === 'voices' && (
             <VoiceCloneLab
               voices={voices}
-              onVoicesChanged={refreshAllData}
+              onVoicesChanged={() => refreshAllData(false)}
               notify={notify}
             />
           )}
@@ -435,39 +631,49 @@ export default function App() {
             <ProjectWorkspaceView
               activeProjectId={activeProjectId}
               projects={projects}
+              projectGroups={projectGroups}
+              activeGroupId={activeGroupId}
+              onSelectGroup={setActiveGroupId}
+              onGroupsChanged={refreshGroupsAndProjects}
               onSelectProject={setActiveProjectId}
-              onProjectsRefresh={refreshAllData}
+              onProjectsRefresh={refreshGroupsAndProjects}
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
               setLayoutConfig={setLayoutConfig}
               onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
+              onQuickEditStateChange={(isOpen, projMode) =>
+                setWorkspaceEditingMode(isOpen ? projMode : null)
+              }
               notify={notify}
             />
           )}
         </main>
 
-        {/* RIGHT DESKTOP DOCK */}
-        <div className="right-dock-desktop">
-          <Canvas916Designer
-            layoutConfig={layoutConfig}
-            setLayoutConfig={setLayoutConfig}
-            previewFrameUrl={currentPreviewFrameUrl}
-            systemStatus={systemStatus}
-            onSystemStatusUpdated={setSystemStatus}
-            activeTab={activeTab}
-            notify={notify}
-          />
-        </div>
+        {/* SMART CONTEXT-AWARE RIGHT DESKTOP INSPECTOR */}
+        {showDesktopInspector && (
+          <div className="right-dock-desktop">
+            <Canvas916Designer
+              layoutConfig={layoutConfig}
+              setLayoutConfig={setLayoutConfig}
+              previewFrameUrl={currentPreviewFrameUrl}
+              systemStatus={systemStatus}
+              onSystemStatusUpdated={setSystemStatus}
+              activeTab={activeTab}
+              contextMode={inspectorContextMode}
+              notify={notify}
+            />
+          </div>
+        )}
       </div>
 
-      {/* FLOATING PREVIEW TRIGGER FOR LAPTOP / TABLET / MOBILE */}
+      {/* FLOATING PREVIEW TRIGGER FOR SMALL SCREENS ONLY */}
       <button
         type="button"
         className="btn btn-primary floating-preview-fab"
         onClick={() => setShowMobilePreviewDrawer(true)}
       >
-        <Smartphone size={16} /> Xem trước & Phần cứng
+        <Smartphone size={16} /> Xem trước &amp; Phần cứng
       </button>
 
       {/* SLIDE-OVER DRAWER FOR SMALL SCREENS */}
@@ -482,7 +688,7 @@ export default function App() {
                 marginBottom: 12,
               }}
             >
-              <strong style={{ fontSize: 15 }}>Xem trước khung hình & Thiết bị</strong>
+              <strong style={{ fontSize: 15 }}>Xem trước khung hình &amp; Thiết bị</strong>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -498,6 +704,7 @@ export default function App() {
               systemStatus={systemStatus}
               onSystemStatusUpdated={setSystemStatus}
               activeTab={activeTab}
+              contextMode={inspectorContextMode}
               notify={notify}
             />
           </div>
@@ -513,10 +720,7 @@ export default function App() {
               key={item.id}
               type="button"
               className={`mobile-nav-item ${activeTab === item.id ? 'active' : ''}`}
-              onClick={() => {
-                if (item.id === 'workspace') refreshAllData();
-                setActiveTab(item.id);
-              }}
+              onClick={() => handleTabSwitch(item.id)}
             >
               <Icon size={19} strokeWidth={1.9} />
               <span>{item.shortLabel}</span>
@@ -525,7 +729,7 @@ export default function App() {
         })}
       </nav>
 
-      {/* LAN WI-FI MOBILE QR MODAL (ITEM 7) */}
+      {/* LAN WI-FI MOBILE QR MODAL */}
       {showLanQrModal && (
         <div
           style={{
@@ -551,7 +755,7 @@ export default function App() {
                   <Wifi size={19} /> Mở ChaosShortVideo trên Điện thoại
                 </div>
                 <div className="page-subtitle">
-                  Tải thẳng ảnh & video gốc vừa chụp từ iPhone / Android vào máy chủ qua Wi-Fi
+                  Tải thẳng ảnh &amp; video gốc vừa chụp từ iPhone / Android vào máy chủ qua Wi-Fi
                 </div>
               </div>
               <button
@@ -608,7 +812,7 @@ export default function App() {
               <div className="text-sub" style={{ fontSize: 12.6, lineHeight: 1.5 }}>
                 1. Đảm bảo điện thoại bắt <strong>cùng mạng Wi-Fi</strong> với máy tính này.
                 <br />
-                2. Mở <strong>Camera điện thoại</strong> (hoặc trình quét mã QR) hướng vào hình trên để mở thẳng giao diện Studio trên điện thoại.
+                2. Mở <strong>Camera điện thoại</strong> hướng vào hình trên để mở thẳng giao diện Studio.
               </div>
             </div>
 
@@ -639,7 +843,7 @@ export default function App() {
           systemStatus={systemStatus}
           onClose={() => setShowSettings(false)}
           onUpdated={setSystemStatus}
-          onBackupRestored={refreshAllData}
+          onBackupRestored={() => refreshAllData(false)}
           notify={notify}
         />
       )}

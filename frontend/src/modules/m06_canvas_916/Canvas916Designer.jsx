@@ -40,6 +40,7 @@ export default function Canvas916Designer({
   systemStatus,
   onSystemStatusUpdated,
   activeTab = 'product',
+  contextMode = null,
   notify,
 }) {
   const [showLayoutSettings, setShowLayoutSettings] = useState(false);
@@ -232,9 +233,10 @@ export default function Canvas916Designer({
   };
 
   const rect = layoutConfig.hardsub_rect;
-  const isMovieMode = activeTab === 'movie';
-  const isTopicMode = activeTab === 'topic';
-  const isProductMode = activeTab === 'product' || (!isMovieMode && !isTopicMode);
+  const effMode = contextMode || activeTab;
+  const isMovieMode = effMode === 'movie';
+  const isTopicMode = effMode === 'topic';
+  const isProductMode = !isMovieMode && !isTopicMode;
 
   const aspectKey = layoutConfig.aspect_ratio || '9:16';
   const aspectInfo = ASPECT_META[aspectKey] || ASPECT_META['9:16'];

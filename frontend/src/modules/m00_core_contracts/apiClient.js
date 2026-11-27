@@ -160,6 +160,17 @@ export const studioApi = {
   listProjects: () => requestJSON('/api/projects'),
   getProjectDetail: (projectId) => requestJSON(`/api/projects/${projectId}`),
 
+  listProjectGroups: () => requestJSON('/api/project-groups'),
+  saveProjectGroup: (payload) =>
+    requestJSON('/api/project-groups', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteProjectGroup: (groupId) =>
+    requestJSON(`/api/project-groups/${groupId}`, { method: 'DELETE' }),
+  assignProjectGroup: (projectId, group_id) =>
+    requestJSON(`/api/projects/${projectId}/assign-group`, {
+      method: 'POST',
+      body: JSON.stringify({ group_id: group_id || null }),
+    }),
+
   renderApprovedProject: (projectId, payload) =>
     requestJSON(`/api/projects/${projectId}/render`, {
       method: 'POST',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Edit3,
@@ -9,6 +9,7 @@ import {
   Play,
   RotateCcw,
   Sparkles,
+  Trash2,
   Video,
   Wand2,
 } from 'lucide-react';
@@ -17,7 +18,19 @@ import {
   InlineBgmSelector,
   InlineVoiceSelector,
   ModeChoiceGrid,
+  ParentGroupSelector,
 } from '../m00_core_contracts/StudioWidgets';
+
+const TOPIC_DRAFT_KEY = 'chaos_draft_topic_v1';
+
+function loadTopicDraft() {
+  try {
+    const raw = localStorage.getItem(TOPIC_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 const VISUAL_SOURCE_CHOICES = [
   {
@@ -62,19 +75,25 @@ export default function TopicStudioForm({
   voices,
   bgmPresets,
   layoutConfig,
+  projectGroups = [],
+  onGroupsChanged,
   onProjectStarted,
   notify,
   apiKeyConfigured = false,
   onOpenApiSettings,
 }) {
-  const [topicTitle, setTopicTitle] = useState('');
-  const [shortBrief, setShortBrief] = useState('');
-  const [keyPoints, setKeyPoints] = useState('');
+  const savedDraft = loadTopicDraft();
+  const rootRef = useRef(null);
+
+  const [topicTitle, setTopicTitle] = useState(savedDraft.topicTitle || '');
+  const [shortBrief, setShortBrief] = useState(savedDraft.shortBrief || '');
+  const [keyPoints, setKeyPoints] = useState(savedDraft.keyPoints || '');
+  const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
   const [analyzing, setAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [previousTitle, setPreviousTitle] = useState('');
 
-  const [visualMode, setVisualMode] = useState('AI_IMAGE');
+  const [visualMode, setVisualMode] = useState(savedDraft.visualMode || 'AI_IMAGE');
   const [voiceId, setVoiceId] = useState(
     voices.find((v) => v.profile_id === 'edge_hoai_my_fast')?.profile_id ||
       voices.find((v) => v.profile_id === 'gemini_yt_orus')?.profile_id ||
@@ -86,11 +105,59 @@ export default function TopicStudioForm({
   const [bgmPresetId, setBgmPresetId] = useState('bgm_lofi_story');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.08);
-  const [subtitleStyle, setSubtitleStyle] = useState('KARAOKE_CAPCUT');
-  const [durationSec, setDurationSec] = useState(75);
-  const [partCount, setPartCount] = useState(1);
-  const [tone, setTone] = useState('Mở đầu cuốn hút trong 3 giây đầu, giọng kể tự nhiên sâu sắc');
+  const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'KARAOKE_CAPCUT');
+  const [durationSec, setDurationSec] = useState(savedDraft.durationSec || 75);
+  const [partCount, setPartCount] = useState(savedDraft.partCount || 1);
+  const [tone, setTone] = useState(
+    savedDraft.tone || 'Mở đầu cuốn hút trong 3 giây đầu, giọng kể tự nhiên sâu sắc'
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  // Auto-save form draft to localStorage so F5 / reload never loses user input
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        TOPIC_DRAFT_KEY,
+        JSON.stringify({
+          topicTitle,
+          shortBrief,
+          keyPoints,
+          parentGroupId,
+          visualMode,
+          subtitleStyle,
+          durationSec,
+          partCount,
+          tone,
+        })
+      );
+    } catch {
+      // ignore storage quota
+    }
+  }, [
+    topicTitle,
+    shortBrief,
+    keyPoints,
+    parentGroupId,
+    visualMode,
+    subtitleStyle,
+    durationSec,
+    partCount,
+    tone,
+  ]);
+
+  const clearDraft = () => {
+    setTopicTitle('');
+    setShortBrief('');
+    setKeyPoints('');
+    setAiAnalysis(null);
+    setPreviousTitle('');
+    try {
+      localStorage.removeItem(TOPIC_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+    if (notify) notify('Đã làm mới nội dung nháp.');
+  };
 
   const handleAnalyzeBrief = async () => {
     if ((topicTitle.trim() + shortBrief.trim()).length < 3) {
@@ -166,6 +233,7 @@ export default function TopicStudioForm({
         custom_bgm_path: customBgmPath,
         bgm_volume: bgmVolume,
         layout_config: layoutConfig,
+        parent_group_id: parentGroupId || null,
         auto_one_click: autoOneClick,
       });
       onProjectStarted(res.project_id, res.state);
@@ -176,8 +244,24 @@ export default function TopicStudioForm({
     }
   };
 
+  // Studio Shortcut: Ctrl+Enter starts automatic video generation when this tab is visible
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (!rootRef.current || rootRef.current.offsetParent === null) return;
+        if (submitting || analyzing) return;
+        e.preventDefault();
+        handleStart(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  const hasDraftText = Boolean((topicTitle + shortBrief + keyPoints).trim());
+
   return (
-    <div className="card">
+    <div ref={rootRef} className="card">
       <div className="page-header">
         <div>
           <div className="page-title">
@@ -234,6 +318,14 @@ export default function TopicStudioForm({
             </button>
           )}
         </div>
+
+        <ParentGroupSelector
+          projectGroups={projectGroups}
+          value={parentGroupId}
+          onChange={setParentGroupId}
+          onGroupsChanged={onGroupsChanged}
+          notify={notify}
+        />
 
         <div className="form-group">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
@@ -508,23 +600,40 @@ export default function TopicStudioForm({
         </div>
       </div>
 
-      <div className="btn-row">
-        <button
-          className="btn btn-primary"
-          style={{ flex: 1, minWidth: 230, minHeight: 44, fontSize: 14.2 }}
-          disabled={submitting || analyzing}
-          onClick={() => handleStart(true)}
-        >
-          <Play size={16} /> Bắt đầu tạo video tự động
-        </button>
-        <button
-          className="btn btn-secondary"
-          style={{ minHeight: 44 }}
-          disabled={submitting || analyzing}
-          onClick={() => handleStart(false)}
-        >
-          <Edit3 size={15} /> Xem và sửa kịch bản trước khi xuất
-        </button>
+      <div className="sticky-action-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="text-sub" style={{ fontSize: 12.2 }}>
+            Tự động lưu nháp • Bấm <strong>Ctrl + Enter</strong> để chạy ngay
+          </span>
+          {hasDraftText && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '4px 10px', minHeight: 30, fontSize: 11.8 }}
+              onClick={clearDraft}
+            >
+              <Trash2 size={12} /> Làm mới form
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-secondary"
+            style={{ minHeight: 42 }}
+            disabled={submitting || analyzing}
+            onClick={() => handleStart(false)}
+          >
+            <Edit3 size={15} /> Xem &amp; sửa kịch bản trước
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
+            disabled={submitting || analyzing}
+            onClick={() => handleStart(true)}
+          >
+            <Play size={16} /> Bắt đầu tạo video tự động
+          </button>
+        </div>
       </div>
     </div>
   );

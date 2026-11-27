@@ -39,8 +39,20 @@ import {
   InlineVoiceSelector,
   MediaDropzone,
   ModeChoiceGrid,
+  ParentGroupSelector,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
+
+const PRODUCT_DRAFT_KEY = 'chaos_draft_product_v1';
+
+function loadProductDraft() {
+  try {
+    const raw = localStorage.getItem(PRODUCT_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 const VIDEO_EXT_RE = /\.(mp4|mov|mkv|webm|avi|flv|ts)$/i;
 
@@ -243,14 +255,20 @@ export default function ProductStudioForm({
   bgmPresets,
   layoutConfig,
   setLayoutConfig,
+  projectGroups = [],
+  onGroupsChanged,
   onPreviewFrameReady,
   onProjectStarted,
   notify,
   apiKeyConfigured = false,
   onOpenApiSettings,
 }) {
+  const savedDraft = loadProductDraft();
+  const rootRef = useRef(null);
+
   const [templates, setTemplates] = useState([]);
   const [selectedTplId, setSelectedTplId] = useState('');
+  const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
   const [scrapeUrl, setScrapeUrl] = useState('');
   const [scrapingUrl, setScrapingUrl] = useState(false);
   const [showBatchPanel, setShowBatchPanel] = useState(false);
@@ -260,16 +278,22 @@ export default function ProductStudioForm({
   const [trimOpenIdx, setTrimOpenIdx] = useState(null);
   const demoPlayerRef = useRef(null);
 
-  const [productName, setProductName] = useState('Đàn Violin Avaro S2 & S2S Gỗ Thịt Tự Nhiên');
-  const [category, setCategory] = useState('MUSICAL_INSTRUMENT');
-  const [copywritingTone, setCopywritingTone] = useState('ARTISAN_STORYTELLER');
-  const [salesAngle, setSalesAngle] = useState('EXPERT_SPEC_REVIEW');
+  const [productName, setProductName] = useState(
+    savedDraft.productName ?? 'Đàn Violin Avaro S2 & S2S Gỗ Thịt Tự Nhiên'
+  );
+  const [category, setCategory] = useState(savedDraft.category || 'MUSICAL_INSTRUMENT');
+  const [copywritingTone, setCopywritingTone] = useState(
+    savedDraft.copywritingTone || 'ARTISAN_STORYTELLER'
+  );
+  const [salesAngle, setSalesAngle] = useState(savedDraft.salesAngle || 'EXPERT_SPEC_REVIEW');
   const [variantCount, setVariantCount] = useState(1);
   const [rawDescription, setRawDescription] = useState(
-    `- Mặt top: Gỗ thịt (Solid Wood) cho âm vang dày và ấm.\n- Lưng và hông: Gỗ Maple cao cấp vân đẹp sắc nét.\n- Mặt phím: Gỗ mun (Ebony) bền bỉ, bấm êm tay.\n- Bộ khóa Peg: Gỗ cao cấp giữ dây chuẩn xác.\n- Giữ dây: Kim loại đối với bản S2; bản S2S dùng chất liệu gỗ.\n- Tặng trọn bộ phụ kiện: Vĩ kéo, Nhựa thông, Kê vai KPE, Sách học violin.\n- Hỗ trợ: Qua cửa hàng tại Hà Nội test trực tiếp âm thanh mộc hoặc nhận clip test riêng từng cây.`
+    savedDraft.rawDescription ??
+      `- Mặt top: Gỗ thịt (Solid Wood) cho âm vang dày và ấm.\n- Lưng và hông: Gỗ Maple cao cấp vân đẹp sắc nét.\n- Mặt phím: Gỗ mun (Ebony) bền bỉ, bấm êm tay.\n- Bộ khóa Peg: Gỗ cao cấp giữ dây chuẩn xác.\n- Giữ dây: Kim loại đối với bản S2; bản S2S dùng chất liệu gỗ.\n- Tặng trọn bộ phụ kiện: Vĩ kéo, Nhựa thông, Kê vai KPE, Sách học violin.\n- Hỗ trợ: Qua cửa hàng tại Hà Nội test trực tiếp âm thanh mộc hoặc nhận clip test riêng từng cây.`
   );
   const [ctaText, setCtaText] = useState(
-    'Bạn ở Hà Nội có thể ghé trực tiếp để cầm đàn và nghe thử âm mộc, hoặc nhắn tin để mình gửi video test riêng từng cây nhé.'
+    savedDraft.ctaText ??
+      'Bạn ở Hà Nội có thể ghé trực tiếp để cầm đàn và nghe thử âm mộc, hoặc nhắn tin để mình gửi video test riêng từng cây nhé.'
   );
 
   const [uploadedPhotos, setUploadedPhotos] = useState([]);
@@ -277,7 +301,7 @@ export default function ProductStudioForm({
   const [cutoutBusyIdx, setCutoutBusyIdx] = useState(null);
   const [dragPhotoIdx, setDragPhotoIdx] = useState(null);
   const [demoClip, setDemoClip] = useState(null);
-  const [durationSec, setDurationSec] = useState(55);
+  const [durationSec, setDurationSec] = useState(savedDraft.durationSec || 55);
   const [voiceId, setVoiceId] = useState(
     voices.find((v) => v.profile_id === 'edge_nam_nghe_nhan')?.profile_id ||
       voices[0]?.profile_id ||
@@ -288,7 +312,38 @@ export default function ProductStudioForm({
   const [bgmPresetId, setBgmPresetId] = useState('bgm_luxury_acoustic');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.06);
-  const [subtitleStyle, setSubtitleStyle] = useState('CINEMA');
+  const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'CINEMA');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        PRODUCT_DRAFT_KEY,
+        JSON.stringify({
+          parentGroupId,
+          productName,
+          category,
+          copywritingTone,
+          salesAngle,
+          rawDescription,
+          ctaText,
+          durationSec,
+          subtitleStyle,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, [
+    parentGroupId,
+    productName,
+    category,
+    copywritingTone,
+    salesAngle,
+    rawDescription,
+    ctaText,
+    durationSec,
+    subtitleStyle,
+  ]);
 
   const [complianceReport, setComplianceReport] = useState(null);
   const [checkingPolicy, setCheckingPolicy] = useState(false);
@@ -320,9 +375,10 @@ export default function ProductStudioForm({
     }));
   }, []);
 
-  // Global Ctrl+V Clipboard Image Paste Listener (Zalo PC / Screenshot -> Direct Upload)
+  // Global Ctrl+V Clipboard Image Paste Listener (only active when ProductStudioForm is visible!)
   useEffect(() => {
     const onWindowPaste = (e) => {
+      if (!rootRef.current || rootRef.current.offsetParent === null) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       const imageFiles = [];
@@ -686,6 +742,7 @@ export default function ProductStudioForm({
         custom_bgm_path: customBgmPath,
         bgm_volume: bgmVolume,
         layout_config: mergedLayout,
+        parent_group_id: parentGroupId || null,
         auto_one_click: autoOneClick,
       });
       onProjectStarted(res.project_id, res.state);
@@ -696,8 +753,21 @@ export default function ProductStudioForm({
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (!rootRef.current || rootRef.current.offsetParent === null) return;
+        if (submitting || uploadingPhotos || uploadingDemo) return;
+        e.preventDefault();
+        handleStart(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   return (
-    <div className="card">
+    <div ref={rootRef} className="card">
       <div className="page-header">
         <div>
           <div className="page-title">
@@ -854,6 +924,17 @@ export default function ProductStudioForm({
               <Trash2 size={14} />
             </button>
           )}
+        </div>
+
+        <div style={{ paddingTop: 4 }}>
+          <ParentGroupSelector
+            projectGroups={projectGroups}
+            value={parentGroupId}
+            onChange={setParentGroupId}
+            onGroupsChanged={onGroupsChanged}
+            notify={notify}
+            label="Thuộc Dự Án Cha (Gom theo Bộ sưu tập / Chiến dịch bán hàng)"
+          />
         </div>
       </div>
 
@@ -1859,23 +1940,28 @@ export default function ProductStudioForm({
         </div>
       </div>
 
-      <div className="btn-row">
-        <button
-          className="btn btn-primary"
-          style={{ flex: 1, minWidth: 230, minHeight: 44, fontSize: 14.2 }}
-          disabled={submitting || uploadingPhotos || uploadingDemo}
-          onClick={() => handleStart(true)}
-        >
-          <Play size={16} /> Tạo {variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay
-        </button>
-        <button
-          className="btn btn-secondary"
-          style={{ minHeight: 44 }}
-          disabled={submitting || uploadingPhotos || uploadingDemo}
-          onClick={() => handleStart(false)}
-        >
-          <Edit3 size={15} /> Xem kịch bản & chỉnh giọng từng câu trước khi xuất
-        </button>
+      <div className="sticky-action-bar">
+        <span className="text-sub" style={{ fontSize: 12.2 }}>
+          Tự động lưu nháp • Dán ảnh <strong>Ctrl + V</strong> • Xuất ngay <strong>Ctrl + Enter</strong>
+        </span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-secondary"
+            style={{ minHeight: 42 }}
+            disabled={submitting || uploadingPhotos || uploadingDemo}
+            onClick={() => handleStart(false)}
+          >
+            <Edit3 size={15} /> Xem kịch bản &amp; chỉnh giọng từng câu
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
+            disabled={submitting || uploadingPhotos || uploadingDemo}
+            onClick={() => handleStart(true)}
+          >
+            <Play size={16} /> Tạo {variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay
+          </button>
+        </div>
       </div>
     </div>
   );

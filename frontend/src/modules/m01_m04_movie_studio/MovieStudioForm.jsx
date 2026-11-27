@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Edit3,
   FileText,
@@ -18,7 +18,19 @@ import {
   InlineVoiceSelector,
   MediaDropzone,
   ModeChoiceGrid,
+  ParentGroupSelector,
 } from '../m00_core_contracts/StudioWidgets';
+
+const MOVIE_DRAFT_KEY = 'chaos_draft_movie_v1';
+
+function loadMovieDraft() {
+  try {
+    const raw = localStorage.getItem(MOVIE_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 const AUDIO_SUB_CHOICES = [
   {
@@ -51,18 +63,27 @@ export default function MovieStudioForm({
   voices,
   bgmPresets,
   layoutConfig,
+  projectGroups = [],
+  onGroupsChanged,
+  onPreviewFrameReady,
   onProjectStarted,
   notify,
 }) {
-  const [projectName, setProjectName] = useState('');
-  const [pathOrUrl, setPathOrUrl] = useState('');
-  const [sourceType, setSourceType] = useState('VIDEO_URL');
+  const savedDraft = loadMovieDraft();
+  const rootRef = useRef(null);
+
+  const [projectName, setProjectName] = useState(savedDraft.projectName || '');
+  const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
+  const [pathOrUrl, setPathOrUrl] = useState(savedDraft.pathOrUrl || '');
+  const [sourceType, setSourceType] = useState(savedDraft.sourceType || 'VIDEO_URL');
   const [localVideoPreviewUrl, setLocalVideoPreviewUrl] = useState('');
   const [probedInfo, setProbedInfo] = useState(null);
   const [probingUrl, setProbingUrl] = useState(false);
 
   // Step 2
-  const [outputAudioSubMode, setOutputAudioSubMode] = useState('VIET_DUB_AND_SUB');
+  const [outputAudioSubMode, setOutputAudioSubMode] = useState(
+    savedDraft.outputAudioSubMode || 'VIET_DUB_AND_SUB'
+  );
   const [voiceId, setVoiceId] = useState(
     voices.find((v) => v.profile_id === 'gemini_uslt_mytam')?.profile_id ||
       voices.find((v) => v.profile_id === 'edge_nam_minh_movie')?.profile_id ||
@@ -71,21 +92,56 @@ export default function MovieStudioForm({
   );
   const [voiceSpeed, setVoiceSpeed] = useState(1.02);
   const [voicePitch, setVoicePitch] = useState(0.0);
-  const [subtitleStyle, setSubtitleStyle] = useState('CINEMA');
+  const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'CINEMA');
   const [bgmPresetId, setBgmPresetId] = useState(null);
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.06);
 
   // Step 3 (Visible & Clear!)
-  const [sourceLang, setSourceLang] = useState('auto');
+  const [sourceLang, setSourceLang] = useState(savedDraft.sourceLang || 'auto');
   const [externalSrtPath, setExternalSrtPath] = useState('');
-  const [cutStrategy, setCutStrategy] = useState('SEQUENTIAL_PARTS');
-  const [minSec, setMinSec] = useState(65);
-  const [maxSec, setMaxSec] = useState(120);
-  const [duckingRatio, setDuckingRatio] = useState(0.18);
+  const [cutStrategy, setCutStrategy] = useState(savedDraft.cutStrategy || 'SEQUENTIAL_PARTS');
+  const [minSec, setMinSec] = useState(savedDraft.minSec || 65);
+  const [maxSec, setMaxSec] = useState(savedDraft.maxSec || 120);
+  const [duckingRatio, setDuckingRatio] = useState(savedDraft.duckingRatio || 0.18);
 
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        MOVIE_DRAFT_KEY,
+        JSON.stringify({
+          projectName,
+          parentGroupId,
+          pathOrUrl: sourceType === 'VIDEO_URL' ? pathOrUrl : '',
+          sourceType: 'VIDEO_URL',
+          outputAudioSubMode,
+          subtitleStyle,
+          sourceLang,
+          cutStrategy,
+          minSec,
+          maxSec,
+          duckingRatio,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, [
+    projectName,
+    parentGroupId,
+    pathOrUrl,
+    sourceType,
+    outputAudioSubMode,
+    subtitleStyle,
+    sourceLang,
+    cutStrategy,
+    minSec,
+    maxSec,
+    duckingRatio,
+  ]);
 
   const handleProbeUrl = async (rawVal) => {
     const candidate = (rawVal ?? pathOrUrl).trim();
@@ -99,6 +155,9 @@ export default function MovieStudioForm({
       setPathOrUrl(info.normalized_url);
       if (!projectName.trim() && info.title) {
         setProjectName(info.title.slice(0, 90));
+      }
+      if (info.thumbnail_url && onPreviewFrameReady) {
+        onPreviewFrameReady(info.thumbnail_url);
       }
       notify(`Đã nhận diện video: ${info.title}`);
     } catch (err) {
@@ -190,6 +249,7 @@ export default function MovieStudioForm({
           voice_pitch_global: Number(voicePitch),
         },
         layout_config: layoutConfig,
+        parent_group_id: parentGroupId || null,
         auto_one_click: autoOneClick,
       });
       onProjectStarted(started.project_id, started.state);
@@ -200,8 +260,21 @@ export default function MovieStudioForm({
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (!rootRef.current || rootRef.current.offsetParent === null) return;
+        if (submitting || uploading) return;
+        e.preventDefault();
+        submitMovie(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   return (
-    <div className="card">
+    <div ref={rootRef} className="card">
       <div className="page-header">
         <div>
           <div className="page-title">
@@ -314,7 +387,7 @@ export default function MovieStudioForm({
           </div>
         )}
 
-        <div className="form-group" style={{ marginTop: 13, marginBottom: 0 }}>
+        <div className="form-group" style={{ marginTop: 13 }}>
           <label className="form-label">Tiêu đề hiển thị trên đầu các phần video</label>
           <input
             className="input"
@@ -323,6 +396,15 @@ export default function MovieStudioForm({
             onChange={(e) => setProjectName(e.target.value)}
           />
         </div>
+
+        <ParentGroupSelector
+          projectGroups={projectGroups}
+          value={parentGroupId}
+          onChange={setParentGroupId}
+          onGroupsChanged={onGroupsChanged}
+          notify={notify}
+          label="Thuộc Dự Án Cha (Gom các tập cùng Bộ phim / Series review)"
+        />
       </div>
 
       {/* STEP 2 */}
@@ -493,24 +575,29 @@ export default function MovieStudioForm({
         </div>
       </div>
 
-      {/* ACTIONS */}
-      <div className="btn-row">
-        <button
-          className="btn btn-primary"
-          style={{ flex: 1, minWidth: 230, minHeight: 44, fontSize: 14.2 }}
-          disabled={submitting}
-          onClick={() => submitMovie(true)}
-        >
-          <Play size={16} /> Bắt đầu cắt & thuyết minh tự động
-        </button>
-        <button
-          className="btn btn-secondary"
-          style={{ minHeight: 44 }}
-          disabled={submitting}
-          onClick={() => submitMovie(false)}
-        >
-          <Edit3 size={15} /> Xem và chỉnh lời dịch trước khi xuất
-        </button>
+      {/* STICKY ACTIONS */}
+      <div className="sticky-action-bar">
+        <span className="text-sub" style={{ fontSize: 12.2 }}>
+          Tự động lưu nháp • Bấm <strong>Ctrl + Enter</strong> để cắt &amp; thuyết minh ngay
+        </span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-secondary"
+            style={{ minHeight: 42 }}
+            disabled={submitting}
+            onClick={() => submitMovie(false)}
+          >
+            <Edit3 size={15} /> Xem và chỉnh lời dịch trước khi xuất
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
+            disabled={submitting}
+            onClick={() => submitMovie(true)}
+          >
+            <Play size={16} /> Bắt đầu cắt &amp; thuyết minh tự động
+          </button>
+        </div>
       </div>
     </div>
   );

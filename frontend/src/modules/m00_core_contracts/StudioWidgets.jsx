@@ -1,7 +1,161 @@
 import React, { useRef, useState } from 'react';
-import { Loader2, Music, RotateCcw, Square, UploadCloud, Volume2 } from 'lucide-react';
+import {
+  FolderPlus,
+  FolderTree,
+  Loader2,
+  Music,
+  Plus,
+  RotateCcw,
+  Square,
+  UploadCloud,
+  Volume2,
+  X,
+} from 'lucide-react';
 import { studioApi } from './apiClient';
 import { stripLeadingEmoji } from './constants';
+
+export const GROUP_COLOR_PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+
+/**
+ * Reusable Parent Project (Series / Campaign / Collection) selector + inline quick creator.
+ */
+export function ParentGroupSelector({
+  projectGroups = [],
+  value = '',
+  onChange,
+  onGroupsChanged,
+  notify,
+  label = 'Thuộc Dự Án Cha (Quản lý theo Series / Chiến dịch / Bộ sưu tập)',
+}) {
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(GROUP_COLOR_PALETTE[0]);
+  const [saving, setSaving] = useState(false);
+
+  const handleQuickCreate = async () => {
+    const clean = newName.trim();
+    if (clean.length < 2) {
+      if (notify) notify('Vui lòng nhập tên Dự Án Cha (ít nhất 2 ký tự).');
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await studioApi.saveProjectGroup({
+        name: clean,
+        description: '',
+        color_tag: newColor,
+      });
+      if (onGroupsChanged) await onGroupsChanged();
+      if (onChange) onChange(saved.group_id);
+      setNewName('');
+      setCreating(false);
+      if (notify) notify(`Đã tạo Dự Án Cha "${saved.name}" và chọn cho dự án này.`);
+    } catch (err) {
+      if (notify) notify(`Lỗi tạo Dự Án Cha: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="surface-box" style={{ marginBottom: 13 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: 7,
+        }}
+      >
+        <label
+          className="form-label"
+          style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <FolderTree size={14} style={{ color: 'var(--brand-text)' }} />
+          <span>{label}</span>
+        </label>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          style={{ padding: '3px 10px', minHeight: 29, fontSize: 11.8 }}
+          onClick={() => setCreating((p) => !p)}
+        >
+          {creating ? (
+            <>
+              <X size={12} /> Đóng
+            </>
+          ) : (
+            <>
+              <FolderPlus size={12} /> + Tạo Dự Án Cha mới
+            </>
+          )}
+        </button>
+      </div>
+
+      {creating ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 210, minHeight: 36, padding: '6px 11px' }}
+            placeholder="VD: Series Học Guitar Cơ Bản / Chiến dịch Violin Mùa Tựu Trường..."
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleQuickCreate();
+              }
+            }}
+          />
+          <div style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+            {GROUP_COLOR_PALETTE.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                onClick={() => setNewColor(hex)}
+                title="Chọn màu đánh dấu Dự Án Cha"
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 999,
+                  background: hex,
+                  border: newColor === hex ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.25)',
+                  cursor: 'pointer',
+                  boxShadow: newColor === hex ? `0 0 0 2px ${hex}` : 'none',
+                }}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{ minHeight: 36 }}
+            disabled={saving}
+            onClick={handleQuickCreate}
+          >
+            <Plus size={13} /> {saving ? 'Đang lưu...' : 'Tạo & Chọn'}
+          </button>
+        </div>
+      ) : (
+        <select
+          className="select"
+          style={{ minHeight: 38, padding: '7px 11px' }}
+          value={value || ''}
+          onChange={(e) => onChange && onChange(e.target.value)}
+        >
+          <option value="">-- Dự án độc lập (Không nằm trong Dự Án Cha) --</option>
+          {projectGroups.map((grp) => (
+            <option key={grp.group_id} value={grp.group_id}>
+              Dự Án Cha: {grp.name} ({grp.project_count || 0} dự án con)
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
 
 /**
  * Clean visual card selector so users can pick modes at a glance without hunting in dropdowns.

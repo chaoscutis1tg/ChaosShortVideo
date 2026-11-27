@@ -385,6 +385,9 @@ class AudioSubConfigDTO(BaseContractDTO):
     voice_speed_global: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_global: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
     enable_card_pop_sfx: bool = False
+    enable_smart_sfx: bool = True
+    smart_sfx_volume: float = Field(default=0.22, ge=0.0, le=1.0)
+    smart_keyword_highlight: bool = True
     outro_tail_ms: int = Field(default=0, ge=0, le=6000)
 
 
@@ -729,6 +732,15 @@ class SavedBgVideoDTO(BaseContractDTO):
     width: int = Field(default=1080, ge=0)
     height: int = Field(default=1920, ge=0)
     created_at: str = ""
+
+
+class ProjectPublishStatusDTO(BaseContractDTO):
+    """Channel publishing tracker attached to a completed/reviewed project (`TIKTOK`, `YOUTUBE_SHORTS`, `FACEBOOK_REELS`)."""
+
+    project_id: str = Field(min_length=1)
+    published_channels: List[str] = Field(default_factory=list)
+    published_note: str = Field(default="", max_length=500)
+    updated_at: str = ""
 
 
 

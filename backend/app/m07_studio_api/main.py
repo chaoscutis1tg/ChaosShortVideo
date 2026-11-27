@@ -123,6 +123,30 @@ class TopicStartRequest(BaseModel):
     bgm_preset_id: Optional[str] = "bgm_lofi_story"
     custom_bgm_path: Optional[str] = None
     bgm_volume: float = 0.08
+    enable_smart_sfx: bool = True
+    smart_keyword_highlight: bool = True
+    layout_config: LayoutAndAntiCopyConfigDTO = Field(
+        default_factory=LayoutAndAntiCopyConfigDTO
+    )
+    parent_group_id: Optional[str] = None
+    auto_one_click: bool = True
+
+
+class TopicBatchStartRequest(BaseModel):
+    items: List[str] = Field(min_length=1, max_length=15)
+    visual_mode: VisualMode = VisualMode.AI_IMAGE
+    target_duration_sec: int = Field(default=75, ge=15, le=180)
+    part_count: int = Field(default=1, ge=1, le=10)
+    narrative_tone: str = "Giọng kể tự nhiên cuốn hút"
+    voice_profile_id: str = "edge_hoai_my_fast"
+    voice_speed_global: Optional[float] = None
+    voice_pitch_global: Optional[float] = None
+    subtitle_style: SubtitleStyle = SubtitleStyle.KARAOKE_CAPCUT
+    bgm_preset_id: Optional[str] = "lofi_vanilla_chill"
+    rotate_lofi_bgm: bool = True
+    bgm_volume: float = 0.08
+    enable_smart_sfx: bool = True
+    smart_keyword_highlight: bool = True
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
@@ -193,6 +217,11 @@ class ProjectGroupSaveRequest(BaseModel):
 
 class ProjectGroupAssignRequest(BaseModel):
     group_id: Optional[str] = None
+
+
+class ProjectPublishStatusRequest(BaseModel):
+    published_channels: List[str] = Field(default_factory=list)
+    published_note: str = Field(default="", max_length=500)
 
 
 class BriefExpandAPIRequest(BaseModel):
@@ -397,11 +426,45 @@ class ThreadsStartRequest(BaseModel):
     bg_audio_volume: float = Field(default=0.14, ge=0.0, le=0.6)
     append_cta_comment: str = Field(default="", max_length=600)
     enable_card_pop_sfx: bool = True
+    enable_smart_sfx: bool = True
+    smart_keyword_highlight: bool = True
     voice_profile_id: str = "threads_nu_chinh"
     voice_speed_global: Optional[float] = Field(default=1.25, ge=0.80, le=1.50)
     voice_pitch_global: Optional[float] = Field(default=0.0, ge=-8.0, le=8.0)
     bgm_preset_id: Optional[str] = "bgm_lofi_story"
     custom_bgm_path: Optional[str] = None
+    bgm_volume: float = 0.06
+    subtitle_style: SubtitleStyle = SubtitleStyle.NONE
+    layout_config: LayoutAndAntiCopyConfigDTO = Field(
+        default_factory=LayoutAndAntiCopyConfigDTO
+    )
+    parent_group_id: Optional[str] = None
+    auto_one_click: bool = True
+
+
+class ThreadsBatchStartRequest(BaseModel):
+    urls: List[str] = Field(min_length=1, max_length=15)
+    max_comments: int = Field(default=6, ge=1, le=20)
+    filter_vibe: ThreadFilterVibe = ThreadFilterVibe.FUNNY_VIRAL
+    prefer_long_comments: bool = False
+    min_comment_chars: int = Field(default=0, ge=0, le=800)
+    expand_slang_and_translate: bool = True
+    multi_voice_cast: bool = True
+    host_voice_id: str = "threads_nu_chinh"
+    male_voice_id: str = "threads_nam_chinh"
+    female_voice_id: str = "threads_nu_chinh"
+    bg_path_or_url: str = Field(default="")
+    rotate_bg_library: bool = True
+    keep_bg_audio: bool = False
+    bg_audio_volume: float = Field(default=0.14, ge=0.0, le=0.6)
+    append_cta_comment: str = Field(default="", max_length=600)
+    enable_card_pop_sfx: bool = True
+    enable_smart_sfx: bool = True
+    smart_keyword_highlight: bool = True
+    voice_speed_global: Optional[float] = Field(default=1.25, ge=0.80, le=1.50)
+    voice_pitch_global: Optional[float] = Field(default=0.0, ge=-8.0, le=8.0)
+    bgm_preset_id: Optional[str] = "lofi_vanilla_chill"
+    rotate_lofi_bgm: bool = True
     bgm_volume: float = 0.06
     subtitle_style: SubtitleStyle = SubtitleStyle.NONE
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
@@ -1696,7 +1759,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             dest = bg_dir / f"{bg_id}{ext}"
             shutil.move(str(dl.video_path), str(dest))
             info = await asyncio.to_thread(FFprobeInspector.inspect, dest)
-            clean_title = req.title.strip() or (dl.title_hint or "Video nền tải từ link")[:120]
+            clean_title = req.title.strip() or (dl.title or "Video nền tải từ link")[:120]
             saved = repo.upsert_bg_video(
                 SavedBgVideoDTO(
                     bg_id=bg_id,
@@ -1710,7 +1773,16 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             )
             return _serialize_bg_video(saved)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Lỗi tải video nền: {exc}") from exc
+            err_raw = str(exc)
+            if "not a bot" in err_raw.lower() or "sign in to confirm" in err_raw.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "YouTube đang bật tường lửa chống tải tự động (yêu cầu đăng nhập xác thực). "
+                        "Bạn hãy tải tệp .mp4 về máy rồi kéo thả vào ô bên trái để lưu vào Kho Video Nền dùng lâu dài nhé!"
+                    ),
+                ) from exc
+            raise HTTPException(status_code=400, detail=f"Lỗi tải video nền: {err_raw}") from exc
         finally:
             shutil.rmtree(tmp_dl, ignore_errors=True)
 
@@ -1813,6 +1885,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 voice_speed_global=req.voice_speed_global,
                 voice_pitch_global=req.voice_pitch_global,
                 enable_card_pop_sfx=bool(req.enable_card_pop_sfx),
+                enable_smart_sfx=bool(req.enable_smart_sfx),
+                smart_keyword_highlight=bool(req.smart_keyword_highlight),
             ),
             req.bgm_preset_id,
             req.custom_bgm_path,
@@ -1832,6 +1906,174 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             ),
         )
         return {"project_id": project_id, "state": initial_state}
+
+    @app.post("/api/threads/batch-start")
+    async def start_threads_batch_projects(req: ThreadsBatchStartRequest) -> Dict[str, Any]:
+        """Batch-enqueue multiple Threads / Reddit URLs rotating across saved BG videos & Lofi CC0 BGM."""
+        clean_urls = [u.strip() for u in req.urls if u and u.strip().startswith(("http://", "https://"))]
+        if not clean_urls:
+            raise HTTPException(
+                status_code=400,
+                detail="Vui lòng dán ít nhất 1 đường dẫn Threads hoặc Reddit hợp lệ (bắt đầu bằng https://...).",
+            )
+
+        saved_bgs = [
+            str(b.local_path) for b in repo.list_bg_videos() if b.local_path.exists()
+        ]
+        bg_pool: List[str] = []
+        if req.rotate_bg_library and saved_bgs:
+            bg_pool = saved_bgs
+        elif req.bg_path_or_url.strip():
+            raw_b = req.bg_path_or_url.strip()
+            if raw_b.lower().startswith(("http://", "https://")):
+                bg_pool = [normalize_video_url(raw_b)]
+            else:
+                res_b = _resolve_media_ref(raw_b)
+                if res_b and res_b.exists():
+                    bg_pool = [str(res_b)]
+        if not bg_pool and saved_bgs:
+            bg_pool = saved_bgs
+        if not bg_pool:
+            raise HTTPException(
+                status_code=400,
+                detail="Chưa có Video Nền! Vui lòng lưu ít nhất 1 video nền vào Kho Video Nền hoặc chọn video nền ở Bước 2.",
+            )
+
+        all_bgm = await asyncio.to_thread(StudioBGMLibrary.ensure_builtin_tracks, bgm_dir)
+        lofi_ids = [
+            p.preset_id for p in all_bgm if "lofi" in p.mood_category.lower()
+        ] or [p.preset_id for p in all_bgm]
+        created_ids: List[str] = []
+
+        for idx, post_url in enumerate(clean_urls[:15]):
+            pid = f"thr_{uuid.uuid4().hex[:8]}"
+            chosen_bg = bg_pool[idx % len(bg_pool)]
+            is_remote_bg = chosen_bg.lower().startswith(("http://", "https://"))
+            chosen_bg_type = SourceType.VIDEO_URL if is_remote_bg else SourceType.LOCAL_FILE
+            chosen_bgm_id = (
+                lofi_ids[idx % len(lofi_ids)]
+                if (req.rotate_lofi_bgm and lofi_ids)
+                else req.bgm_preset_id
+            )
+
+            short_label = post_url.rstrip("/").split("/")[-1][:40] or f"Link #{idx + 1}"
+            repo.create_project(
+                project_id=pid,
+                name=f"[Lô #{idx + 1}] Đang hút bài {short_label}...",
+                mode=ProjectMode.THREADS_TOPIC,
+                target_min_sec=30,
+                target_max_sec=150,
+                request_payload_json="{}",
+                parent_group_id=req.parent_group_id,
+            )
+
+            def _make_batch_threads_coro(
+                p_id: str,
+                item_num: int,
+                target_url: str,
+                bg_target: str,
+                bg_type: SourceType,
+                bgm_id: Optional[str],
+            ):
+                async def _run_one():
+                    ext_req = ThreadsExtractRequestDTO(
+                        post_url=target_url,
+                        max_comments=req.max_comments,
+                        filter_vibe=req.filter_vibe,
+                        prefer_long_comments=req.prefer_long_comments,
+                        min_comment_chars=req.min_comment_chars,
+                        expand_slang_and_translate=req.expand_slang_and_translate,
+                        anonymize_handles=req.layout_config.threads_anonymize_handles,
+                        multi_voice_cast=req.multi_voice_cast,
+                        host_voice_id=req.host_voice_id,
+                        male_voice_id=req.male_voice_id,
+                        female_voice_id=req.female_voice_id,
+                    )
+                    raw_b = await ThreadsScraperService.scrape_post_and_comments(
+                        post_url=target_url, raw_pasted_text=""
+                    )
+                    avail_v = [vp.profile_id for vp in repo.list_voice_profiles()]
+                    curated_b = await orchestrator.brain.curate_threads_bundle(
+                        raw_bundle=raw_b, req=ext_req, available_voice_ids=avail_v
+                    )
+                    media_cache = settings.work_dir / "_uploads" / "threads_media"
+                    hydrated_b = await ThreadsScraperService.download_bundle_images(
+                        curated_b, media_cache
+                    )
+                    full_start_req = ThreadsStartRequest(
+                        bundle=hydrated_b,
+                        bg_source_type=bg_type,
+                        bg_path_or_url=bg_target,
+                        keep_bg_audio=req.keep_bg_audio,
+                        bg_audio_volume=req.bg_audio_volume,
+                        append_cta_comment=req.append_cta_comment,
+                        enable_card_pop_sfx=req.enable_card_pop_sfx,
+                        enable_smart_sfx=req.enable_smart_sfx,
+                        smart_keyword_highlight=req.smart_keyword_highlight,
+                        voice_profile_id=req.host_voice_id,
+                        voice_speed_global=req.voice_speed_global,
+                        voice_pitch_global=req.voice_pitch_global,
+                        bgm_preset_id=bgm_id,
+                        bgm_volume=req.bgm_volume,
+                        subtitle_style=req.subtitle_style,
+                        layout_config=req.layout_config,
+                        parent_group_id=req.parent_group_id,
+                        auto_one_click=req.auto_one_click,
+                    )
+                    with repo._connect() as conn:
+                        conn.execute(
+                            "UPDATE projects SET name = ?, request_payload_json = ? WHERE id = ?",
+                            (
+                                (hydrated_b.topic_title or f"Thảo luận #{item_num}")[:160],
+                                full_start_req.model_dump_json(),
+                                p_id,
+                            ),
+                        )
+                    ingest_dto = IngestRequestDTO(
+                        project_id=p_id, source_type=bg_type, path_or_url=bg_target
+                    )
+                    a_cfg = _resolve_bgm_into_audio_cfg(
+                        AudioSubConfigDTO(
+                            enable_narration=True,
+                            keep_original_audio=bool(req.keep_bg_audio),
+                            ducking_ratio=float(req.bg_audio_volume) if req.keep_bg_audio else 0.0,
+                            dynamic_cinema_ducking=False,
+                            bgm_volume=req.bgm_volume,
+                            subtitle_style=req.subtitle_style,
+                            subtitle_pos_y=req.layout_config.subtitle_pos_y,
+                            subtitle_font_size=req.layout_config.subtitle_font_size,
+                            voice_speed_global=req.voice_speed_global,
+                            voice_pitch_global=req.voice_pitch_global,
+                            enable_card_pop_sfx=bool(req.enable_card_pop_sfx),
+                            enable_smart_sfx=bool(req.enable_smart_sfx),
+                            smart_keyword_highlight=bool(req.smart_keyword_highlight),
+                        ),
+                        bgm_id,
+                        None,
+                    )
+                    return await orchestrator.execute_threads_pipeline(
+                        ingest_req=ingest_dto,
+                        bundle=hydrated_b,
+                        append_cta_comment=req.append_cta_comment,
+                        voice_profile_id=req.host_voice_id,
+                        audio_config=a_cfg,
+                        layout_config=req.layout_config,
+                        auto_one_click=req.auto_one_click,
+                    )
+
+                return _run_one
+
+            job_mgr.enqueue_job(
+                project_id=pid,
+                mode=ProjectMode.THREADS_TOPIC,
+                is_render_only=False,
+                coro_factory=_make_batch_threads_coro(
+                    pid, idx + 1, post_url, chosen_bg, chosen_bg_type, chosen_bgm_id
+                ),
+            )
+            created_ids.append(pid)
+
+        return {"queued_count": len(created_ids), "project_ids": created_ids}
 
     @app.post("/api/topic/start")
     async def start_topic_project(req: TopicStartRequest) -> Dict[str, Any]:
@@ -1864,6 +2106,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 subtitle_font_size=req.layout_config.subtitle_font_size,
                 voice_speed_global=req.voice_speed_global,
                 voice_pitch_global=req.voice_pitch_global,
+                enable_smart_sfx=bool(req.enable_smart_sfx),
+                smart_keyword_highlight=bool(req.smart_keyword_highlight),
             ),
             req.bgm_preset_id,
             req.custom_bgm_path,
@@ -1881,6 +2125,112 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             ),
         )
         return {"project_id": project_id, "state": initial_state}
+
+    @app.post("/api/topic/batch-start")
+    async def start_topic_batch_projects(req: TopicBatchStartRequest) -> Dict[str, Any]:
+        """Batch-enqueue multiple Topic projects rotating across CC0 Lofi BGM tracks."""
+        parsed_rows: List[tuple[str, str]] = []
+        for raw_ln in req.items[:15]:
+            clean = (raw_ln or "").strip()
+            if len(clean) < 4:
+                continue
+            if "|" in clean:
+                t_part, k_part = clean.split("|", 1)
+                parsed_rows.append((t_part.strip()[:180], k_part.strip()[:2500]))
+            else:
+                parsed_rows.append((clean[:180], ""))
+
+        if not parsed_rows:
+            raise HTTPException(
+                status_code=400,
+                detail="Vui lòng nhập ít nhất 1 chủ đề hợp lệ (tối thiểu 4 ký tự).",
+            )
+
+        all_bgm = await asyncio.to_thread(StudioBGMLibrary.ensure_builtin_tracks, bgm_dir)
+        lofi_ids = [
+            p.preset_id for p in all_bgm if "lofi" in p.mood_category.lower()
+        ] or [p.preset_id for p in all_bgm]
+        created_ids: List[str] = []
+
+        for idx, (t_title, t_notes) in enumerate(parsed_rows):
+            pid = f"top_{uuid.uuid4().hex[:8]}"
+            chosen_bgm = (
+                lofi_ids[idx % len(lofi_ids)]
+                if (req.rotate_lofi_bgm and lofi_ids)
+                else req.bgm_preset_id
+            )
+            single_req = TopicStartRequest(
+                topic_title=t_title,
+                key_points=t_notes,
+                visual_mode=req.visual_mode,
+                target_duration_sec=req.target_duration_sec,
+                part_count=req.part_count,
+                narrative_tone=req.narrative_tone,
+                voice_profile_id=req.voice_profile_id,
+                voice_speed_global=req.voice_speed_global,
+                voice_pitch_global=req.voice_pitch_global,
+                subtitle_style=req.subtitle_style,
+                bgm_preset_id=chosen_bgm,
+                bgm_volume=req.bgm_volume,
+                enable_smart_sfx=req.enable_smart_sfx,
+                smart_keyword_highlight=req.smart_keyword_highlight,
+                layout_config=req.layout_config,
+                parent_group_id=req.parent_group_id,
+                auto_one_click=req.auto_one_click,
+            )
+            repo.create_project(
+                project_id=pid,
+                name=t_title,
+                mode=ProjectMode.TOPIC_VIDEO,
+                target_min_sec=max(15, req.target_duration_sec - 15),
+                target_max_sec=min(180, req.target_duration_sec + 15),
+                request_payload_json=single_req.model_dump_json(),
+                parent_group_id=req.parent_group_id,
+            )
+            p_dto = TopicPromptDTO(
+                project_id=pid,
+                topic_title=t_title,
+                key_points=t_notes,
+                visual_mode=req.visual_mode,
+                target_duration_sec=req.target_duration_sec,
+                part_count=req.part_count,
+                narrative_tone=req.narrative_tone,
+            )
+            a_cfg = _resolve_bgm_into_audio_cfg(
+                AudioSubConfigDTO(
+                    enable_narration=True,
+                    keep_original_audio=False,
+                    bgm_volume=req.bgm_volume,
+                    subtitle_style=req.subtitle_style,
+                    subtitle_pos_y=req.layout_config.subtitle_pos_y,
+                    subtitle_font_size=req.layout_config.subtitle_font_size,
+                    voice_speed_global=req.voice_speed_global,
+                    voice_pitch_global=req.voice_pitch_global,
+                    enable_smart_sfx=bool(req.enable_smart_sfx),
+                    smart_keyword_highlight=bool(req.smart_keyword_highlight),
+                ),
+                chosen_bgm,
+                None,
+            )
+
+            def _make_topic_coro(dto_p: TopicPromptDTO, cfg_a: AudioSubConfigDTO):
+                return lambda: orchestrator.execute_topic_pipeline(
+                    dto_p,
+                    req.voice_profile_id,
+                    cfg_a,
+                    req.layout_config,
+                    req.auto_one_click,
+                )
+
+            job_mgr.enqueue_job(
+                project_id=pid,
+                mode=ProjectMode.TOPIC_VIDEO,
+                is_render_only=False,
+                coro_factory=_make_topic_coro(p_dto, a_cfg),
+            )
+            created_ids.append(pid)
+
+        return {"queued_count": len(created_ids), "project_ids": created_ids}
 
     @app.post("/api/movie/start")
     async def start_movie_project(req: MovieStartRequest) -> Dict[str, Any]:
@@ -1975,6 +2325,20 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             raise HTTPException(status_code=404, detail="Không tìm thấy dự án.")
         repo.assign_project_to_group(project_id, req.group_id)
         return await get_project_detail(project_id)
+
+    @app.post("/api/projects/{project_id}/publish-status")
+    async def update_project_publish_status_endpoint(
+        project_id: str, req: ProjectPublishStatusRequest
+    ) -> Dict[str, Any]:
+        """Update TikTok / YouTube Shorts / Facebook Reels published status & note for a project."""
+        saved = repo.update_project_publish_status(
+            project_id=project_id,
+            published_channels=req.published_channels,
+            published_note=req.published_note,
+        )
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dự án.")
+        return saved.model_dump()
 
     @app.get("/api/projects")
     async def get_all_projects() -> List[Dict[str, Any]]:

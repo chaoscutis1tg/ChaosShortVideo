@@ -4,6 +4,7 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
   Clock,
   Columns,
   Copy,
@@ -126,6 +127,8 @@ export default function ProjectWorkspaceView({
   const [bgmVolume, setBgmVolume] = useState(0.06);
   const [translating, setTranslating] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
+  const [pubNoteDraft, setPubNoteDraft] = useState('');
+  const [savingPubStatus, setSavingPubStatus] = useState(false);
 
   const groupMap = useMemo(() => {
     const map = {};
@@ -250,6 +253,9 @@ export default function ProjectWorkspaceView({
         }
         return d;
       });
+      if (forceRebuildEditor) {
+        setPubNoteDraft(d.published_note || '');
+      }
       setLiveProgress(d.live_progress || null);
 
       // Smart Preview Frame Sync: load cover/preview into the 9:16 Inspector so it's never blank!
@@ -333,6 +339,11 @@ export default function ProjectWorkspaceView({
         if (p.state !== 'AWAITING_REVIEW') return false;
       } else if (filterMode === 'DONE') {
         if (p.state !== 'COMPLETED') return false;
+      } else if (filterMode === 'UNPOSTED') {
+        if (p.state !== 'COMPLETED') return false;
+        if (Array.isArray(p.published_channels) && p.published_channels.length > 0) return false;
+      } else if (filterMode === 'POSTED') {
+        if (!Array.isArray(p.published_channels) || p.published_channels.length === 0) return false;
       }
 
       if (q) {
@@ -411,6 +422,68 @@ export default function ProjectWorkspaceView({
       );
     } catch (err) {
       notify(`Lỗi phân nhóm: ${err.message}`);
+    }
+  };
+
+  const handleTogglePublishedChannel = async (channelKey) => {
+    if (!detail || savingPubStatus) return;
+    const curList = Array.isArray(detail.published_channels) ? detail.published_channels : [];
+    const nextList = curList.includes(channelKey)
+      ? curList.filter((c) => c !== channelKey)
+      : [...curList, channelKey];
+    setSavingPubStatus(true);
+    try {
+      const saved = await studioApi.updateProjectPublishStatus(
+        detail.id,
+        nextList,
+        pubNoteDraft.trim()
+      );
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              published_channels: saved.published_channels || nextList,
+              published_note: saved.published_note ?? pubNoteDraft.trim(),
+            }
+          : prev
+      );
+      if (onProjectsRefresh) onProjectsRefresh();
+      const chNames = {
+        TIKTOK: 'TikTok',
+        YOUTUBE_SHORTS: 'YouTube Shorts',
+        FACEBOOK_REELS: 'Facebook / Reels',
+      };
+      notify(
+        nextList.includes(channelKey)
+          ? `Đã đánh dấu ĐÃ ĐĂNG lên ${chNames[channelKey] || channelKey}!`
+          : `Đã bỏ đánh dấu đăng ${chNames[channelKey] || channelKey}.`
+      );
+    } catch (err) {
+      notify(`Lỗi lưu trạng thái đăng kênh: ${err.message}`);
+    } finally {
+      setSavingPubStatus(false);
+    }
+  };
+
+  const handleSavePublishNote = async () => {
+    if (!detail || savingPubStatus) return;
+    const curList = Array.isArray(detail.published_channels) ? detail.published_channels : [];
+    setSavingPubStatus(true);
+    try {
+      const saved = await studioApi.updateProjectPublishStatus(
+        detail.id,
+        curList,
+        pubNoteDraft.trim()
+      );
+      setDetail((prev) =>
+        prev ? { ...prev, published_note: saved.published_note ?? pubNoteDraft.trim() } : prev
+      );
+      if (onProjectsRefresh) onProjectsRefresh();
+      notify('Đã lưu ghi chú lịch / link bài đăng kênh.');
+    } catch (err) {
+      notify(`Lỗi lưu ghi chú đăng kênh: ${err.message}`);
+    } finally {
+      setSavingPubStatus(false);
     }
   };
 
@@ -929,6 +1002,8 @@ export default function ProjectWorkspaceView({
               ['RUNNING', 'Đang chạy'],
               ['REVIEW', 'Chờ duyệt'],
               ['DONE', 'Hoàn thành'],
+              ['UNPOSTED', 'Chưa đăng kênh'],
+              ['POSTED', 'Đã đăng'],
             ].map(([k, lbl]) => (
               <button
                 key={k}
@@ -1041,6 +1116,25 @@ export default function ProjectWorkspaceView({
                               }}
                             />
                             {parentGrp.name}
+                          </span>
+                        )}
+                        {Array.isArray(p.published_channels) && p.published_channels.length > 0 && (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              padding: '1px 6px',
+                              borderRadius: 999,
+                              background: 'rgba(16, 185, 129, 0.14)',
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              color: 'var(--success-text)',
+                              fontSize: 10.4,
+                              fontWeight: 700,
+                            }}
+                            title={`Đã đăng: ${p.published_channels.join(', ')}`}
+                          >
+                            <CheckCircle2 size={10} /> Đã đăng ({p.published_channels.length})
                           </span>
                         )}
                       </div>
@@ -1166,6 +1260,64 @@ export default function ProjectWorkspaceView({
                         ))}
                       </select>
                     </div>
+                  </div>
+
+                  {/* CHANNEL PUBLISHING TRACKER (ĐÃ ĐĂNG TIKTOK / YOUTUBE SHORTS / REELS) */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      marginTop: 9,
+                      padding: '7px 10px',
+                      borderRadius: 9,
+                      background: 'var(--bg-step)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <span style={{ fontSize: 11.8, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Trạng thái đăng kênh:
+                    </span>
+                    {[
+                      ['TIKTOK', 'TikTok'],
+                      ['YOUTUBE_SHORTS', 'YouTube Shorts'],
+                      ['FACEBOOK_REELS', 'Reels / FB'],
+                    ].map(([chKey, chLabel]) => {
+                      const isPosted = (detail.published_channels || []).includes(chKey);
+                      return (
+                        <button
+                          key={chKey}
+                          type="button"
+                          disabled={savingPubStatus}
+                          onClick={() => handleTogglePublishedChannel(chKey)}
+                          className={`btn btn-sm ${isPosted ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{
+                            minHeight: 27,
+                            padding: '2px 9px',
+                            fontSize: 11.5,
+                            background: isPosted ? 'rgba(16, 185, 129, 0.22)' : undefined,
+                            borderColor: isPosted ? 'rgba(16, 185, 129, 0.65)' : undefined,
+                            color: isPosted ? 'var(--success-text)' : undefined,
+                          }}
+                        >
+                          {isPosted ? <CheckCircle2 size={12} /> : null} {isPosted ? `Đã đăng ${chLabel}` : chLabel}
+                        </button>
+                      );
+                    })}
+                    <input
+                      className="input"
+                      style={{ flex: 1, minWidth: 170, minHeight: 28, padding: '3px 9px', fontSize: 11.8 }}
+                      placeholder="Ghi chú link bài đăng / giờ hẹn đăng..."
+                      value={pubNoteDraft}
+                      onChange={(e) => setPubNoteDraft(e.target.value)}
+                      onBlur={() => {
+                        if (pubNoteDraft.trim() !== (detail.published_note || '').trim()) {
+                          handleSavePublishNote();
+                        }
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSavePublishNote()}
+                    />
                   </div>
                 </div>
 

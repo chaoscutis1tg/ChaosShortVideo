@@ -525,10 +525,15 @@ class ThreadsScraperService:
 
             async with sem:
                 try:
+                    ref_host = (
+                        "https://www.reddit.com/"
+                        if ("redd.it" in u.lower() or "reddit" in u.lower())
+                        else "https://www.threads.com/"
+                    )
                     headers = {
                         **cls.DEFAULT_HEADERS,
                         "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                        "Referer": "https://www.threads.com/",
+                        "Referer": ref_host,
                     }
                     async with httpx.AsyncClient(
                         headers=headers, follow_redirects=True, timeout=12.0
@@ -619,31 +624,75 @@ class ThreadsScraperService:
             return html_lib.unescape(m_in.group(1))
         return ""
 
+    @staticmethod
+    def _clean_reddit_markdown(raw_txt: str) -> str:
+        """Clean Reddit markdown links, zero-width spaces, quote markers & award edits."""
+        s = html_lib.unescape(raw_txt or "").replace("\u200b", "").replace("&#x200B;", "")
+        # Convert markdown links `[label](https://...)` -> `label`
+        s = re.sub(r"\[([^\]]+)\]\(https?://[^)\s]+\)", r"\1", s)
+        # Strip quote markers `> ` at line start
+        s = re.sub(r"(?m)^\s*>\s?", "", s)
+        # Strip noisy trailing Reddit award edits ('Edit: Rip my inbox', 'Edit: thanks for the gold')
+        s = re.sub(
+            r"(?im)\n+\s*edit\s*\d*\s*:\s*(?:rip my inbox|thanks for the (?:gold|kind|awards)|wow this blew up).*$",
+            "",
+            s,
+        )
+        return re.sub(r"\n{3,}", "\n\n", s).strip()
+
     @classmethod
     async def _scrape_reddit_json(cls, url: str) -> Optional[ScrapedThreadBundleDTO]:
-        clean = url.split("?")[0].rstrip("/")
-        json_url = f"{clean}.json?limit=80&raw_json=1"
+        reddit_headers = {
+            "User-Agent": "windows:com.chaosshortvideo.studio:v3.4 (by /u/chaosstudio)",
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+        }
         try:
+            resolved_url = url.strip()
+            # Resolve shortlinks (`redd.it/...` or `/r/.../s/...`) to canonical `/comments/<id>/` URL first
+            if "redd.it/" in resolved_url.lower() or "/s/" in resolved_url:
+                async with httpx.AsyncClient(
+                    headers=reddit_headers, follow_redirects=True, timeout=10.0
+                ) as r_client:
+                    head_resp = await r_client.get(resolved_url)
+                    resolved_url = str(head_resp.url)
+
+            clean = resolved_url.split("?")[0].rstrip("/")
+            # Try canonical JSON first, then `old.reddit.com` JSON mirror if rate-limited
+            candidate_json_urls = [f"{clean}.json?limit=80&sort=top&raw_json=1"]
+            if "www.reddit.com" in clean:
+                candidate_json_urls.append(
+                    clean.replace("www.reddit.com", "old.reddit.com")
+                    + ".json?limit=80&sort=top&raw_json=1"
+                )
+
+            payload = None
             async with httpx.AsyncClient(
-                headers={**cls.DEFAULT_HEADERS, "User-Agent": "ChaosShortVideoStudio/3.3"},
-                follow_redirects=True,
-                timeout=12.0,
+                headers=reddit_headers, follow_redirects=True, timeout=13.0
             ) as client:
-                resp = await client.get(json_url)
-                if resp.status_code != 200:
-                    return await cls._scrape_threads_or_web(url)
-                payload = resp.json()
+                for j_url in candidate_json_urls:
+                    resp = await client.get(j_url)
+                    if resp.status_code == 200:
+                        cand_json = resp.json()
+                        if isinstance(cand_json, list) and len(cand_json) >= 1:
+                            payload = cand_json
+                            break
 
             if not isinstance(payload, list) or len(payload) < 1:
-                return None
+                return await cls._scrape_threads_or_web(url)
 
             post_data = payload[0]["data"]["children"][0]["data"]
-            title = str(post_data.get("title") or "Chủ đề Reddit").strip()
-            selftext = str(post_data.get("selftext") or "").strip()
-            op_full = f"{title}\n{selftext}".strip() if selftext else title
+            subreddit = str(post_data.get("subreddit_name_prefixed") or "").strip()
+            title = cls._clean_reddit_markdown(str(post_data.get("title") or "Chủ đề Reddit"))
+            selftext = cls._clean_reddit_markdown(str(post_data.get("selftext") or ""))
+            if selftext in ("[deleted]", "[removed]"):
+                selftext = ""
+            op_full = f"{title}\n\n{selftext}".strip() if selftext else title
             op_img = cls._extract_reddit_media_url(post_data)
             author = str(post_data.get("author") or "reddit_op").strip()
-            ups = int(post_data.get("ups") or 0)
+            if author in ("[deleted]", "AutoModerator"):
+                author = subreddit.replace("r/", "") or "reddit_story"
+            ups = int(post_data.get("ups") or post_data.get("score") or 0)
             num_c = int(post_data.get("num_comments") or 0)
 
             comments: List[ThreadCommentItemDTO] = []
@@ -652,50 +701,56 @@ class ThreadsScraperService:
                     if child.get("kind") != "t1":
                         continue
                     cd = child.get("data") or {}
-                    body = str(cd.get("body") or "").strip()
-                    c_author = str(cd.get("author") or f"user_{idx + 1}").strip()
+                    raw_body = str(cd.get("body") or "").strip()
+                    c_author = str(cd.get("author") or f"redditor_{idx + 1}").strip()
                     c_img = cls._extract_reddit_media_url(cd)
                     if (
-                        (not body and not c_img)
-                        or body in ("[deleted]", "[removed]")
-                        or c_author.lower() == "automoderator"
+                        (not raw_body and not c_img)
+                        or raw_body in ("[deleted]", "[removed]")
+                        or c_author.lower() in ("automoderator", "bot")
+                        or bool(cd.get("stickied"))
                     ):
                         continue
-                    clean_disp = URL_CLEAN_RE.sub("", body).strip() if c_img else body
+                    clean_disp = cls._clean_reddit_markdown(
+                        URL_CLEAN_RE.sub("", raw_body).strip() if c_img else raw_body
+                    )
                     if not clean_disp:
                         clean_disp = "Ảnh đính kèm từ bình luận"
-                    c_ups = max(0, int(cd.get("ups") or 0))
+                    c_ups = max(0, int(cd.get("ups") or cd.get("score") or 0))
+                    c_av = html_lib.unescape(str(cd.get("snoovatar_img") or "")).strip()
                     comments.append(
                         ThreadCommentItemDTO(
                             comment_id=f"rd_{uuid.uuid4().hex[:8]}",
                             author_handle=f"@{c_author}",
                             raw_text=clean_disp[:3500],
                             display_text=clean_disp[:3500],
-                            spoken_vi_text=normalize_vn_social_slang(clean_disp[:3500]) or "Cùng xem bức ảnh này nhé",
+                            spoken_vi_text=normalize_vn_social_slang(clean_disp[:3500]) or clean_disp[:800],
                             attached_image_url=c_img,
+                            avatar_url=c_av if c_av.startswith("http") else "",
                             likes_count=c_ups,
-                            likes_display=format_compact_likes(c_ups) or "42",
+                            likes_display=format_compact_likes(c_ups) or "64",
                         )
                     )
                     if len(comments) >= 65:
                         break
 
             img_count = sum(1 for c in comments if c.attached_image_url) + (1 if op_img else 0)
+            sub_tag = f" ({subreddit})" if subreddit else ""
             return ScrapedThreadBundleDTO(
-                source_url=url,
+                source_url=resolved_url,
                 platform="reddit",
                 topic_title=title[:180],
                 op_author_handle=f"@{author}",
-                op_display_text=op_full[:2000],
-                op_spoken_vi_text=normalize_vn_social_slang(op_full[:2000]),
+                op_display_text=op_full[:2800],
+                op_spoken_vi_text=normalize_vn_social_slang(op_full[:2800]) or op_full[:900],
                 op_image_url=op_img,
-                op_likes_display=format_compact_likes(ups) or "1,5K",
-                op_replies_display=format_compact_likes(num_c) or str(max(len(comments), 18)),
+                op_likes_display=format_compact_likes(ups) or "2,1K",
+                op_replies_display=format_compact_likes(num_c) or str(max(len(comments), 24)),
                 comments=comments,
                 extraction_note=(
-                    f"Đã hút bài gốc + {len(comments)} bình luận (kèm {img_count} ảnh đính kèm) từ Reddit."
+                    f"Đã hút câu chuyện Reddit{sub_tag} + {len(comments)} bình luận (kèm {img_count} ảnh) — đang tự động dịch sang tiếng Việt tự nhiên!"
                     if img_count > 0
-                    else f"Đã hút trực tiếp bài gốc + {len(comments)} bình luận từ Reddit."
+                    else f"Đã hút câu chuyện Reddit{sub_tag} + {len(comments)} bình luận — đang tự động dịch sang tiếng Việt tự nhiên!"
                 ),
             )
         except Exception:

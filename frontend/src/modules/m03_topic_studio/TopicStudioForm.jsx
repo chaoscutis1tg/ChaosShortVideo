@@ -23,6 +23,7 @@ import {
   ParentGroupSelector,
   scrollToFirstValidationError,
   StudioLoadingBanner,
+  SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
 const TOPIC_DRAFT_KEY = 'chaos_draft_topic_v1';
@@ -115,6 +116,11 @@ export default function TopicStudioForm({
   const [tone, setTone] = useState(
     savedDraft.tone || 'Mở đầu cuốn hút trong 3 giây đầu, giọng kể tự nhiên sâu sắc'
   );
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchTopicsText, setBatchTopicsText] = useState('');
+  const [rotateLofiBgm, setRotateLofiBgm] = useState(true);
+  const [enableSmartSfx, setEnableSmartSfx] = useState(true);
+  const [smartKeywordHighlight, setSmartKeywordHighlight] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -290,6 +296,8 @@ export default function TopicStudioForm({
         bgm_preset_id: bgmPresetId,
         custom_bgm_path: customBgmPath,
         bgm_volume: bgmVolume,
+        enable_smart_sfx: enableSmartSfx,
+        smart_keyword_highlight: smartKeywordHighlight,
         layout_config: layoutConfig,
         parent_group_id: parentGroupId || null,
         auto_one_click: autoOneClick,
@@ -297,6 +305,57 @@ export default function TopicStudioForm({
       onProjectStarted(res.project_id, res.state);
     } catch (err) {
       notify(`Lỗi khởi tạo: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStartBatchTopics = async () => {
+    const lines = batchTopicsText
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 4);
+    if (lines.length === 0) {
+      setErrors({ batchTopics: 'Vui lòng nhập ít nhất 1 chủ đề (mỗi dòng 1 chủ đề, ít nhất 4 ký tự).' });
+      scrollToFirstValidationError(rootRef);
+      notify('Vui lòng nhập danh sách chủ đề cần chạy hàng loạt.');
+      return;
+    }
+    if (lines.length > 15) {
+      setErrors({ batchTopics: 'Mỗi mẻ chạy tối đa 15 chủ đề để đảm bảo tốc độ và độ ổn định GPU.' });
+      notify('Tối đa 15 chủ đề mỗi mẻ chạy.');
+      return;
+    }
+    setErrors({});
+    setSubmitting(true);
+    try {
+      const safeDur = Math.min(160, Math.max(30, Number(durationSec) || 75));
+      const res = await studioApi.startTopicBatch({
+        items: lines,
+        visual_mode: visualMode,
+        target_duration_sec: safeDur,
+        part_count: Math.min(10, Math.max(1, Number(partCount) || 1)),
+        narrative_tone: tone.trim() || 'Giọng kể tự nhiên cuốn hút',
+        voice_profile_id: voiceId,
+        voice_speed_global: Number(voiceSpeed),
+        voice_pitch_global: Number(voicePitch),
+        subtitle_style: subtitleStyle,
+        bgm_preset_id: bgmPresetId,
+        rotate_lofi_bgm: rotateLofiBgm,
+        bgm_volume: bgmVolume,
+        enable_smart_sfx: enableSmartSfx,
+        smart_keyword_highlight: smartKeywordHighlight,
+        layout_config: layoutConfig,
+        parent_group_id: parentGroupId || null,
+        auto_one_click: true,
+      });
+      setBatchTopicsText('');
+      notify(`Đã xếp hàng tự động ${res.queued_count} dự án chủ đề (xoay vòng nhạc nền)!`);
+      if (res.project_ids?.[0]) {
+        onProjectStarted(res.project_ids[0], 'QUEUED');
+      }
+    } catch (err) {
+      notify(`Lỗi chạy hàng loạt: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -384,6 +443,57 @@ export default function TopicStudioForm({
           onGroupsChanged={onGroupsChanged}
           notify={notify}
         />
+
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${!batchMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setBatchMode(false)}
+          >
+            Tạo 1 chủ đề chi tiết
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setBatchMode(true)}
+          >
+            Chạy hàng loạt nhiều chủ đề (Batch Queue)
+          </button>
+        </div>
+
+        {batchMode ? (
+          <div className="surface-box" style={{ marginBottom: 12, borderColor: 'var(--brand)' }}>
+            <label className="form-label">
+              Danh sách chủ đề chạy tự động lần lượt (Mỗi dòng 1 chủ đề, tối đa 15 dòng — có thể ghi <code>Tiêu đề | Ý chính</code>)
+            </label>
+            <textarea
+              className={`textarea ${errors.batchTopics ? 'input-error' : ''}`}
+              style={{ minHeight: 130 }}
+              placeholder={`4 cấp độ chơi đàn Guitar | Cách nhận biết trình độ từ sơ cấp tới tự cảm âm\n3 sai lầm khiến người mới tập Violin hay mỏi vai | Cách cầm vĩ và đặt kê vai chuẩn\nTại sao nghe nhạc Lofi giúp não tập trung sâu hơn? | Cơ chế sóng âm ổn định nhịp thở`}
+              value={batchTopicsText}
+              onChange={(e) => {
+                setBatchTopicsText(e.target.value);
+                clearError('batchTopics');
+              }}
+            />
+            <FieldError message={errors.batchTopics} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+              <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
+                Tự xoay vòng đổi bài Nhạc nền Lofi CC0 cho mỗi video trong lô
+              </SwitchCard>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 40, fontWeight: 700 }}
+                disabled={submitting}
+                onClick={handleStartBatchTopics}
+              >
+                {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
+                {submitting ? 'Đang xếp hàng...' : 'Xếp hàng chạy toàn bộ danh sách'}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="form-group">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
@@ -668,7 +778,7 @@ export default function TopicStudioForm({
           </div>
         </div>
 
-        <div className="form-grid">
+        <div className="form-grid" style={{ marginBottom: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Kiểu chữ phụ đề trên video</label>
             <select
@@ -685,6 +795,15 @@ export default function TopicStudioForm({
             <label className="form-label">Ghi chú giọng văn mong muốn</label>
             <input className="input" value={tone} onChange={(e) => setTone(e.target.value)} />
           </div>
+        </div>
+
+        <div className="toggle-grid">
+          <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
+            Âm hiệu điểm nhấn tinh tế (Micro-SFX: Chuông ấm mở đầu 3s &amp; Whoosh chuyển cảnh)
+          </SwitchCard>
+          <SwitchCard checked={smartKeywordHighlight} onChange={setSmartKeywordHighlight}>
+            Tự tô sáng từ khóa đắt giá &amp; con số trên phụ đề
+          </SwitchCard>
         </div>
       </div>
 

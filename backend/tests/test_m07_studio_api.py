@@ -1015,6 +1015,155 @@ def test_m07_uc16_threads_extract_bg_library_multivoice_and_floating_cards(tmp_p
         assert thr_clip["seo"] is not None
 
 
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_m03_m05_m07_smart_sfx_keyword_highlight_reddit_vi_and_publish_tracker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify:
+    1. Smart Keyword Highlight injects gold/cyan `.ass` tags on numbers & impact words (`3 năm`, `bí mật`).
+    2. Micro-SFX synthesizers produce clean stereo WAVs (`shimmer`, `whoosh`, `click`).
+    3. English Reddit bundle auto-translates to Vietnamese even without a Gemini API key.
+    4. `/api/projects/{id}/publish-status` and `/api/topic/batch-start` persist & enqueue cleanly.
+    """
+    from app.m00_core_contracts import (
+        ScrapedThreadBundleDTO,
+        SubtitleStyle,
+        ThreadCommentItemDTO,
+        ThreadsExtractRequestDTO,
+        WordTimestampDTO,
+    )
+    from app.m03_ai_content_brain.free_translator import FreeVietnameseTranslator
+    from app.m03_ai_content_brain.gemini_service import GeminiContentBrainService
+    from app.m05_voice_audio_mixer.ass_subtitle_builder import (
+        ASSSubtitleBuilder,
+        TimedSubtitleEvent,
+    )
+    from app.m05_voice_audio_mixer.audio_mixer import (
+        _build_hook_shimmer_sfx_wav,
+        _build_photo_click_sfx_wav,
+        _build_soft_whoosh_sfx_wav,
+    )
+
+    # 1. Smart Keyword Highlight on ASS subtitles
+    ass_out = tmp_path / "kw_test.ass"
+    ASSSubtitleBuilder.build_ass_file(
+        events=[
+            TimedSubtitleEvent(
+                start_ms=0,
+                end_ms=3200,
+                text="Mình giữ bí mật này suốt 3 năm trời không ai biết.",
+                words=[
+                    WordTimestampDTO(word="Mình", start_ms=0, end_ms=400),
+                    WordTimestampDTO(word="giữ", start_ms=400, end_ms=800),
+                    WordTimestampDTO(word="bí", start_ms=800, end_ms=1100),
+                    WordTimestampDTO(word="mật", start_ms=1100, end_ms=1500),
+                    WordTimestampDTO(word="3", start_ms=1500, end_ms=1900),
+                    WordTimestampDTO(word="năm", start_ms=1900, end_ms=2500),
+                ],
+            )
+        ],
+        style=SubtitleStyle.CINEMA,
+        out_ass_path=ass_out,
+        smart_keyword_highlight=True,
+    )
+    ass_txt = ass_out.read_text(encoding="utf-8-sig")
+    assert "{\\c&H0024D8FF&}3{\\c&HFFFFFF&}" in ass_txt
+    assert "{\\c&H0024D8FF&}năm{\\c&HFFFFFF&}" in ass_txt
+
+    # 2. Micro-SFX WAV synthesis
+    for fn, name in (
+        (_build_hook_shimmer_sfx_wav, "shimmer.wav"),
+        (_build_soft_whoosh_sfx_wav, "whoosh.wav"),
+        (_build_photo_click_sfx_wav, "click.wav"),
+    ):
+        p = fn(tmp_path / name)
+        assert p.exists() and p.stat().st_size > 1024
+
+    # 3. Auto-translate English Reddit bundle -> Vietnamese without Gemini API key
+    async def _fake_tr(texts, source_lang="auto", concurrency=8):
+        return [f"Bản dịch tiếng Việt tự nhiên: {t[:40]}" for t in texts]
+
+    monkeypatch.setattr(FreeVietnameseTranslator, "translate_lines", _fake_tr)
+    brain = GeminiContentBrainService(api_key="", allow_offline_fallback=True)
+    en_reddit = ScrapedThreadBundleDTO(
+        source_url="https://www.reddit.com/r/AskReddit/comments/abc123/test/",
+        platform="reddit",
+        topic_title="What small habit changed your life completely?",
+        op_author_handle="@curious_op",
+        op_display_text="What small daily habit under ten minutes changed your life completely?",
+        op_spoken_vi_text="What small daily habit under ten minutes changed your life completely?",
+        comments=[
+            ThreadCommentItemDTO(
+                comment_id="rd_1",
+                author_handle="@guitar_guy",
+                raw_text="Practicing acoustic guitar for fifteen minutes every night before bed.",
+                display_text="Practicing acoustic guitar for fifteen minutes every night before bed.",
+                spoken_vi_text="Practicing acoustic guitar for fifteen minutes every night before bed.",
+            )
+        ],
+    )
+    curated_vi = await brain.curate_threads_bundle(
+        raw_bundle=en_reddit,
+        req=ThreadsExtractRequestDTO(
+            post_url=en_reddit.source_url,
+            max_comments=1,
+            expand_slang_and_translate=True,
+        ),
+        available_voice_ids=["threads_nu_chinh", "threads_nam_chinh"],
+    )
+    assert "Bản dịch tiếng Việt" in curated_vi.topic_title
+    assert "Bản dịch tiếng Việt" in curated_vi.op_display_text
+    assert "Bản dịch tiếng Việt" in curated_vi.comments[0].display_text
+
+    # 4. Publish Status Tracker & Batch Topic Queue API
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_pub_batch.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+    with TestClient(studio_app) as client:
+        batch_res = client.post(
+            "/api/topic/batch-start",
+            json={
+                "items": [
+                    "Mẹo tập hợp âm chặn Guitar | Cách đặt ngón cái không bị mỏi cổ tay",
+                    "Cách bảo quản đàn Violin mùa nồm ẩm | Giữ hộp đàn khô ráo chuẩn âm",
+                ],
+                "target_duration_sec": 35,
+                "rotate_lofi_bgm": True,
+                "auto_one_click": False,
+            },
+        )
+        assert batch_res.status_code == 200
+        b_data = batch_res.json()
+        assert b_data["queued_count"] == 2
+        first_pid = b_data["project_ids"][0]
+
+        pub_res = client.post(
+            f"/api/projects/{first_pid}/publish-status",
+            json={
+                "published_channels": ["TIKTOK", "YOUTUBE_SHORTS"],
+                "published_note": "Đã lên lịch 20h tối nay",
+            },
+        )
+        assert pub_res.status_code == 200
+        assert pub_res.json()["published_channels"] == ["TIKTOK", "YOUTUBE_SHORTS"]
+
+        p_list = client.get("/api/projects").json()
+        matched = next(p for p in p_list if p["id"] == first_pid)
+        assert matched["published_channels"] == ["TIKTOK", "YOUTUBE_SHORTS"]
+        assert matched["published_note"] == "Đã lên lịch 20h tối nay"
+
+
+
 
 
 

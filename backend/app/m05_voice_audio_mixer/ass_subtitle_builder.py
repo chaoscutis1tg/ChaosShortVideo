@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import List, Optional
 
 from app.m00_core_contracts import (
@@ -12,6 +13,95 @@ from app.m00_core_contracts import (
 )
 
 MAX_WORDS_PER_KARAOKE_CHUNK = 6
+
+_DIGIT_RE = re.compile(r"\d")
+_CLEAN_WORD_RE = re.compile(r"[^\wà-ỹÀ-Ỹ%$€₫]+", re.UNICODE)
+
+_VN_STOPWORDS = {
+    "nhưng", "những", "trong", "ngoài", "không", "chẳng", "được", "đang", "vẫn",
+    "cũng", "nhiều", "người", "mình", "chúng", "cùng", "nhau", "thôi", "luôn",
+    "rồi", "với", "của", "cho", "khi", "nếu", "thì", "mà", "là", "vì", "để",
+    "tại", "theo", "này", "kia", "đấy", "đây", "vậy", "sao", "thế", "nào",
+    "một", "hai", "các", "cái", "con", "bạn", "tôi", "anh", "chị", "em", "họ",
+    "rất", "quá", "lắm", "hơn", "nhất", "nữa", "mới", "vừa", "đến", "tới",
+}
+
+_VN_IMPACT_WORDS = {
+    "bímật", "sựthật", "sailầm", "cảnhbáo", "tuyệtđối", "bấtngờ", "hốihận",
+    "đỉnhcao", "miễnphí", "độcquyền", "duynhất", "quantrọng", "nguyhiểm",
+    "ámảnh", "kinhhoàng", "độtphá", "nguyênbản", "thủcông", "sốc", "khóc",
+}
+
+_VN_UNITS = {
+    "năm", "tháng", "tuần", "ngày", "giờ", "phút", "giây", "tuổi",
+    "triệu", "nghìn", "ngàn", "tỷ", "lần", "bước", "cấp", "phần",
+}
+
+
+def _pick_highlight_token_indices(tokens: List[str], max_picks: int = 2) -> set[int]:
+    """Select 1-2 high-impact keyword token indices (numbers+units, impact words, or salient nouns)."""
+    if len(tokens) < 3:
+        return set()
+    cap = 1 if len(tokens) <= 7 else max_picks
+    picked: set[int] = set()
+
+    cleaned = [_CLEAN_WORD_RE.sub("", t).lower() for t in tokens]
+
+    # 1. Numbers (+ immediately following unit word like '3 năm', '15 phút')
+    for i, raw_tok in enumerate(tokens):
+        if len(picked) >= cap:
+            break
+        if _DIGIT_RE.search(raw_tok):
+            picked.add(i)
+            if i + 1 < len(cleaned) and cleaned[i + 1] in _VN_UNITS:
+                picked.add(i + 1)
+
+    if len(picked) >= cap:
+        return picked
+
+    # 2. High-impact compound pairs or single emotional words
+    for i in range(len(cleaned)):
+        if len(picked) >= cap:
+            break
+        if i + 1 < len(cleaned) and (cleaned[i] + cleaned[i + 1]) in _VN_IMPACT_WORDS:
+            picked.add(i)
+            picked.add(i + 1)
+        elif cleaned[i] in _VN_IMPACT_WORDS:
+            picked.add(i)
+
+    if len(picked) >= cap:
+        return picked
+
+    # 3. Salient non-stopword content token in sentences >= 5 words
+    if len(tokens) >= 5 and not picked:
+        candidates = [
+            (len(cleaned[i]), i)
+            for i in range(len(cleaned))
+            if len(cleaned[i]) >= 5 and cleaned[i] not in _VN_STOPWORDS
+        ]
+        if candidates:
+            candidates.sort(reverse=True)
+            picked.add(candidates[0][1])
+
+    return picked
+
+
+def _apply_cinema_keyword_tags(text: str) -> str:
+    """Wrap 1-2 punch words in warm gold ASS override tags `{\\c&H0024D8FF&}...{\\c&HFFFFFF&}`."""
+    tokens = [t for t in text.split() if t]
+    if not tokens:
+        return ""
+    hl = _pick_highlight_token_indices(tokens, max_picks=2)
+    if not hl:
+        return _escape_ass_text(text)
+    out: List[str] = []
+    for i, tok in enumerate(tokens):
+        esc = _escape_ass_text(tok)
+        if i in hl:
+            out.append(f"{{\\c&H0024D8FF&}}{esc}{{\\c&HFFFFFF&}}")
+        else:
+            out.append(esc)
+    return " ".join(out)
 
 
 @dataclass
@@ -53,6 +143,7 @@ class ASSSubtitleBuilder:
         canvas_h: int = CANVAS_HEIGHT,
         subtitle_pos_y: float = 0.84,
         subtitle_font_size: Optional[int] = None,
+        smart_keyword_highlight: bool = True,
     ) -> Optional[Path]:
         """Write `.ass` file positioned at `subtitle_pos_y` (`[0.15..0.95]`) and `subtitle_font_size`."""
         if style == SubtitleStyle.NONE or not events:
@@ -93,23 +184,36 @@ class ASSSubtitleBuilder:
         dialogue_lines: List[str] = []
         for ev in events:
             if is_karaoke and ev.words:
-                dialogue_lines.extend(cls._render_karaoke_chunks(ev))
+                dialogue_lines.extend(
+                    cls._render_karaoke_chunks(ev, smart_keyword_highlight=smart_keyword_highlight)
+                )
             else:
-                safe_txt = _escape_ass_text(ev.text)
-                if safe_txt:
+                formatted_txt = (
+                    _apply_cinema_keyword_tags(ev.text)
+                    if smart_keyword_highlight
+                    else _escape_ass_text(ev.text)
+                )
+                if formatted_txt:
                     dialogue_lines.append(
                         f"Dialogue: 0,{_fmt_ass_time(ev.start_ms)},{_fmt_ass_time(ev.end_ms)},"
-                        f"StudioSub,,0,0,0,,{safe_txt}"
+                        f"StudioSub,,0,0,0,,{formatted_txt}"
                     )
 
         out_ass_path.write_text(header + "\n".join(dialogue_lines) + "\n", encoding="utf-8-sig")
         return out_ass_path
 
     @staticmethod
-    def _render_karaoke_chunks(ev: TimedSubtitleEvent) -> List[str]:
+    def _render_karaoke_chunks(
+        ev: TimedSubtitleEvent, smart_keyword_highlight: bool = True
+    ) -> List[str]:
         """Split long sentences into snappy 6-word CapCut chunks with `{\\kf}` highlight tags."""
         lines_out: List[str] = []
         words = ev.words
+        global_hl = (
+            _pick_highlight_token_indices([w.word for w in words], max_picks=2)
+            if smart_keyword_highlight
+            else set()
+        )
         for idx in range(0, len(words), MAX_WORDS_PER_KARAOKE_CHUNK):
             chunk = words[idx : idx + MAX_WORDS_PER_KARAOKE_CHUNK]
             if not chunk:
@@ -120,9 +224,16 @@ class ASSSubtitleBuilder:
                 c_end = c_start + 300
 
             parts: List[str] = []
-            for w in chunk:
+            for local_i, w in enumerate(chunk):
                 dur_cs = max(5, (w.end_ms - w.start_ms) // 10)
-                parts.append(f"{{\\kf{dur_cs}}}{_escape_ass_text(w.word)}")
+                esc_w = _escape_ass_text(w.word)
+                if (idx + local_i) in global_hl:
+                    # Subtle electric-cyan keyword accent on punch words inside Karaoke mode
+                    parts.append(
+                        f"{{\\1c&H00FFFF38&\\kf{dur_cs}}}{esc_w}{{\\1c&H0000EAFF&}}"
+                    )
+                else:
+                    parts.append(f"{{\\kf{dur_cs}}}{esc_w}")
             lines_out.append(
                 f"Dialogue: 0,{_fmt_ass_time(c_start)},{_fmt_ass_time(c_end)},"
                 f"StudioSub,,0,0,0,,{' '.join(parts)}"

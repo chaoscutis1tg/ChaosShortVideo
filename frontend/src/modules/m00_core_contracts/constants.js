@@ -66,6 +66,9 @@ export const DEFAULT_AUDIO_CONFIG = {
   bgm_path: null,
   bgm_volume: 0.06,
   subtitle_style: 'CINEMA',
+  enable_smart_sfx: true,
+  smart_sfx_volume: 0.22,
+  smart_keyword_highlight: true,
 };
 
 export const STAGE_LABELS = {

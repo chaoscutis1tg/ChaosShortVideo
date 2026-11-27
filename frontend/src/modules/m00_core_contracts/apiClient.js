@@ -128,6 +128,9 @@ export const studioApi = {
   startTopicProject: (payload) =>
     requestJSON('/api/topic/start', { method: 'POST', body: JSON.stringify(payload) }),
 
+  startTopicBatch: (payload) =>
+    requestJSON('/api/topic/batch-start', { method: 'POST', body: JSON.stringify(payload) }),
+
   expandShortBrief: (payload) =>
     requestJSON('/api/brain/expand-brief', {
       method: 'POST',
@@ -166,6 +169,12 @@ export const studioApi = {
 
   startThreadsProject: (payload) =>
     requestJSON('/api/threads/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  startThreadsBatch: (payload) =>
+    requestJSON('/api/threads/batch-start', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -230,6 +239,12 @@ export const studioApi = {
     requestJSON(`/api/projects/${projectId}/assign-group`, {
       method: 'POST',
       body: JSON.stringify({ group_id: group_id || null }),
+    }),
+
+  updateProjectPublishStatus: (projectId, published_channels, published_note = '') =>
+    requestJSON(`/api/projects/${projectId}/publish-status`, {
+      method: 'POST',
+      body: JSON.stringify({ published_channels, published_note }),
     }),
 
   renderApprovedProject: (projectId, payload) =>

@@ -238,6 +238,12 @@ export default function ThreadsStudioForm({
 
   const [extracting, setExtracting] = useState(false);
   const [bundle, setBundle] = useState(savedDraft.bundle || null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchUrlsText, setBatchUrlsText] = useState('');
+  const [rotateBgLibrary, setRotateBgLibrary] = useState(true);
+  const [rotateLofiBgm, setRotateLofiBgm] = useState(true);
+  const [enableSmartSfx, setEnableSmartSfx] = useState(true);
+  const [smartKeywordHighlight, setSmartKeywordHighlight] = useState(true);
   const [appendCtaComment, setAppendCtaComment] = useState(
     savedDraft.appendCtaComment !== undefined
       ? savedDraft.appendCtaComment
@@ -786,6 +792,8 @@ export default function ThreadsStudioForm({
         bg_audio_volume: Number(bgAudioVolume),
         append_cta_comment: appendCtaComment.trim(),
         enable_card_pop_sfx: enablePopSfx,
+        enable_smart_sfx: enableSmartSfx,
+        smart_keyword_highlight: smartKeywordHighlight,
         voice_profile_id: normalizedBundle.op_voice_profile_id,
         voice_speed_global: safeSpeed,
         voice_pitch_global: 0.0,
@@ -803,6 +811,89 @@ export default function ThreadsStudioForm({
       onProjectStarted(res.project_id, res.state);
     } catch (err) {
       notify(`Không thể bắt đầu video Threads: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStartBatchThreads = async () => {
+    const rawLines = batchUrlsText
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const validUrls = rawLines.filter((u) => isValidHttpUrl(u) && !isVideoOnlyPlatformUrl(u));
+    if (validUrls.length === 0) {
+      setErrors({
+        batchUrls:
+          'Vui lòng dán ít nhất 1 đường dẫn Threads hoặc Reddit hợp lệ (mỗi dòng 1 link https://...).',
+      });
+      scrollToFirstValidationError(rootRef);
+      notify('Vui lòng dán danh sách link Threads hoặc Reddit cần chạy hàng loạt.');
+      return;
+    }
+    if (validUrls.length > 15) {
+      setErrors({ batchUrls: 'Mỗi mẻ chạy tối đa 15 link để đảm bảo tốc độ và ổn định GPU.' });
+      notify('Tối đa 15 link mỗi mẻ chạy.');
+      return;
+    }
+    const effBg = selectedBgPath.trim() || bgUrlInput.trim();
+    if (!effBg && (!rotateBgLibrary || bgLibrary.length === 0)) {
+      setErrors({
+        bgVideo:
+          'Vui lòng lưu ít nhất 1 Video Nền vào Kho Video Nền hoặc chọn 1 Video Nền ở Bước 2 trước khi chạy hàng loạt.',
+      });
+      scrollToFirstValidationError(rootRef);
+      notify('Chưa có Video Nền ở Bước 2 để chạy hàng loạt.');
+      return;
+    }
+
+    const lenCfg =
+      COMMENT_LENGTH_MODES.find((m) => m.id === commentLengthMode) || COMMENT_LENGTH_MODES[0];
+    const safeSpeed = Math.min(1.45, Math.max(1.0, Number(voiceSpeed) || 1.25));
+    setErrors({});
+    setSubmitting(true);
+    try {
+      const res = await studioApi.startThreadsBatch({
+        urls: validUrls,
+        max_comments: Math.min(20, Math.max(1, Number(maxComments) || 6)),
+        filter_vibe: filterVibe,
+        prefer_long_comments: Boolean(lenCfg.preferLong || filterVibe === 'LONG_STORY'),
+        min_comment_chars: Number(lenCfg.minChars || 0),
+        expand_slang_and_translate: expandSlang,
+        multi_voice_cast: multiVoiceCast,
+        host_voice_id: hostVoiceId,
+        male_voice_id: maleVoiceId,
+        female_voice_id: femaleVoiceId,
+        bg_path_or_url: effBg,
+        rotate_bg_library: rotateBgLibrary,
+        keep_bg_audio: keepBgAudio,
+        bg_audio_volume: Number(bgAudioVolume),
+        append_cta_comment: appendCtaComment.trim(),
+        enable_card_pop_sfx: enablePopSfx,
+        enable_smart_sfx: enableSmartSfx,
+        smart_keyword_highlight: smartKeywordHighlight,
+        voice_speed_global: safeSpeed,
+        voice_pitch_global: 0.0,
+        bgm_preset_id: bgmPresetId,
+        rotate_lofi_bgm: rotateLofiBgm,
+        bgm_volume: Number(bgmVolume),
+        subtitle_style: subtitleStyle,
+        layout_config: {
+          ...layoutConfig,
+          show_top_banner: false,
+        },
+        parent_group_id: parentGroupId || null,
+        auto_one_click: true,
+      });
+      setBatchUrlsText('');
+      notify(
+        `Đã đưa ${res.queued_count} link Threads/Reddit vào hàng đợi tự động (xoay vòng Video Nền & Nhạc Lofi)!`
+      );
+      if (res.project_ids?.[0]) {
+        onProjectStarted(res.project_ids[0], 'QUEUED');
+      }
+    } catch (err) {
+      notify(`Lỗi chạy hàng loạt: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -921,42 +1012,100 @@ export default function ThreadsStudioForm({
           onChange={setParentGroupId}
           onGroupsChanged={onGroupsChanged}
           notify={notify}
-          label="Thuộc Dự Án Cha (Gom theo Series Chuyện Threads / Tâm sự / Hỏi đáp)"
+          label="Thuộc Dự Án Cha (Gom theo Series Chuyện Threads / Reddit / Tâm sự)"
         />
 
-        <div className="form-group">
-          <label className="form-label">
-            <Link2 size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-            Đường dẫn bài đăng Threads / Reddit / Diễn đàn (hỗ trợ cả link rút gọn <code>/share/...</code>)
-          </label>
-          <input
-            className={`input ${errors.postUrl ? 'input-error' : ''}`}
-            placeholder="VD: https://www.threads.com/share/... hoặc https://www.threads.net/@ten_tai_khoan/post/..."
-            value={postUrl}
-            onChange={(e) => {
-              setPostUrl(e.target.value);
-              clearError('postUrl', 'rawPastedText');
-            }}
-          />
-          <FieldError message={errors.postUrl} />
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${!batchMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setBatchMode(false)}
+          >
+            Làm 1 bài Threads / Reddit (Xem &amp; duyệt thẻ trước)
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setBatchMode(true)}
+          >
+            Chạy hàng loạt nhiều link Threads / Reddit (Batch Queue)
+          </button>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">
-            Nội dung văn bản dự phòng (Tùy chọn — Dán thêm nếu bài riêng tư)
-          </label>
-          <textarea
-            className={`textarea ${errors.rawPastedText ? 'input-error' : ''}`}
-            style={{ minHeight: 74 }}
-            placeholder={`Có thể để trống nếu đã dán link công khai ở trên...`}
-            value={rawPastedText}
-            onChange={(e) => {
-              setRawPastedText(e.target.value);
-              clearError('rawPastedText', 'postUrl');
-            }}
-          />
-          <FieldError message={errors.rawPastedText} />
-        </div>
+        {batchMode ? (
+          <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
+            <label className="form-label">
+              Dán danh sách link Threads hoặc Reddit quốc tế (Mỗi dòng 1 link, tối đa 15 link — bài Reddit tiếng Anh sẽ tự dịch sang tiếng Việt đời thường!)
+            </label>
+            <textarea
+              className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
+              style={{ minHeight: 125 }}
+              placeholder={`https://www.threads.com/@nhonaytennhi/post/DU8UhpTgT6a\nhttps://www.reddit.com/r/AskReddit/comments/...\nhttps://www.reddit.com/r/Guitar/comments/...`}
+              value={batchUrlsText}
+              onChange={(e) => {
+                setBatchUrlsText(e.target.value);
+                clearError('batchUrls');
+              }}
+            />
+            <FieldError message={errors.batchUrls} />
+            <div className="toggle-grid" style={{ marginTop: 10, marginBottom: 10 }}>
+              <SwitchCard checked={rotateBgLibrary} onChange={setRotateBgLibrary}>
+                Tự xoay vòng đổi Video Nền qua Kho Video Nền ({bgLibrary.length} video)
+              </SwitchCard>
+              <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
+                Tự xoay vòng đổi bài Nhạc nền Lofi CC0 cho từng video
+              </SwitchCard>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 41, fontWeight: 700 }}
+                disabled={submitting}
+                onClick={handleStartBatchThreads}
+              >
+                {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
+                {submitting ? 'Đang đưa lô vào hàng đợi...' : 'Xếp hàng hút bài, dịch & dựng toàn bộ lô'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="form-group">
+              <label className="form-label">
+                <Link2 size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+                Đường dẫn bài đăng Threads hoặc Reddit Quốc Tế (bài Reddit tự dịch sang tiếng Việt kể chuyện tự nhiên!)
+              </label>
+              <input
+                className={`input ${errors.postUrl ? 'input-error' : ''}`}
+                placeholder="VD: https://www.threads.com/@.../post/... hoặc https://www.reddit.com/r/AskReddit/comments/..."
+                value={postUrl}
+                onChange={(e) => {
+                  setPostUrl(e.target.value);
+                  clearError('postUrl', 'rawPastedText');
+                }}
+              />
+              <FieldError message={errors.postUrl} />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Nội dung văn bản dự phòng (Tùy chọn — Có thể dán câu chuyện tiếng Anh/Việt để tự dịch &amp; tách thẻ)
+              </label>
+              <textarea
+                className={`textarea ${errors.rawPastedText ? 'input-error' : ''}`}
+                style={{ minHeight: 74 }}
+                placeholder={`Có thể để trống nếu đã dán link công khai ở trên...`}
+                value={rawPastedText}
+                onChange={(e) => {
+                  setRawPastedText(e.target.value);
+                  clearError('rawPastedText', 'postUrl');
+                }}
+              />
+              <FieldError message={errors.rawPastedText} />
+            </div>
+          </>
+        )}
 
         {/* STRICT 2 MAIN VOICES (NAM & NỮ) + FAST READING SPEED CONTROL */}
         <div
@@ -2178,6 +2327,9 @@ export default function ThreadsStudioForm({
             onChange={(val) => updateThreadsLayout({ safe_zone_guard: val })}
           >
             Tự căn vùng an toàn TikTok/Shorts (né nút Tim/Share bên phải &amp; Caption dưới đáy)
+          </SwitchCard>
+          <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
+            Âm hiệu điểm nhấn (Chuông ấm mở đầu 3s &amp; Click êm khi hiện ảnh đính kèm)
           </SwitchCard>
         </div>
 

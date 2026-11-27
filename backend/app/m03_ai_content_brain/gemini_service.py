@@ -982,6 +982,23 @@ class GeminiContentBrainService(ILLMService):
             or eff_min_chars >= 55
         )
 
+        # Helper: detect English/foreign text (zero Vietnamese diacritics across >=14 alphabetic chars)
+        _vi_mark_re = re.compile(
+            r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]",
+            re.IGNORECASE,
+        )
+
+        def _is_foreign_non_vi(txt: str) -> bool:
+            s = (txt or "").strip()
+            if len(s) < 14:
+                return False
+            alpha_cnt = len(re.findall(r"[A-Za-z]", s))
+            return alpha_cnt >= 9 and not bool(_vi_mark_re.search(s))
+
+        is_foreign_post = raw_bundle.platform == "reddit" or _is_foreign_non_vi(
+            raw_bundle.op_display_text
+        )
+
         # Pre-rank raw comments: when `wants_long` is active, sort longest real stories to the top!
         if wants_long:
             long_enough = [
@@ -1032,7 +1049,7 @@ class GeminiContentBrainService(ILLMService):
                 f"Gu chọn lọc mong muốn: {vibe_desc}.{long_rule_txt}\n"
                 f"Bung viết tắt teen-code & dịch sang tiếng Việt tự nhiên: {'CÓ' if req.expand_slang_and_translate else 'KHÔNG'}.\n\n"
                 "Yêu cầu bắt buộc:\n"
-                "1. Nếu bài gốc hoặc bình luận bằng tiếng nước ngoài (Anh/Trung...), hãy dịch mượt sang tiếng Việt đời thường chuẩn văn phong Threads.\n"
+                "1. Nếu bài gốc hoặc bình luận bằng tiếng nước ngoài (đặc biệt Reddit tiếng Anh: AITA -> 'Mình có sai không', OP -> 'chủ bài', Edit -> 'Cập nhật'), BẮT BUỘC dịch toàn bộ `topic_title`, `op_display_text`, `op_spoken_vi_text` và mọi `display_text`, `spoken_vi_text` sang TIẾNG VIỆT ĐỜI THƯỜNG TỰ NHIÊN (xưng mình/tôi mượt mà như câu chuyện người Việt kể trên Threads/TikTok).\n"
                 f"2. Chọn ra ĐÚNG {target_n} bình luận xuất sắc nhất khớp gu '{vibe_desc}' "
                 f"{'(ưu tiên số 1 các câu chuyện DÀI nhiều tình tiết có char_length cao nhất, kế đến là bình luận có ảnh đính kèm)' if wants_long else '(ưu tiên giữ lại bình luận thật có has_attached_image: true kèm các bình luận mặn mòi nhất)'}. "
                 "Nếu lấy từ danh sách thô, BẮT BUỘC giữ đúng `source_index` (0..N-1) của bình luận đó và đặt `is_ai_suggested: false`. "
@@ -1101,12 +1118,19 @@ class GeminiContentBrainService(ILLMService):
                     if not disp:
                         continue
                     matched_rc = _match_raw_comment(item)
-                    # Anti-truncation guardrail: NEVER let LLM shorten a real long story comment!
+                    # Anti-truncation guardrail: NEVER let LLM shorten a real long story comment,
+                    # EXCEPT do NOT overwrite a valid Vietnamese translation back with raw English!
                     if matched_rc is not None:
                         orig_full = (matched_rc.display_text or matched_rc.raw_text).strip()
-                        if len(orig_full) >= 85 and len(disp) < int(len(orig_full) * 0.78):
+                        translated_from_foreign = (
+                            req.expand_slang_and_translate
+                            and _is_foreign_non_vi(orig_full)
+                            and not _is_foreign_non_vi(disp)
+                        )
+                        min_keep_ratio = 0.48 if translated_from_foreign else 0.78
+                        if len(orig_full) >= 85 and len(disp) < int(len(orig_full) * min_keep_ratio):
                             disp = orig_full
-                        if len(orig_full) >= 85 and len(spoken) < int(len(orig_full) * 0.75):
+                        if len(orig_full) >= 85 and len(spoken) < int(len(orig_full) * min_keep_ratio):
                             spoken = self._expand_slang_vi(orig_full) or orig_full
 
                     h_raw = str(
@@ -1241,10 +1265,52 @@ class GeminiContentBrainService(ILLMService):
                         req.female_voice_id,
                     )
                     op_disp = str(data.get("op_display_text") or raw_bundle.op_display_text).strip()
-                    if len(raw_bundle.op_display_text.strip()) >= 85 and len(op_disp) < int(len(raw_bundle.op_display_text.strip()) * 0.78):
-                        op_disp = raw_bundle.op_display_text.strip()
+                    orig_op_full = raw_bundle.op_display_text.strip()
+                    op_was_translated = (
+                        req.expand_slang_and_translate
+                        and _is_foreign_non_vi(orig_op_full)
+                        and not _is_foreign_non_vi(op_disp)
+                    )
+                    if (
+                        len(orig_op_full) >= 85
+                        and len(op_disp) < int(len(orig_op_full) * (0.48 if op_was_translated else 0.78))
+                    ):
+                        op_disp = orig_op_full
                     op_sp = str(data.get("op_spoken_vi_text") or op_disp).strip()
+                    top_title = str(data.get("topic_title") or raw_bundle.topic_title)[:180]
+
+                    # Ensure any remaining untranslated foreign items (e.g. injected missed_long/img) are translated to Vietnamese!
                     if req.expand_slang_and_translate:
+                        to_tr_texts: List[str] = []
+                        to_tr_slots: List[tuple[str, int]] = []
+                        if _is_foreign_non_vi(top_title):
+                            to_tr_slots.append(("title", 0))
+                            to_tr_texts.append(top_title)
+                        if _is_foreign_non_vi(op_disp):
+                            to_tr_slots.append(("op", 0))
+                            to_tr_texts.append(op_disp)
+                        for c_i, vc in enumerate(voiced_cmts):
+                            if _is_foreign_non_vi(vc.display_text):
+                                to_tr_slots.append(("cmt", c_i))
+                                to_tr_texts.append(vc.display_text)
+                        if to_tr_texts:
+                            tr_out = await FreeVietnameseTranslator.translate_lines(
+                                to_tr_texts, source_lang="auto"
+                            )
+                            for (kind, idx_slot), vi_str in zip(to_tr_slots, tr_out):
+                                if kind == "title":
+                                    top_title = vi_str[:180]
+                                elif kind == "op":
+                                    op_disp = vi_str[:3000]
+                                    op_sp = self._expand_slang_vi(vi_str)[:3000]
+                                elif kind == "cmt":
+                                    old_c = voiced_cmts[idx_slot]
+                                    voiced_cmts[idx_slot] = old_c.model_copy(
+                                        update={
+                                            "display_text": vi_str[:4000],
+                                            "spoken_vi_text": self._expand_slang_vi(vi_str)[:4000],
+                                        }
+                                    )
                         op_sp = self._expand_slang_vi(op_sp) or op_sp
                     op_h = (
                         "@chuthot_threads"
@@ -1266,7 +1332,7 @@ class GeminiContentBrainService(ILLMService):
                     return ScrapedThreadBundleDTO(
                         source_url=raw_bundle.source_url,
                         platform=raw_bundle.platform,
-                        topic_title=str(data.get("topic_title") or raw_bundle.topic_title)[:180],
+                        topic_title=top_title[:180],
                         op_author_handle=op_h[:60],
                         op_display_text=op_disp[:3000],
                         op_spoken_vi_text=op_sp[:3000],
@@ -1288,8 +1354,33 @@ class GeminiContentBrainService(ILLMService):
                 if not self.allow_offline_fallback:
                     raise
 
-        # Deterministic offline fallback curation (respecting `wants_long` sorting!)
+        # Deterministic offline / zero-API-key curation (with automatic Vietnamese translation for Reddit/foreign posts!)
         base_cmts = list(ranked_pool[:target_n])
+        fb_title = raw_bundle.topic_title
+        fb_op_disp = raw_bundle.op_display_text
+        did_auto_tr = False
+        if req.expand_slang_and_translate and (
+            is_foreign_post or any(_is_foreign_non_vi(c.display_text or c.raw_text) for c in base_cmts)
+        ):
+            batch_src = [
+                fb_title,
+                fb_op_disp,
+                *[(c.display_text or c.raw_text).strip() for c in base_cmts],
+            ]
+            batch_vi = await FreeVietnameseTranslator.translate_lines(batch_src, source_lang="auto")
+            if len(batch_vi) == len(batch_src):
+                fb_title = (batch_vi[0] or fb_title)[:180]
+                fb_op_disp = (batch_vi[1] or fb_op_disp)[:3000]
+                base_cmts = [
+                    c.model_copy(
+                        update={
+                            "display_text": (vi_c or c.display_text)[:4000],
+                            "spoken_vi_text": self._expand_slang_vi(vi_c or c.display_text)[:4000],
+                        }
+                    )
+                    for c, vi_c in zip(base_cmts, batch_vi[2:])
+                ]
+                did_auto_tr = True
         fallback_templates = (
             [
                 (
@@ -1359,19 +1450,27 @@ class GeminiContentBrainService(ILLMService):
             req.female_voice_id,
         )
         op_sp = (
-            self._expand_slang_vi(raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
+            self._expand_slang_vi(fb_op_disp if did_auto_tr else (raw_bundle.op_spoken_vi_text or fb_op_disp))
             if req.expand_slang_and_translate
-            else (raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
-        ) or raw_bundle.op_display_text
+            else (raw_bundle.op_spoken_vi_text or fb_op_disp)
+        ) or fb_op_disp
+        fb_note = (
+            f"Đã hút & tự động dịch sang tiếng Việt bài viết Reddit + {len(voiced_cmts)} bình luận tiêu biểu!"
+            if did_auto_tr
+            else raw_bundle.extraction_note
+        )
         return raw_bundle.model_copy(
             update={
+                "topic_title": fb_title[:180],
+                "op_display_text": fb_op_disp[:3000],
                 "op_author_handle": "@chuthot_threads" if req.anonymize_handles else raw_bundle.op_author_handle,
-                "op_spoken_vi_text": op_sp,
+                "op_spoken_vi_text": op_sp[:3000],
                 "op_voice_profile_id": req.host_voice_id,
                 "male_voice_id": req.male_voice_id,
                 "female_voice_id": req.female_voice_id,
                 "comments": voiced_cmts,
                 "used_api_key": False,
+                "extraction_note": fb_note,
             }
         )
 

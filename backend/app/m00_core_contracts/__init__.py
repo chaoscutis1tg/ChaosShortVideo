@@ -57,6 +57,7 @@ from .dtos import (
     NormalizedRectDTO,
     ProductReviewPromptDTO,
     ProjectGroupDTO,
+    ProjectPublishStatusDTO,
     RawTranscriptSegmentDTO,
     RenderJobSpecDTO,
     RenderOutputDTO,

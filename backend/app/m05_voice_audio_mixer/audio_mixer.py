@@ -71,6 +71,71 @@ def _build_ui_pop_sfx_wav(dst_wav: Path) -> Path:
     return dst_wav
 
 
+def _build_hook_shimmer_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a warm 360ms harmonic studio opening chime (D5+A5+D6) for 3s Hook emphasis."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.36
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    attack = np.minimum(1.0, t / 0.014)
+    env = attack * np.exp(-t * 9.5)
+    left = (
+        0.55 * np.sin(2.0 * np.pi * 587.33 * t)
+        + 0.30 * np.sin(2.0 * np.pi * 880.00 * t)
+        + 0.15 * np.sin(2.0 * np.pi * 1174.66 * t)
+    ) * env * 0.13
+    right = (
+        0.55 * np.sin(2.0 * np.pi * 588.6 * t)
+        + 0.30 * np.sin(2.0 * np.pi * 881.4 * t)
+        + 0.15 * np.sin(2.0 * np.pi * 1176.2 * t)
+    ) * env * 0.13
+    stereo = np.column_stack((left.astype(np.float32), right.astype(np.float32)))
+    _write_wav_float32_stereo(dst_wav, stereo)
+    return dst_wav
+
+
+def _build_soft_whoosh_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a silky 240ms low-passed air transition whoosh (zero harsh treble hiss)."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.24
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    rng = np.random.default_rng(202611)
+    raw_noise = rng.standard_normal(n_s + 64).astype(np.float32)
+    # Multi-pass moving-average low-pass filter (~1.4kHz warm air body)
+    kernel = np.hanning(33).astype(np.float32)
+    kernel /= float(kernel.sum())
+    warm_air = np.convolve(raw_noise, kernel, mode="same")[:n_s]
+    warm_air = np.convolve(warm_air, kernel[:17] / float(kernel[:17].sum()), mode="same")
+    peak = max(float(np.max(np.abs(warm_air))), 1e-4)
+    warm_air /= peak
+
+    prog = np.linspace(0.0, 1.0, n_s, endpoint=False, dtype=np.float32)
+    bell_env = (np.sin(np.pi * prog) ** 1.8) * 0.115
+    pan_r = 0.35 + 0.30 * prog
+    pan_l = 1.0 - pan_r
+    stereo = np.column_stack((warm_air * bell_env * pan_l * 1.4, warm_air * bell_env * pan_r * 1.4))
+    _write_wav_float32_stereo(dst_wav, stereo.astype(np.float32))
+    return dst_wav
+
+
+def _build_photo_click_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a subtle 75ms soft camera leaf-shutter click for attached photos/proof cards."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.075
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    imp1 = np.sin(2.0 * np.pi * (1350.0 - 8000.0 * t) * t) * np.exp(-t * 130.0)
+    t2 = np.maximum(0.0, t - 0.028)
+    imp2 = np.where(t >= 0.028, np.sin(2.0 * np.pi * 920.0 * t2) * np.exp(-t2 * 150.0), 0.0)
+    sig = ((imp1 * 0.65 + imp2 * 0.45) * 0.11).astype(np.float32)
+    stereo = np.column_stack((sig, sig))
+    _write_wav_float32_stereo(dst_wav, stereo)
+    return dst_wav
+
+
 class MovieAudioAndSubMixer(IVoiceAudioMixer):
     """Synthesizes 3-tier Vietnamese narration, time-syncs lines, ducks original movie audio,
     mixes optional anti-copyright BGM, and builds `.ass` subtitles.
@@ -104,9 +169,19 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             if getattr(audio_config, "enable_card_pop_sfx", False)
             else None
         )
+        use_smart_sfx = bool(getattr(audio_config, "enable_smart_sfx", True))
+        sfx_gain = max(0.0, min(2.0, float(getattr(audio_config, "smart_sfx_volume", 0.22)) / 0.22))
+        shimmer_wav = _build_hook_shimmer_sfx_wav(chunks_dir / "_sfx_shimmer.wav") if use_smart_sfx else None
+        whoosh_wav = _build_soft_whoosh_sfx_wav(chunks_dir / "_sfx_whoosh.wav") if use_smart_sfx else None
+        click_wav = _build_photo_click_sfx_wav(chunks_dir / "_sfx_click.wav") if use_smart_sfx else None
+
         timed_events: List[TimedSubtitleEvent] = []
         placed_chunks: List[tuple[int, Path]] = []
         pop_sfx_starts_ms: List[int] = []
+        smart_sfx_cues: List[tuple[int, Path, float]] = []
+        if shimmer_wav is not None:
+            smart_sfx_cues.append((55, shimmer_wav, sfx_gain))
+        last_whoosh_ms = -9999
         real_demo_windows_ms: List[tuple[int, int]] = []
         cursor_shift_ms = 0
 
@@ -182,6 +257,13 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 speech_offset_ms = 85 if pop_sfx_wav is not None else 0
                 if pop_sfx_wav is not None:
                     pop_sfx_starts_ms.append(eff_start_ms)
+                if use_smart_sfx:
+                    if idx >= 1 and pop_sfx_wav is None and whoosh_wav is not None:
+                        if (eff_start_ms - last_whoosh_ms) >= 2800:
+                            smart_sfx_cues.append((max(0, eff_start_ms - 85), whoosh_wav, sfx_gain))
+                            last_whoosh_ms = eff_start_ms
+                    if click_wav is not None and bool(line.card_image_path):
+                        smart_sfx_cues.append((eff_start_ms + 130, click_wav, sfx_gain))
 
                 chunk = await line_provider.synthesize(line.vi_text, eff_profile, raw_wav)
                 chunk = await asyncio.to_thread(self._fit_chunk_to_slot, chunk, slot_ms)
@@ -225,6 +307,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             real_demo_windows_ms=real_demo_windows_ms,
             pop_sfx_wav=pop_sfx_wav,
             pop_sfx_starts_ms=pop_sfx_starts_ms,
+            smart_sfx_cues=smart_sfx_cues,
         )
 
         ass_path = await asyncio.to_thread(
@@ -236,6 +319,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             canvas_h=canvas_h,
             subtitle_pos_y=audio_config.subtitle_pos_y,
             subtitle_font_size=audio_config.subtitle_font_size,
+            smart_keyword_highlight=bool(getattr(audio_config, "smart_keyword_highlight", True)),
         )
 
         if on_progress:
@@ -325,6 +409,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         real_demo_windows_ms: Optional[List[tuple[int, int]]] = None,
         pop_sfx_wav: Optional[Path] = None,
         pop_sfx_starts_ms: Optional[List[int]] = None,
+        smart_sfx_cues: Optional[List[tuple[int, Path, float]]] = None,
     ) -> int:
         total_samples = max(1, int(round((total_target_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE)))
         mix = np.zeros((total_samples, 2), dtype=np.float32)
@@ -417,7 +502,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             for s_idx, arr in loaded_narration:
                 mix[s_idx : s_idx + arr.shape[0]] += arr * 1.08
 
-        # 2B. Overlay crisp Threads Card Pop SFX at comment transitions
+        # 2B. Overlay crisp Threads Card Pop SFX & Smart Micro-SFX (Hook Shimmer, Soft Whoosh, Shutter)
         if pop_sfx_wav and pop_sfx_wav.exists() and pop_sfx_starts_ms:
             pop_arr = _read_wav_float32_stereo(pop_sfx_wav)
             for p_ms in pop_sfx_starts_ms:
@@ -426,6 +511,20 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 )
                 p_end = min(total_samples, p_idx + pop_arr.shape[0])
                 mix[p_idx:p_end] += pop_arr[: p_end - p_idx]
+
+        if smart_sfx_cues:
+            sfx_cache: Dict[Path, np.ndarray] = {}
+            for cue_ms, cue_path, cue_gain in smart_sfx_cues:
+                if cue_gain <= 0.001 or not cue_path.exists():
+                    continue
+                if cue_path not in sfx_cache:
+                    sfx_cache[cue_path] = _read_wav_float32_stereo(cue_path)
+                c_arr = sfx_cache[cue_path]
+                c_idx = min(
+                    total_samples - 1, max(0, int((cue_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE))
+                )
+                c_end = min(total_samples, c_idx + c_arr.shape[0])
+                mix[c_idx:c_end] += c_arr[: c_end - c_idx] * float(cue_gain)
 
         # 3. Mix optional BGM / subtle anti-copyright background bed
         if audio_config.bgm_path and audio_config.bgm_path.exists() and audio_config.bgm_volume > 0:

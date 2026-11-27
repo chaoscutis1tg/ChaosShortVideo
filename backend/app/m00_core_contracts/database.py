@@ -13,6 +13,7 @@ from .dtos import (
     CutPlanDTO,
     MediaAssetDTO,
     ProjectGroupDTO,
+    ProjectPublishStatusDTO,
     RenderOutputDTO,
     SavedBgVideoDTO,
     SavedProductTemplateDTO,
@@ -629,6 +630,14 @@ class SQLiteRepository:
                 conn.execute(
                     "ALTER TABLE projects ADD COLUMN parent_group_id TEXT DEFAULT NULL"
                 )
+            if "published_channels_json" not in proj_cols:
+                conn.execute(
+                    "ALTER TABLE projects ADD COLUMN published_channels_json TEXT DEFAULT '[]'"
+                )
+            if "published_note" not in proj_cols:
+                conn.execute(
+                    "ALTER TABLE projects ADD COLUMN published_note TEXT DEFAULT ''"
+                )
             # Recover any stale in-flight projects from an abruptly closed previous server session
             conn.execute(
                 """
@@ -1100,6 +1109,12 @@ class SQLiteRepository:
                 clips_data.append(clip_dict)
 
             result = dict(proj)
+            try:
+                pub_ch = json.loads(result.get("published_channels_json") or "[]")
+            except Exception:
+                pub_ch = []
+            result["published_channels"] = pub_ch if isinstance(pub_ch, list) else []
+            result["published_note"] = str(result.get("published_note") or "")
             result["source_media"] = dict(media) if media else None
             result["clips"] = clips_data
             return result
@@ -1110,7 +1125,45 @@ class SQLiteRepository:
             rows = conn.execute(
                 "SELECT * FROM projects ORDER BY updated_at DESC"
             ).fetchall()
-        return [dict(r) for r in rows]
+        items: List[Dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            try:
+                pub_ch = json.loads(d.get("published_channels_json") or "[]")
+            except Exception:
+                pub_ch = []
+            d["published_channels"] = pub_ch if isinstance(pub_ch, list) else []
+            d["published_note"] = str(d.get("published_note") or "")
+            items.append(d)
+        return items
+
+    def update_project_publish_status(
+        self,
+        project_id: str,
+        published_channels: List[str],
+        published_note: str = "",
+    ) -> Optional[ProjectPublishStatusDTO]:
+        """Persist channel post tracking (`TIKTOK`, `YOUTUBE_SHORTS`, `FACEBOOK_REELS`) & optional URL/note."""
+        allowed = {"TIKTOK", "YOUTUBE_SHORTS", "FACEBOOK_REELS"}
+        cleaned_ch = []
+        for ch in published_channels or []:
+            up = str(ch).strip().upper()
+            if up in allowed and up not in cleaned_ch:
+                cleaned_ch.append(up)
+        clean_note = (published_note or "").strip()[:500]
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE projects SET published_channels_json = ?, published_note = ? WHERE id = ?",
+                (json.dumps(cleaned_ch, ensure_ascii=False), clean_note, project_id),
+            )
+            if cur.rowcount == 0:
+                return None
+        return ProjectPublishStatusDTO(
+            project_id=project_id,
+            published_channels=cleaned_ch,
+            published_note=clean_note,
+            updated_at=_utc_now_iso(),
+        )
 
     def delete_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         """Delete a project and all cascaded clips/subtitles/SEO records from SQLite."""

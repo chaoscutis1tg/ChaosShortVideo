@@ -13,6 +13,7 @@ from app.m00_core_contracts import (
     ProgressCallback,
     SceneVisualItemDTO,
     ThreadsCardTheme,
+    ThreadsEyeGuideMode,
     VisualAssetListDTO,
     VisualMode,
     VisualProducerError,
@@ -134,6 +135,8 @@ class VisualProducerFacade(IVisualProducer):
         anonymize_handles: bool = False,
         aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
         on_progress: Optional[ProgressCallback] = None,
+        eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT,
+        safe_zone_guard: bool = True,
     ) -> VisualAssetListDTO:
         """Render transparent RGBA PNG floating Threads post & comment cards synced to clip lines."""
         return await ThreadsCardVisualRenderer.build_clip_cards(
@@ -143,6 +146,8 @@ class VisualProducerFacade(IVisualProducer):
             anonymize_handles=anonymize_handles,
             aspect_ratio=aspect_ratio,
             on_progress=on_progress,
+            eye_guide_mode=eye_guide_mode,
+            safe_zone_guard=safe_zone_guard,
         )
 
     def _select_provider(self, mode: VisualMode, scene_idx: int) -> IVisualProvider:

@@ -136,6 +136,27 @@ const CARD_THEME_CHOICES = [
   },
 ];
 
+const EYE_GUIDE_CHOICES = [
+  {
+    value: 'ACTIVE_HIGHLIGHT',
+    title: 'Làm nổi câu đang đọc (Khuyên dùng)',
+    subtitle: 'Giữ nguyên khung thẻ ổn định, câu đang đọc sáng 100% kèm vạch dẫn mắt, các câu khác dịu nhẹ 62%',
+    icon: Sparkles,
+  },
+  {
+    value: 'PROGRESSIVE_REVEAL',
+    title: 'Hiện dần từng câu theo giọng đọc',
+    subtitle: 'Khung thẻ cố định không nhảy giật, chữ mở dần từng câu khớp đúng nhịp thuyết minh',
+    icon: MessageSquareText,
+  },
+  {
+    value: 'STATIC_FULL',
+    title: 'Hiện tĩnh toàn bộ thẻ (Tắt dẫn mắt)',
+    subtitle: 'Hiển thị đồng đều 100% toàn bộ văn bản từ lúc thẻ trượt lên đến khi chuyển thẻ',
+    icon: Layers,
+  },
+];
+
 const SPEED_PRESETS = [
   { label: '1.15x Vừa phải', val: 1.15 },
   { label: '1.25x Nhanh bắt tai (Khuyên dùng)', val: 1.25 },
@@ -2101,6 +2122,13 @@ export default function ThreadsStudioForm({
                 }
               />
             </div>
+
+            <SwitchCard
+              checked={layoutConfig.auto_skip_black_intro !== false}
+              onChange={(val) => updateThreadsLayout({ auto_skip_black_intro: val })}
+            >
+              Tự bỏ 1–3s đầu nếu bị tối đen (giữ nguyên 100% màu sắc gốc)
+            </SwitchCard>
           </div>
         </div>
       </div>
@@ -2127,12 +2155,29 @@ export default function ThreadsStudioForm({
           />
         </div>
 
+        <div style={{ marginBottom: 14 }}>
+          <label className="form-label" style={{ marginBottom: 7 }}>
+            Hiệu ứng Dẫn Mắt Người Đọc theo giọng nói &amp; Chuyển động thẻ Slide-up Spring
+          </label>
+          <ModeChoiceGrid
+            options={EYE_GUIDE_CHOICES}
+            value={layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT'}
+            onChange={(val) => updateThreadsLayout({ threads_eye_guide_mode: val })}
+          />
+        </div>
+
         <div className="toggle-grid" style={{ marginBottom: 14 }}>
           <SwitchCard checked={enablePopSfx} onChange={setEnablePopSfx}>
             Phát tiếng &ldquo;Pop&rdquo; nhẹ mỗi khi nảy thẻ bình luận mới
           </SwitchCard>
           <SwitchCard checked={keepBgAudio} onChange={setKeepBgAudio}>
             Giữ tiếng động gốc của video nền (mưa, đàn, phố đêm...)
+          </SwitchCard>
+          <SwitchCard
+            checked={layoutConfig.safe_zone_guard !== false}
+            onChange={(val) => updateThreadsLayout({ safe_zone_guard: val })}
+          >
+            Tự căn vùng an toàn TikTok/Shorts (né nút Tim/Share bên phải &amp; Caption dưới đáy)
           </SwitchCard>
         </div>
 

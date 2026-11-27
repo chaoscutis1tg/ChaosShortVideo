@@ -1182,12 +1182,16 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
             if req.active_tab == "threads" and not req.preview_as_cover:
                 card_snap = snap_dir / f"th_card_{uid}.png"
+                sample_sents = [
+                    req.sample_subtitle.strip(),
+                    "Mọi người từng trải qua giai đoạn này chia sẻ thật lòng giúp mình với nhé!",
+                ]
                 sample_ln = NarrationLineDTO(
                     seq_index=0,
                     rel_start_ms=0,
                     rel_end_ms=4000,
-                    vi_text=req.sample_subtitle,
-                    display_card_text=req.sample_subtitle,
+                    vi_text=" ".join(sample_sents),
+                    display_card_text=" ".join(sample_sents),
                     speaker_handle="@minhanh.threads",
                     likes_display="2,4K",
                     is_op_post=True,
@@ -1199,6 +1203,10 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     anonymize_handles=cfg.threads_anonymize_handles,
                     canvas_w=canvas_w,
                     canvas_h=canvas_h,
+                    sentences_override=sample_sents,
+                    active_sentence_idx=0,
+                    eye_guide_mode=cfg.threads_eye_guide_mode,
+                    safe_zone_guard=cfg.safe_zone_guard,
                 )
                 with Image.open(card_snap) as tc_im:
                     composed = Image.alpha_composite(composed, tc_im.convert("RGBA"))

@@ -19,6 +19,9 @@ from app.m00_core_contracts import (
     NormalizedRectDTO,
     RenderJobSpecDTO,
     SceneVisualItemDTO,
+    ThreadsCardTheme,
+    ThreadsEyeGuideMode,
+    TransitionStyle,
     VisualAssetListDTO,
 )
 from app.m06_nvenc_compositor import FFmpegNVENCCompositor
@@ -320,5 +323,239 @@ async def test_m06_threads_overlay_60fps_bg_plays_at_realtime_speed(tmp_path: Pa
         )
     finally:
         cap.release()
+
+
+def test_m06_auto_skip_black_intro_preserves_original_colors(tmp_path: Path) -> None:
+    """Verify `_RealtimeVideoStepper(auto_skip_black_intro=True)` skips a 1.5s pitch-black intro
+    and starts directly on the vibrant original-color content (and rewinds past black on EOF).
+    """
+    from app.m06_nvenc_compositor.compositor import _RealtimeVideoStepper
+
+    vid_black_intro = tmp_path / "black_intro_then_blue.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=640x360:r=30:d=1.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=640x360:r=30:d=2.5",
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+            "-map",
+            "[v]",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(vid_black_intro),
+        ],
+        check=True,
+    )
+
+    stepper = _RealtimeVideoStepper(vid_black_intro, target_fps=30.0, auto_skip_black_intro=True)
+    try:
+        assert stepper._start_frame_idx >= 35, "Must skip ~45 black intro frames"
+        frm0, _ = stepper.next_raw_frame()
+        assert frm0 is not None
+        b0, g0, r0 = [int(x) for x in frm0[180, 320]]
+        assert b0 > 180 and r0 < 40, f"First frame must already be BLUE (skipped black), got BGR=({b0},{g0},{r0})"
+    finally:
+        stepper.release()
+
+
+@pytest.mark.asyncio
+async def test_m04_m06_eye_guide_modes_auto_director_and_dynamic_face_track(tmp_path: Path) -> None:
+    """Verify:
+    1. Threads Eye-Guide (`ACTIVE_HIGHLIGHT` & `PROGRESSIVE_REVEAL`) splits multi-sentence comments
+       into fixed-geometry `card_group_id` beats with TikTok Safe-Zone clearance (`x_max <= 970`).
+    2. `TransitionStyle.AUTO_DIRECTOR`, Saliency Camera, and Micro Punch-in (>6s) render cleanly.
+    3. `FaceTrackFullLayout` builds valid dynamic FFmpeg piecewise-linear trajectory filtergraphs.
+    """
+    import numpy as np
+    from PIL import ImageDraw
+    from app.m04_visual_producer.threads_card_renderer import ThreadsCardVisualRenderer
+    from app.m06_nvenc_compositor.layout_strategies import FaceTrackFullLayout
+
+    long_ln = NarrationLineDTO(
+        seq_index=0,
+        rel_start_ms=0,
+        rel_end_ms=6600,
+        vi_text=(
+            "Mình từng mất suốt hai tháng đầu bấm hợp âm chặn đau rát cả đầu ngón tay. "
+            "Nhưng chỉ cần kiên trì mỗi tối mười lăm phút là tay chai lại êm ru. "
+            "Tới tháng thứ ba tự đệm hát được bài đầu tiên cảm giác sướng rơn luôn!"
+        ),
+        display_card_text=(
+            "Mình từng mất suốt hai tháng đầu bấm hợp âm chặn đau rát cả đầu ngón tay. "
+            "Nhưng chỉ cần kiên trì mỗi tối mười lăm phút là tay chai lại êm ru. "
+            "Tới tháng thứ ba tự đệm hát được bài đầu tiên cảm giác sướng rơn luôn!"
+        ),
+        speaker_handle="@guitar_journey",
+        likes_display="1,2K",
+        is_op_post=False,
+    )
+    clip_thr = ClipSpecDTO(
+        clip_id="clip_eye_guide",
+        project_id="proj_eye",
+        part_number=1,
+        source_start_ms=0,
+        source_end_ms=6600,
+        hook_banner_title="Hành Trình Tập Đàn",
+        lines=[long_ln],
+        append_cta_outro=False,
+    )
+
+    for mode in (ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT, ThreadsEyeGuideMode.PROGRESSIVE_REVEAL):
+        vis_list = await ThreadsCardVisualRenderer.build_clip_cards(
+            clip=clip_thr,
+            out_dir=tmp_path / mode.value,
+            card_theme=ThreadsCardTheme.DARK_THREADS,
+            aspect_ratio="9:16",
+            eye_guide_mode=mode,
+            safe_zone_guard=True,
+        )
+        assert len(vis_list.items) == 3
+        assert sum(it.duration_ms for it in vis_list.items) == 6600
+        assert len({it.card_group_id for it in vis_list.items}) == 1
+        # Check TikTok 9:16 right-hand safe zone: card alpha right edge must stay <= 970px (< 1080)
+        with Image.open(vis_list.items[0].asset_path) as im_card:
+            alpha_np = np.array(im_card)[:, :, 3]
+            nz_x = np.where(alpha_np > 24)[1]
+            assert int(nz_x.max()) <= 985
+
+    # Verify Auto-Director + Saliency Camera + >6s Micro Punch-in end-to-end render
+    src_mp4, master_wav, _ = _make_source_video_and_audio(tmp_path)
+    img_a = tmp_path / "sal_a.png"
+    img_b = tmp_path / "sal_b.png"
+    im1 = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), (20, 28, 48))
+    ImageDraw.Draw(im1).ellipse([(620, 420), (880, 680)], fill=(245, 190, 80))
+    im1.save(img_a)
+    im2 = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), (36, 24, 52))
+    ImageDraw.Draw(im2).rectangle([(180, 520), (480, 920)], fill=(90, 210, 245))
+    im2.save(img_b)
+
+    clip_smart = ClipSpecDTO(
+        clip_id="clip_smart_cam",
+        project_id="proj_smart",
+        part_number=1,
+        source_start_ms=0,
+        source_end_ms=7500,
+        hook_banner_title="Smart Camera & Auto Director",
+        lines=[
+            NarrationLineDTO(seq_index=0, rel_start_ms=0, rel_end_ms=6300, vi_text="Cảnh dài trên sáu giây"),
+            NarrationLineDTO(seq_index=1, rel_start_ms=6300, rel_end_ms=7500, vi_text="Cảnh kết mượt"),
+        ],
+        append_cta_outro=False,
+    )
+    vis_smart = VisualAssetListDTO(
+        clip_id="clip_smart_cam",
+        items=[
+            SceneVisualItemDTO(
+                seq_index=0,
+                asset_path=img_a,
+                asset_type=AssetType.IMAGE,
+                duration_ms=6300,
+                motion_effect=MotionEffect.ZOOM_IN,
+            ),
+            SceneVisualItemDTO(
+                seq_index=1,
+                asset_path=img_b,
+                asset_type=AssetType.IMAGE,
+                duration_ms=1200,
+                motion_effect=MotionEffect.ZOOM_IN,
+            ),
+        ],
+    )
+    compositor = FFmpegNVENCCompositor()
+    out_smart = await compositor.render(
+        RenderJobSpecDTO(
+            clip=clip_smart,
+            visual_assets=vis_smart,
+            audio_sub=MasterAudioAndSubDTO(
+                clip_id="clip_smart_cam",
+                master_audio_wav_path=master_wav,
+                ass_subtitle_path=None,
+                total_audio_duration_ms=7500,
+            ),
+            layout_config=LayoutAndAntiCopyConfigDTO(
+                transition_style=TransitionStyle.AUTO_DIRECTOR,
+                smart_camera_motion=True,
+                smart_micro_punch_in=True,
+                safe_zone_guard=True,
+            ),
+            output_dir=tmp_path / "out_smart",
+            prefer_nvenc=True,
+        )
+    )
+    assert out_smart.output_mp4_path.exists()
+
+    # Verify Dynamic Smooth Face-Track filtergraph compiles & renders cleanly via FFmpeg
+    dyn_layout = FaceTrackFullLayout(
+        focus_x_ratio=0.35,
+        trajectory=[(0.0, 0.32), (1.0, 0.48), (2.2, 0.66)],
+    )
+    fg_expr = dyn_layout.build_video_filtergraph(
+        RenderJobSpecDTO(
+            clip=ClipSpecDTO(
+                clip_id="clip_ft",
+                project_id="proj_ft",
+                part_number=1,
+                source_start_ms=0,
+                source_end_ms=2200,
+                hook_banner_title="Dynamic Face Track",
+                lines=[NarrationLineDTO(seq_index=0, rel_start_ms=0, rel_end_ms=2200, vi_text="Test")],
+            ),
+            source_video_path=src_mp4,
+            audio_sub=MasterAudioAndSubDTO(
+                clip_id="clip_ft",
+                master_audio_wav_path=master_wav,
+                ass_subtitle_path=None,
+                total_audio_duration_ms=2200,
+            ),
+            layout_config=LayoutAndAntiCopyConfigDTO(
+                layout_type=LayoutType.FACE_TRACK_FULL,
+                dynamic_face_tracking=True,
+            ),
+            output_dir=tmp_path / "out_ft",
+        ),
+        "0:v",
+        [],
+    )
+    assert "if(lt(t\\," in fg_expr
+    ft_mp4 = tmp_path / "ft_out.mp4"
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src_mp4),
+            "-filter_complex",
+            fg_expr,
+            "-map",
+            "[v_framed]",
+            "-frames:v",
+            "20",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(ft_mp4),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0 and ft_mp4.exists(), f"Dynamic FaceTrack FFmpeg failed: {proc.stderr}"
+
 
 

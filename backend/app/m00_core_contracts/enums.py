@@ -30,6 +30,14 @@ class ThreadsCardTheme(str, Enum):
     FROSTED_GLASS = "FROSTED_GLASS"
 
 
+class ThreadsEyeGuideMode(str, Enum):
+    """Eye-guiding typography modes syncing floating Threads card text with voice narration."""
+
+    ACTIVE_HIGHLIGHT = "ACTIVE_HIGHLIGHT"
+    PROGRESSIVE_REVEAL = "PROGRESSIVE_REVEAL"
+    STATIC_FULL = "STATIC_FULL"
+
+
 class ProductCategory(str, Enum):
     """E-commerce product verticals optimizing script structure and pacing."""
 
@@ -58,6 +66,7 @@ class CopywritingTone(str, Enum):
 class TransitionStyle(str, Enum):
     """CapCut-inspired sub-pixel smooth transitions for product & topic showcases."""
 
+    AUTO_DIRECTOR = "AUTO_DIRECTOR"
     CAPCUT_DISSOLVE = "CAPCUT_DISSOLVE"
     CAPCUT_SMOOTH_SLIDE = "CAPCUT_SMOOTH_SLIDE"
     CAPCUT_ZOOM_FLOW = "CAPCUT_ZOOM_FLOW"
@@ -176,6 +185,8 @@ class MotionEffect(str, Enum):
 
     ZOOM_IN = "ZOOM_IN"
     ZOOM_OUT = "ZOOM_OUT"
+    PAN_LEFT = "PAN_LEFT"
+    PAN_RIGHT = "PAN_RIGHT"
     PAN_UP = "PAN_UP"
     PAN_DOWN = "PAN_DOWN"
     NONE = "NONE"

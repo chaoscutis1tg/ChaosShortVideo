@@ -319,13 +319,20 @@ class ProductPhotoShowcaseProvider:
                         canvas_h,
                         studio_cutout_enabled,
                     )
+                    plate_motions = (
+                        MotionEffect.ZOOM_IN,
+                        MotionEffect.PAN_RIGHT,
+                        MotionEffect.ZOOM_OUT,
+                        MotionEffect.PAN_LEFT,
+                        MotionEffect.PAN_UP,
+                    )
                     items.append(
                         SceneVisualItemDTO(
                             seq_index=idx,
                             asset_path=plate_png,
                             asset_type=AssetType.IMAGE,
                             duration_ms=dur_ms,
-                            motion_effect=MotionEffect.ZOOM_IN,
+                            motion_effect=plate_motions[idx % len(plate_motions)],
                         )
                     )
 

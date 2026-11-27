@@ -3,7 +3,7 @@
 export const DEFAULT_LAYOUT_CONFIG = {
   layout_type: 'BLUR_CENTER',
   aspect_ratio: '9:16',
-  transition_style: 'CAPCUT_DISSOLVE',
+  transition_style: 'AUTO_DIRECTOR',
   product_framing: 'BLURRED_STUDIO_CARD',
   show_top_banner: true,
   show_photo_callouts: false,
@@ -49,8 +49,14 @@ export const DEFAULT_LAYOUT_CONFIG = {
   cover_badge_text: '',
   cover_photo_index: 0,
   threads_card_theme: 'DARK_THREADS',
+  threads_eye_guide_mode: 'ACTIVE_HIGHLIGHT',
   threads_anonymize_handles: false,
   threads_bg_dim: 0.28,
+  auto_skip_black_intro: true,
+  safe_zone_guard: true,
+  smart_camera_motion: true,
+  smart_micro_punch_in: true,
+  dynamic_face_tracking: true,
 };
 
 export const DEFAULT_AUDIO_CONFIG = {

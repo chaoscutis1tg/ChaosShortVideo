@@ -443,9 +443,12 @@ class PipelineOrchestrator:
                 )
             )
             outro_ms = int(layout_config.outro_duration_ms) if has_outro else 0
+            eff_sub_y = float(layout_config.subtitle_pos_y)
+            if layout_config.safe_zone_guard and canvas_h > int(canvas_w * 1.5):
+                eff_sub_y = min(0.85, max(0.18, eff_sub_y))
             synced_audio_cfg = audio_config.model_copy(
                 update={
-                    "subtitle_pos_y": layout_config.subtitle_pos_y,
+                    "subtitle_pos_y": eff_sub_y,
                     "subtitle_font_size": layout_config.subtitle_font_size,
                     "outro_tail_ms": outro_ms,
                 }
@@ -573,6 +576,8 @@ class PipelineOrchestrator:
                     anonymize_handles=layout_config.threads_anonymize_handles,
                     aspect_ratio=layout_config.aspect_ratio,
                     on_progress=cb,
+                    eye_guide_mode=layout_config.threads_eye_guide_mode,
+                    safe_zone_guard=layout_config.safe_zone_guard,
                 )
                 effective_layout = layout_config.model_copy(
                     update={"hardsub_mask_enabled": False, "anti_copyright_enabled": False}

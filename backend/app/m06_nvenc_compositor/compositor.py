@@ -67,6 +67,114 @@ def _subpixel_scale_center(img_bgr: np.ndarray, scale: float) -> np.ndarray:
     )
 
 
+def _detect_visual_focal_point(img_bgr: np.ndarray) -> tuple[float, float]:
+    """Locate human-eye focal point `(fx, fy) in [0.28..0.72, 0.24..0.68]` using face detection
+    first, falling back to center-biased Sobel gradient saliency. Runs in <1ms on 180px thumbnail.
+    """
+    h, w = img_bgr.shape[:2]
+    if w < 32 or h < 32:
+        return (0.5, 0.46)
+    small_w = 180
+    small_h = max(32, int(round(h * (small_w / float(w)))))
+    gray = cv2.cvtColor(
+        cv2.resize(img_bgr, (small_w, small_h), interpolation=cv2.INTER_AREA),
+        cv2.COLOR_BGR2GRAY,
+    )
+    try:
+        cascade_file = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        if Path(cascade_file).exists():
+            faces = cv2.CascadeClassifier(cascade_file).detectMultiScale(
+                gray, scaleFactor=1.18, minNeighbors=4
+            )
+            if len(faces) > 0:
+                fx_b, fy_b, fw_b, fh_b = max(faces, key=lambda b: b[2] * b[3])
+                cx_r = (fx_b + fw_b * 0.5) / float(small_w)
+                cy_r = (fy_b + fh_b * 0.48) / float(small_h)
+                return (
+                    float(np.clip(cx_r, 0.28, 0.72)),
+                    float(np.clip(cy_r, 0.22, 0.66)),
+                )
+    except Exception:
+        pass
+
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    mag = np.abs(gx) + np.abs(gy)
+
+    # Smooth central Gaussian prior so edge borders / vignettes never pull the camera off-center
+    yy, xx = np.mgrid[0:small_h, 0:small_w].astype(np.float32)
+    nx = (xx / float(max(small_w - 1, 1)) - 0.5) / 0.34
+    ny = (yy / float(max(small_h - 1, 1)) - 0.45) / 0.34
+    prior = np.exp(-0.5 * (nx * nx + ny * ny))
+    sal = mag * prior
+    total = float(sal.sum())
+    if total <= 1e-3:
+        return (0.5, 0.46)
+    cx_r = float((sal * xx).sum() / total) / float(max(small_w - 1, 1))
+    cy_r = float((sal * yy).sum() / total) / float(max(small_h - 1, 1))
+    return (
+        float(np.clip(cx_r, 0.30, 0.70)),
+        float(np.clip(cy_r, 0.25, 0.68)),
+    )
+
+
+def _subpixel_camera_transform(
+    img_bgr: np.ndarray,
+    scale: float,
+    focus_x: float = 0.5,
+    focus_y: float = 0.48,
+    pan_dx_px: float = 0.0,
+    pan_dy_px: float = 0.0,
+) -> np.ndarray:
+    """Sub-pixel 5-axis focal-point camera warp (`0.0px` integer stepping jitter)."""
+    if abs(scale - 1.0) < 1e-4 and abs(pan_dx_px) < 0.05 and abs(pan_dy_px) < 0.05:
+        return img_bgr
+    h, w = img_bgr.shape[:2]
+    eff_scale = max(1.0, float(scale))
+    ax = float(np.clip(focus_x, 0.15, 0.85)) * w
+    ay = float(np.clip(focus_y, 0.15, 0.85)) * h
+    tx = ax * (1.0 - eff_scale) + pan_dx_px
+    ty = ay * (1.0 - eff_scale) + pan_dy_px
+
+    # Keep viewport safely inside scaled canvas bounds so border reflections rarely show
+    min_tx = w * (1.0 - eff_scale)
+    min_ty = h * (1.0 - eff_scale)
+    tx = float(np.clip(tx, min_tx, 0.0))
+    ty = float(np.clip(ty, min_ty, 0.0))
+
+    mat = np.array(
+        [
+            [eff_scale, 0.0, tx],
+            [0.0, eff_scale, ty],
+        ],
+        dtype=np.float32,
+    )
+    return cv2.warpAffine(
+        img_bgr, mat, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101
+    )
+
+
+def _resolve_scene_transition_style(
+    requested: TransitionStyle, idx: int, n_items: int
+) -> TransitionStyle:
+    """Context-aware Auto Director transition choreography matching human editor rhythm."""
+    if requested != TransitionStyle.AUTO_DIRECTOR:
+        return requested
+    if idx == 0:
+        # Crisp, engaging opening hook transition
+        return TransitionStyle.CAPCUT_ZOOM_FLOW
+    if idx >= max(1, n_items - 2):
+        # Calm, smooth landing into final scene / outro
+        return TransitionStyle.CAPCUT_DISSOLVE
+    body_cycle = (
+        TransitionStyle.CAPCUT_DISSOLVE,
+        TransitionStyle.CAPCUT_SMOOTH_SLIDE,
+        TransitionStyle.CAPCUT_DISSOLVE,
+        TransitionStyle.CAPCUT_ZOOM_FLOW,
+    )
+    return body_cycle[(idx - 1) % len(body_cycle)]
+
+
 def _blend_capcut_transition(
     frame_a: np.ndarray,
     frame_b: np.ndarray,
@@ -240,11 +348,16 @@ def _probe_true_video_fps(video_path: Path, cap: cv2.VideoCapture) -> float:
 
 class _RealtimeVideoStepper:
     """Real-time `1.0x` wall-clock video frame sampler preventing slow-motion on 60fps/120fps videos
-    and fast-forward on 24fps/25fps videos. Uses `cap.grab()` to skip non-displayed frames without
-    wasting BGR decode/resize CPU cycles, and loops seamlessly on EOF.
+    and fast-forward on 24fps/25fps videos. Optionally skips pitch-black opening frames (1-3s) while
+    preserving 100% original video colors.
     """
 
-    def __init__(self, video_path: Path, target_fps: float = float(TARGET_FPS)) -> None:
+    def __init__(
+        self,
+        video_path: Path,
+        target_fps: float = float(TARGET_FPS),
+        auto_skip_black_intro: bool = False,
+    ) -> None:
         self.cap = cv2.VideoCapture(str(video_path))
         self.target_fps = max(1.0, float(target_fps))
         self.out_dt_ms = 1000.0 / self.target_fps
@@ -253,6 +366,13 @@ class _RealtimeVideoStepper:
         self.half_src_dt_ms = 0.48 * self.src_dt_ms
         self.max_grabs_per_step = max(8, int(math.ceil(self.src_fps / self.target_fps)) + 4)
 
+        self._start_frame_idx = (
+            self._detect_black_intro_skip_frame() if auto_skip_black_intro else 0
+        )
+        self._start_offset_ms = self._start_frame_idx * self.src_dt_ms
+        if self._start_frame_idx == 0 and auto_skip_black_intro:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
         self._started = False
         self._pts_reliable: Optional[bool] = None
         self._loop_target_ms = 0.0
@@ -260,12 +380,50 @@ class _RealtimeVideoStepper:
         self._src_idx_in_loop = 0
         self._last_raw_bgr: Optional[np.ndarray] = None
 
+    @staticmethod
+    def _is_frame_pitch_black(frm_bgr: np.ndarray) -> bool:
+        h, w = frm_bgr.shape[:2]
+        if w <= 0 or h <= 0:
+            return True
+        sub = frm_bgr[:: max(1, h // 48), :: max(1, w // 48)]
+        luma = sub.mean(axis=2)
+        return float(luma.mean()) < 15.0 and float(luma.std()) < 9.5
+
+    def _detect_black_intro_skip_frame(self) -> int:
+        """If frame 0 is pitch-black, scan up to 3.6s (<=45% of clip) to start at first visible frame."""
+        if not self.cap.isOpened():
+            return 0
+        ok0, frm0 = self.cap.read()
+        if not ok0 or frm0 is None or not self._is_frame_pitch_black(frm0):
+            return 0
+
+        total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        max_skip_sec = 3.6
+        if total_frames > 10:
+            total_sec = total_frames / max(5.0, self.src_fps)
+            if total_sec < 2.2:
+                return 0
+            max_skip_sec = min(3.6, max(0.5, total_sec * 0.45))
+
+        step_frames = max(1, int(round(0.18 * self.src_fps)))
+        max_frame_probe = max(2, int(round(max_skip_sec * self.src_fps)))
+        for cand_f in range(step_frames, max_frame_probe + 1, step_frames):
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, cand_f)
+            ok, frm = self.cap.read()
+            if not ok or frm is None:
+                break
+            if not self._is_frame_pitch_black(frm):
+                return cand_f
+        return 0
+
     def _rewind_and_read_first(self) -> Optional[np.ndarray]:
-        if self._started:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        if self._started or self._start_frame_idx > 0:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, self._start_frame_idx)
         ok = self.cap.grab()
         if not ok:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self._start_frame_idx = 0
+            self._start_offset_ms = 0.0
             ok = self.cap.grab()
         if not ok:
             return self._last_raw_bgr
@@ -295,16 +453,17 @@ class _RealtimeVideoStepper:
         while self._cur_frame_ms < threshold_ms and grabs < self.max_grabs_per_step:
             ok = self.cap.grab()
             if not ok:
-                # Reached EOF -> loop seamlessly back to frame 0 at real-time pace
+                # Reached EOF -> loop seamlessly back to clean start frame at real-time pace
                 first = self._rewind_and_read_first()
                 return first, True
             grabs += 1
             self._src_idx_in_loop += 1
-            pos_ms = float(self.cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
+            raw_pos_ms = float(self.cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
+            rel_pos_ms = max(0.0, raw_pos_ms - self._start_offset_ms)
             if self._pts_reliable is None and self._src_idx_in_loop == 1:
-                self._pts_reliable = 1.0 < pos_ms < 500.0
-            if self._pts_reliable and pos_ms > self._cur_frame_ms:
-                self._cur_frame_ms = pos_ms
+                self._pts_reliable = 1.0 < rel_pos_ms < 500.0
+            if self._pts_reliable and rel_pos_ms > self._cur_frame_ms:
+                self._cur_frame_ms = rel_pos_ms
             else:
                 self._cur_frame_ms += self.src_dt_ms
 
@@ -401,6 +560,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 canvas_w=canvas_w,
                 canvas_h=canvas_h,
                 use_nvenc=use_nvenc,
+                auto_skip_black_intro=bool(cfg_l.auto_skip_black_intro),
             )
             clip_start_sec = 0.0
             raw_dur_ms = max(
@@ -438,6 +598,9 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 canvas_w=canvas_w,
                 canvas_h=canvas_h,
                 use_nvenc=use_nvenc,
+                smart_camera_motion=bool(cfg_l.smart_camera_motion),
+                smart_micro_punch_in=bool(cfg_l.smart_micro_punch_in),
+                auto_skip_black_intro=bool(cfg_l.auto_skip_black_intro),
             )
             clip_start_sec = 0.0
             raw_dur_ms = max(
@@ -479,6 +642,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             qr_code_label=spec.layout_config.qr_code_label,
             canvas_w=canvas_w,
             canvas_h=canvas_h,
+            safe_zone_guard=bool(spec.layout_config.safe_zone_guard),
         )
 
         cta_ovr: Optional[Path] = None
@@ -596,8 +760,11 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         canvas_w: int,
         canvas_h: int,
         use_nvenc: bool,
+        smart_camera_motion: bool = True,
+        smart_micro_punch_in: bool = True,
+        auto_skip_black_intro: bool = True,
     ) -> Path:
-        """Stream sub-pixel floating-point Ease-In-Out frames & CapCut transitions directly to FFmpeg."""
+        """Stream sub-pixel Saliency Camera frames, Micro Punch-ins & CapCut transitions to FFmpeg."""
         assembled = work_dir / "assembled_visuals.mp4"
         v_enc = (
             ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET, "-cq", str(NVENC_CQ)]
@@ -633,7 +800,45 @@ class FFmpegNVENCCompositor(IVideoCompositor):
 
         is_static = transition_style == TransitionStyle.STATIC_LOOKBOOK
 
-        def _make_item_frame_sampler(it: SceneVisualItemDTO, total_f: int):
+        # Non-repeating camera sequencer so consecutive image scenes never share identical camera move
+        motion_pool = (
+            MotionEffect.ZOOM_IN,
+            MotionEffect.PAN_RIGHT,
+            MotionEffect.ZOOM_OUT,
+            MotionEffect.PAN_LEFT,
+            MotionEffect.PAN_UP,
+        )
+        resolved_motions: List[MotionEffect] = []
+        prev_m: Optional[MotionEffect] = None
+        for s_i, it in enumerate(items):
+            if is_static or it.motion_effect == MotionEffect.NONE or it.asset_type != AssetType.IMAGE:
+                resolved_motions.append(it.motion_effect)
+                prev_m = None
+                continue
+            cand = it.motion_effect
+            if smart_camera_motion and cand == prev_m:
+                for alt in motion_pool:
+                    if alt != prev_m:
+                        cand = alt
+                        break
+                if cand == prev_m:
+                    cand = motion_pool[s_i % len(motion_pool)]
+            resolved_motions.append(cand)
+            prev_m = cand
+
+        def _compute_micro_punch_bonus(f_idx: int, total_f: int) -> float:
+            """Subtle +5.8% mid-sentence focal close-up on long scenes (>6.0s / >180 frames)."""
+            if is_static or not smart_micro_punch_in or total_f <= int(6.0 * TARGET_FPS):
+                return 0.0
+            trigger_f = int(total_f * 0.52)
+            if f_idx < trigger_f:
+                return 0.0
+            ramp_len = max(8, int(0.32 * TARGET_FPS))
+            t_p = min(1.0, (f_idx - trigger_f + 1) / float(ramp_len))
+            s_p = t_p * t_p * (3.0 - 2.0 * t_p)
+            return 0.058 * s_p
+
+        def _make_item_frame_sampler(it: SceneVisualItemDTO, eff_motion: MotionEffect, total_f: int):
             wave_bars = (
                 _compute_soundwave_bars(it.soundwave_audio_path, total_f)
                 if it.show_soundwave and it.soundwave_audio_path
@@ -642,14 +847,43 @@ class FFmpegNVENCCompositor(IVideoCompositor):
 
             if it.asset_type == AssetType.IMAGE:
                 base_bgr = _load_unicode_image_bgr(it.asset_path, canvas_w, canvas_h)
+                fx, fy = (
+                    _detect_visual_focal_point(base_bgr)
+                    if (smart_camera_motion and not is_static)
+                    else (0.5, 0.48)
+                )
 
                 def _sample_img(f_idx: int) -> np.ndarray:
-                    if is_static or it.motion_effect == MotionEffect.NONE or total_f <= 1:
+                    if is_static or eff_motion == MotionEffect.NONE or total_f <= 1:
                         frm = base_bgr
                     else:
                         prog = min(1.0, max(0.0, f_idx / float(max(total_f - 1, 1))))
                         eased = 0.5 * (1.0 - math.cos(math.pi * prog))
-                        frm = _subpixel_scale_center(base_bgr, 1.0 + 0.028 * eased)
+                        punch = _compute_micro_punch_bonus(f_idx, total_f)
+
+                        if not smart_camera_motion:
+                            frm = _subpixel_scale_center(base_bgr, 1.0 + 0.035 * eased + punch)
+                        elif eff_motion == MotionEffect.ZOOM_OUT:
+                            sc = 1.074 - 0.068 * eased + punch
+                            frm = _subpixel_camera_transform(base_bgr, sc, fx, fy)
+                        elif eff_motion == MotionEffect.PAN_RIGHT:
+                            sc = 1.068 + punch
+                            dx = (eased - 0.5) * (canvas_w * 0.048)
+                            frm = _subpixel_camera_transform(base_bgr, sc, fx, fy, pan_dx_px=-dx)
+                        elif eff_motion == MotionEffect.PAN_LEFT:
+                            sc = 1.068 + punch
+                            dx = (eased - 0.5) * (canvas_w * 0.048)
+                            frm = _subpixel_camera_transform(base_bgr, sc, fx, fy, pan_dx_px=dx)
+                        elif eff_motion in (MotionEffect.PAN_UP, MotionEffect.PAN_DOWN):
+                            sc = 1.066 + punch
+                            sign = 1.0 if eff_motion == MotionEffect.PAN_UP else -1.0
+                            dy = sign * (eased - 0.5) * (canvas_h * 0.036)
+                            frm = _subpixel_camera_transform(base_bgr, sc, fx, fy, pan_dy_px=dy)
+                        else:
+                            # ZOOM_IN toward detected focal subject
+                            sc = 1.0 + 0.068 * eased + punch
+                            frm = _subpixel_camera_transform(base_bgr, sc, fx, fy)
+
                     if wave_bars is not None:
                         frm = _draw_acoustic_soundwave_bgr(
                             frm, wave_bars[min(f_idx, len(wave_bars) - 1)]
@@ -658,16 +892,36 @@ class FFmpegNVENCCompositor(IVideoCompositor):
 
                 return _sample_img, lambda: None
 
-            stepper = _RealtimeVideoStepper(it.asset_path, target_fps=float(TARGET_FPS))
+            stepper = _RealtimeVideoStepper(
+                it.asset_path,
+                target_fps=float(TARGET_FPS),
+                auto_skip_black_intro=auto_skip_black_intro,
+            )
             last_valid = [np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)]
+            vid_focal: List[Optional[tuple[float, float]]] = [None]
 
             def _sample_vid(f_idx: int) -> np.ndarray:
                 frm, is_new = stepper.next_raw_frame()
                 if is_new and frm is not None:
                     if frm.shape[1] != canvas_w or frm.shape[0] != canvas_h:
-                        frm = cv2.resize(frm, (canvas_w, canvas_h), interpolation=cv2.INTER_LINEAR)
+                        # Smart aspect-fill center crop so landscape stock clips never stretch
+                        fh, fw = frm.shape[:2]
+                        sc_fill = max(canvas_w / float(max(fw, 1)), canvas_h / float(max(fh, 1)))
+                        nw = max(canvas_w, int(round(fw * sc_fill)))
+                        nh = max(canvas_h, int(round(fh * sc_fill)))
+                        rsz = cv2.resize(frm, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                        x0 = (nw - canvas_w) // 2
+                        y0 = (nh - canvas_h) // 2
+                        frm = rsz[y0 : y0 + canvas_h, x0 : x0 + canvas_w]
                     last_valid[0] = frm
+                    if vid_focal[0] is None and smart_camera_motion:
+                        vid_focal[0] = _detect_visual_focal_point(frm)
+
                 out_f = last_valid[0]
+                punch = _compute_micro_punch_bonus(f_idx, total_f)
+                if punch > 1e-4:
+                    v_fx, v_fy = vid_focal[0] or (0.5, 0.46)
+                    out_f = _subpixel_camera_transform(out_f, 1.0 + punch, v_fx, v_fy)
                 if wave_bars is not None:
                     out_f = _draw_acoustic_soundwave_bgr(
                         out_f, wave_bars[min(f_idx, len(wave_bars) - 1)]
@@ -690,7 +944,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         for idx, it in enumerate(items):
             tr_prev = transitions[idx - 1] if idx > 0 else 0
             life_frames = tr_prev + counts[idx]
-            smp, cln = _make_item_frame_sampler(it, life_frames)
+            smp, cln = _make_item_frame_sampler(it, resolved_motions[idx], life_frames)
             samplers.append(smp)
             cleanups.append(cln)
 
@@ -710,13 +964,14 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     frm = samplers[idx](tr_prev + b_i)
                     _write_bgr(frm)
 
-                # Smooth CapCut transition into clip `idx + 1`
+                # Smooth CapCut / Auto-Director transition into clip `idx + 1`
                 if tr_out > 0 and (idx + 1) < n_items:
+                    scene_tr_style = _resolve_scene_transition_style(transition_style, idx, n_items)
                     for k in range(tr_out):
                         t_frac = (k + 1) / float(tr_out + 1)
                         frm_a = samplers[idx](tr_prev + body_len + k)
                         frm_b = samplers[idx + 1](k)
-                        blended = _blend_capcut_transition(frm_a, frm_b, t_frac, transition_style)
+                        blended = _blend_capcut_transition(frm_a, frm_b, t_frac, scene_tr_style)
                         _write_bgr(blended)
         finally:
             for cln in cleanups:
@@ -728,7 +983,15 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         if proc.returncode != 0 or not assembled.exists():
             if use_nvenc:
                 return cls._assemble_capcut_visuals(
-                    items, work_dir, transition_style, canvas_w, canvas_h, use_nvenc=False
+                    items,
+                    work_dir,
+                    transition_style,
+                    canvas_w,
+                    canvas_h,
+                    use_nvenc=False,
+                    smart_camera_motion=smart_camera_motion,
+                    smart_micro_punch_in=smart_micro_punch_in,
+                    auto_skip_black_intro=auto_skip_black_intro,
                 )
             raise VideoCompositorError(
                 f"Ghép chuyển cảnh CapCut thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"
@@ -747,8 +1010,12 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         canvas_w: int,
         canvas_h: int,
         use_nvenc: bool,
+        auto_skip_black_intro: bool = True,
     ) -> Path:
-        """Loop background video seamlessly while popping floating RGBA Threads cards per comment."""
+        """Loop background video at 1.0x real-time (100% original color fidelity) while animating
+        floating RGBA Threads cards with Slide-up Spring entry, smooth eye-guide sentence crossfades,
+        and gentle Smooth Exit.
+        """
         assembled = work_dir / "assembled_threads.mp4"
         v_enc = (
             ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET, "-cq", str(NVENC_CQ)]
@@ -782,7 +1049,11 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stdin is not None
 
-        stepper = _RealtimeVideoStepper(bg_video_path, target_fps=float(TARGET_FPS))
+        stepper = _RealtimeVideoStepper(
+            bg_video_path,
+            target_fps=float(TARGET_FPS),
+            auto_skip_black_intro=auto_skip_black_intro,
+        )
         last_bg = np.full((canvas_h, canvas_w, 3), (18, 22, 30), dtype=np.uint8)
         bright_keep = max(0.22, min(1.0, 1.0 - float(bg_dim)))
 
@@ -803,7 +1074,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             return last_bg
 
         def _load_card_roi(path: Path):
-            """Load RGBA card and precompute non-zero alpha bounding box + uint16 premultiplied planes (100x faster)."""
+            """Load RGBA card and precompute non-zero alpha bounding box + uint16 premultiplied planes."""
             raw_b = np.fromfile(str(path), dtype=np.uint8)
             bgra = cv2.imdecode(raw_b, cv2.IMREAD_UNCHANGED)
             if bgra is None:
@@ -826,31 +1097,47 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             return (x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16)
 
         def _blend_card_fast(
-            bg_bgr: np.ndarray, card_info, pop_scale: float, opacity: float
+            bg_bgr: np.ndarray,
+            card_info,
+            pop_scale: float,
+            opacity: float,
+            dy_px: float = 0.0,
         ) -> np.ndarray:
             if card_info is None:
                 return bg_bgr
             x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16 = card_info
             out = bg_bgr.copy()
 
-            if abs(pop_scale - 1.0) <= 1e-3 and opacity >= 0.995:
+            if abs(pop_scale - 1.0) <= 1e-3 and opacity >= 0.995 and abs(dy_px) < 0.4:
                 bg_roi = out[y0:y1, x0:x1].astype(np.uint16)
                 out[y0:y1, x0:x1] = ((bg_roi * inv_a_u16 + premult_fg_u16 + 127) // 255).astype(
                     np.uint8
                 )
                 return out
 
-            rw, rh = x1 - x0, y1 - y0
-            cx, cy = rw * 0.5, rh * 0.5
+            # Expand destination ROI slightly to accommodate Slide-Up (+dy) and Exit (-dy) without clipping
+            pad_y = int(math.ceil(abs(dy_px))) + 14
+            dy0 = max(0, y0 - pad_y)
+            dy1 = min(canvas_h, y1 + pad_y)
+            rw, rh = x1 - x0, dy1 - dy0
+            if rw <= 2 or rh <= 2:
+                return out
+
+            padded_rgba = np.zeros((rh, rw, 4), dtype=np.uint8)
+            ins_y0 = y0 - dy0
+            ins_y1 = ins_y0 + (y1 - y0)
+            padded_rgba[ins_y0:ins_y1, :] = roi_bgra
+
+            cx, cy = rw * 0.5, ins_y0 + (y1 - y0) * 0.5
             mat = np.array(
                 [
                     [pop_scale, 0.0, cx * (1.0 - pop_scale)],
-                    [0.0, pop_scale, cy * (1.0 - pop_scale)],
+                    [0.0, pop_scale, cy * (1.0 - pop_scale) + float(dy_px)],
                 ],
                 dtype=np.float32,
             )
             warped_roi = cv2.warpAffine(
-                roi_bgra,
+                padded_rgba,
                 mat,
                 (rw, rh),
                 flags=cv2.INTER_LINEAR,
@@ -861,27 +1148,63 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             a_dyn = (warped_roi[:, :, 3:4].astype(np.uint16) * op_u16) // 255
             inv_dyn = 255 - a_dyn
             fg_dyn = warped_roi[:, :, :3].astype(np.uint16) * a_dyn
-            bg_roi = out[y0:y1, x0:x1].astype(np.uint16)
-            out[y0:y1, x0:x1] = ((bg_roi * inv_dyn + fg_dyn + 127) // 255).astype(np.uint8)
+            bg_roi = out[dy0:dy1, x0:x1].astype(np.uint16)
+            out[dy0:dy1, x0:x1] = ((bg_roi * inv_dyn + fg_dyn + 127) // 255).astype(np.uint8)
             return out
 
-        pop_frames = 7  # ~0.23s crisp spring pop-in animation per comment card
+        entry_frames = 8  # ~0.27s Slide-up + soft spring entry
+        exit_frames = 5  # ~0.16s gentle float-out exit
+        hl_fade_frames = 5  # ~0.16s smooth eye-guide sentence highlight glide
+        prev_card_info = None
         try:
-            for it in card_items:
-                n_frames = max(18, int(round((it.duration_ms / 1000.0) * TARGET_FPS)))
+            n_cards = len(card_items)
+            for idx, it in enumerate(card_items):
+                is_first_in_group = (
+                    idx == 0
+                    or it.card_group_id is None
+                    or it.card_group_id != card_items[idx - 1].card_group_id
+                )
+                is_last_in_group = (
+                    idx == n_cards - 1
+                    or it.card_group_id is None
+                    or it.card_group_id != card_items[idx + 1].card_group_id
+                )
+                min_f = 18 if (is_first_in_group and is_last_in_group) else 10
+                n_frames = max(min_f, int(round((it.duration_ms / 1000.0) * TARGET_FPS)))
                 card_info = _load_card_roi(it.asset_path)
+
                 for f_i in range(n_frames):
                     bg_f = _next_bg_frame()
-                    if f_i < pop_frames:
-                        p = (f_i + 1) / float(pop_frames)
-                        ease = 1.0 - (1.0 - p) ** 3
-                        scale = 0.90 + 0.10 * ease
-                        opac = min(1.0, p * 1.25)
+                    if is_first_in_group and f_i < entry_frames:
+                        p = (f_i + 1) / float(entry_frames)
+                        inv = 1.0 - p
+                        # Slide up +28px -> 0px with subtle spring settle (0.935 -> 1.008 -> 1.00)
+                        scale = 1.0 - 0.065 * (inv**3) + 0.012 * math.sin(math.pi * p)
+                        dy_px = 28.0 * (inv**2.5)
+                        opac = min(1.0, 0.22 + p * 1.15)
+                        composed = _blend_card_fast(bg_f, card_info, scale, opac, dy_px=dy_px)
+                    elif (
+                        not is_first_in_group
+                        and prev_card_info is not None
+                        and f_i < hl_fade_frames
+                    ):
+                        # Same comment card: keep geometry 100% locked while cross-fading active sentence
+                        alpha = (f_i + 1) / float(hl_fade_frames + 1)
+                        frm_prev = _blend_card_fast(bg_f, prev_card_info, 1.0, 1.0, dy_px=0.0)
+                        frm_curr = _blend_card_fast(bg_f, card_info, 1.0, 1.0, dy_px=0.0)
+                        composed = cv2.addWeighted(frm_prev, 1.0 - alpha, frm_curr, alpha, 0.0)
+                    elif is_last_in_group and n_frames >= 16 and f_i >= (n_frames - exit_frames):
+                        q = (f_i - (n_frames - exit_frames) + 1) / float(exit_frames + 1)
+                        scale = 1.0 - 0.026 * q
+                        dy_px = -14.0 * (q**1.5)
+                        opac = max(0.16, 1.0 - 0.78 * (q**1.25))
+                        composed = _blend_card_fast(bg_f, card_info, scale, opac, dy_px=dy_px)
                     else:
-                        scale = 1.0
-                        opac = 1.0
-                    composed = _blend_card_fast(bg_f, card_info, scale, opac)
+                        composed = _blend_card_fast(bg_f, card_info, 1.0, 1.0, dy_px=0.0)
+
                     proc.stdin.write(memoryview(np.ascontiguousarray(composed)))
+
+                prev_card_info = card_info
 
             if outro_png is not None and outro_extra_ms > 0:
                 outro_bgr = _load_unicode_image_bgr(outro_png, canvas_w, canvas_h)
@@ -906,6 +1229,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     canvas_w=canvas_w,
                     canvas_h=canvas_h,
                     use_nvenc=False,
+                    auto_skip_black_intro=auto_skip_black_intro,
                 )
             raise VideoCompositorError(
                 f"Ghép thẻ bình luận Threads thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"

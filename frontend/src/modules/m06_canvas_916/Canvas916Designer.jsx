@@ -13,6 +13,7 @@ import {
   Loader2,
   Move,
   Smartphone,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -45,6 +46,7 @@ export default function Canvas916Designer({
   notify,
 }) {
   const [showLayoutSettings, setShowLayoutSettings] = useState(false);
+  const [showSmartEdit, setShowSmartEdit] = useState(false);
   const [showBrandKit, setShowBrandKit] = useState(false);
   const [savingBrandKit, setSavingBrandKit] = useState(false);
   const [cleaningTemp, setCleaningTemp] = useState(false);
@@ -554,8 +556,19 @@ export default function Canvas916Designer({
                       18 phút •••
                     </span>
                   </div>
-                  <div style={{ fontSize: 9.2, lineHeight: 1.38, marginBottom: 5 }}>
-                    Thẻ bình luận nổi tự động nảy lên khớp từng giọng đọc trên video nền lặp vòng!
+                  <div style={{ fontSize: 9.2, lineHeight: 1.4, marginBottom: 5 }}>
+                    {(layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT') === 'ACTIVE_HIGHLIGHT' ? (
+                      <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
+                        <div>Thẻ bình luận dẫn mắt sáng rõ câu đang đọc!</div>
+                        <div style={{ opacity: 0.52 }}>Câu tiếp theo dịu nhẹ giúp mắt không mỏi.</div>
+                      </div>
+                    ) : layoutConfig.threads_eye_guide_mode === 'PROGRESSIVE_REVEAL' ? (
+                      <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
+                        Chữ mở dần từng câu khớp đúng nhịp giọng đọc...
+                      </div>
+                    ) : (
+                      'Thẻ bình luận nổi tự động nảy lên khớp từng giọng đọc trên video nền lặp vòng!'
+                    )}
                   </div>
                   <div style={{ fontSize: 8, opacity: 0.72 }}>♥ 1,4K • Trả lời • Đăng lại</div>
                 </div>
@@ -796,17 +809,18 @@ export default function Canvas916Designer({
         </div>
 
         {/* Mode-Specific Framing & Transition Controls */}
-        {!isMovieMode && (
+        {!isMovieMode && !isThreadsMode && (
           <div className="form-group" style={{ marginBottom: 10 }}>
             <label className="form-label" style={{ fontSize: 12.2 }}>
-              Hiệu ứng chuyển cảnh mượt chuẩn CapCut
+              Đạo diễn chuyển cảnh mượt chuẩn CapCut
             </label>
             <select
               className="select"
               style={{ fontSize: 12.8, minHeight: 37, padding: '6px 10px' }}
-              value={layoutConfig.transition_style || 'CAPCUT_DISSOLVE'}
+              value={layoutConfig.transition_style || 'AUTO_DIRECTOR'}
               onChange={(e) => update({ transition_style: e.target.value })}
             >
+              <option value="AUTO_DIRECTOR">✨ Đạo diễn tự động theo mạch nội dung (Khuyên dùng)</option>
               <option value="CAPCUT_DISSOLVE">Mờ chồng êm ái (Mượt chuẩn CapCut)</option>
               <option value="CAPCUT_SMOOTH_SLIDE">Lướt ngang mượt mà (Smooth Slide)</option>
               <option value="CAPCUT_ZOOM_FLOW">Thu phóng mềm mại (Zoom Flow)</option>
@@ -879,6 +893,65 @@ export default function Canvas916Designer({
             </SwitchCard>
           )}
         </div>
+
+        {/* SMART HUMAN-EYE EDITING DRAWER */}
+        <button
+          type="button"
+          className="adv-toggle"
+          style={{ marginBottom: 8, padding: '8px 12px', fontSize: 12.5 }}
+          onClick={() => setShowSmartEdit((p) => !p)}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Sparkles size={15} style={{ color: 'var(--brand-text)' }} /> Dựng thông minh cho mắt nhìn (Smart Edit)
+          </span>
+          {showSmartEdit ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        </button>
+
+        {showSmartEdit && (
+          <div className="adv-body" style={{ padding: 11, marginBottom: 8, display: 'grid', gap: 7 }}>
+            <SwitchCard
+              checked={layoutConfig.safe_zone_guard !== false}
+              onChange={(val) => update({ safe_zone_guard: val })}
+            >
+              Khóa vùng an toàn TikTok/Shorts (né nút Tim &amp; Caption)
+            </SwitchCard>
+
+            {!isMovieMode && !isThreadsMode && (
+              <>
+                <SwitchCard
+                  checked={layoutConfig.smart_camera_motion !== false}
+                  onChange={(val) => update({ smart_camera_motion: val })}
+                >
+                  Góc máy bám tâm chủ thể (luân phiên 5 hướng mượt)
+                </SwitchCard>
+                <SwitchCard
+                  checked={layoutConfig.smart_micro_punch_in !== false}
+                  onChange={(val) => update({ smart_micro_punch_in: val })}
+                >
+                  Nhịp cận cảnh nhẹ (106%) ở câu dài &gt;6s chống nhàm mắt
+                </SwitchCard>
+              </>
+            )}
+
+            {!isMovieMode && (
+              <SwitchCard
+                checked={layoutConfig.auto_skip_black_intro !== false}
+                onChange={(val) => update({ auto_skip_black_intro: val })}
+              >
+                Tự bỏ 1–3s đầu tối đen (giữ 100% màu gốc video)
+              </SwitchCard>
+            )}
+
+            {isMovieMode && (
+              <SwitchCard
+                checked={layoutConfig.dynamic_face_tracking !== false}
+                onChange={(val) => update({ dynamic_face_tracking: val })}
+              >
+                Bám khuôn mặt động êm ái theo nhân vật đang nói
+              </SwitchCard>
+            )}
+          </div>
+        )}
 
         {/* BRAND KIT & LUXURY OUTRO 2.5S DRAWER */}
         <button

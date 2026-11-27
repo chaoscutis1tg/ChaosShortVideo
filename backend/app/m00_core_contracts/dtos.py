@@ -36,6 +36,7 @@ from .enums import (
     SubtitleStyle,
     ThreadFilterVibe,
     ThreadsCardTheme,
+    ThreadsEyeGuideMode,
     TransitionStyle,
     VisualMode,
     VoiceTier,
@@ -327,6 +328,7 @@ class SceneVisualItemDTO(BaseContractDTO):
     motion_effect: MotionEffect = MotionEffect.ZOOM_IN
     show_soundwave: bool = False
     soundwave_audio_path: Optional[Path] = None
+    card_group_id: Optional[str] = None
 
 
 class VisualAssetListDTO(BaseContractDTO):
@@ -472,8 +474,16 @@ class LayoutAndAntiCopyConfigDTO(BaseContractDTO):
 
     # UC-16: Floating Threads / Social Post & Comment Card Overlay settings
     threads_card_theme: ThreadsCardTheme = ThreadsCardTheme.DARK_THREADS
+    threads_eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT
     threads_anonymize_handles: bool = False
     threads_bg_dim: float = Field(default=0.28, ge=0.0, le=0.75)
+
+    # UC-17: Human-Eye Smart Editing (Safe-Zone, Black-Intro Skip, Saliency Camera, Punch-in & Smooth Face-Track)
+    auto_skip_black_intro: bool = True
+    safe_zone_guard: bool = True
+    smart_camera_motion: bool = True
+    smart_micro_punch_in: bool = True
+    dynamic_face_tracking: bool = True
 
     @field_validator("top_banner_template")
     @classmethod

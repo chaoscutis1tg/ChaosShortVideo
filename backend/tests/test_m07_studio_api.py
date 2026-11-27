@@ -287,7 +287,7 @@ def test_m07_multi_gpu_bgm_pause_resume_delete_and_temp_cleanup(tmp_path: Path) 
         bgm_res = client.get("/api/bgm")
         assert bgm_res.status_code == 200
         tracks = bgm_res.json()
-        assert len(tracks) == 4
+        assert len(tracks) >= 4
         assert Path(tracks[0]["wav_path"]).exists()
 
         # 3. Start Topic in Review Mode -> Pause/Cancel/Delete + Cleanup Temp

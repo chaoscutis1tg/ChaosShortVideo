@@ -93,6 +93,7 @@ from .enums import (
     SubtitleStyle,
     ThreadFilterVibe,
     ThreadsCardTheme,
+    ThreadsEyeGuideMode,
     TransitionStyle,
     VisualMode,
     VoiceTier,

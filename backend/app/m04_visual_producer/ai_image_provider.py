@@ -34,7 +34,9 @@ from app.m00_core_contracts import (
 
 MOTION_CYCLE = (
     MotionEffect.ZOOM_IN,
+    MotionEffect.PAN_RIGHT,
     MotionEffect.ZOOM_OUT,
+    MotionEffect.PAN_LEFT,
     MotionEffect.PAN_UP,
     MotionEffect.PAN_DOWN,
 )

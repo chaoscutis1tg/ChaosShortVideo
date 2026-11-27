@@ -28,7 +28,13 @@ from .dtos import (
     VisualAssetListDTO,
     VoiceProfileDTO,
 )
-from .enums import ExportAspectRatio, ProductFramingStyle, ThreadsCardTheme, VisualMode
+from .enums import (
+    ExportAspectRatio,
+    ProductFramingStyle,
+    ThreadsCardTheme,
+    ThreadsEyeGuideMode,
+    VisualMode,
+)
 
 # Callback signature: (stage_name, progress_percent_0_to_100, status_message)
 ProgressCallback = Callable[[str, float, str], None]
@@ -167,6 +173,8 @@ class IVisualProducer(ABC):
         anonymize_handles: bool = False,
         aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
         on_progress: Optional[ProgressCallback] = None,
+        eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT,
+        safe_zone_guard: bool = True,
     ) -> VisualAssetListDTO:
         """Render transparent RGBA PNG floating Threads post & comment cards synced to clip lines."""
 

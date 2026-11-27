@@ -8,7 +8,8 @@ line, and clean authentic engagement metrics (without artificial 'Bình luận #
 import asyncio
 import hashlib
 from pathlib import Path
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.m00_core_contracts import (
@@ -20,6 +21,7 @@ from app.m00_core_contracts import (
     ProgressCallback,
     SceneVisualItemDTO,
     ThreadsCardTheme,
+    ThreadsEyeGuideMode,
     VisualAssetListDTO,
     resolve_aspect_dimensions,
 )
@@ -178,6 +180,126 @@ def _draw_repost_icon(
     )
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…;])\s+|\n+")
+
+
+def _split_sentences_for_eye_guide(
+    body_text: str, total_dur_ms: int
+) -> List[Tuple[str, int]]:
+    """Split comment text into natural reading beats `(sentence_text, beat_dur_ms)` whose
+    durations sum to exact `total_dur_ms`. Short 1-sentence comments stay a single beat.
+    """
+    clean = (body_text or "").strip()
+    if not clean or total_dur_ms < 2100:
+        return [(clean, max(500, total_dur_ms))]
+
+    raw_parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(clean) if p and p.strip()]
+    if len(raw_parts) <= 1 and len(clean) >= 110 and "," in clean:
+        # Long run-on teen/colloquial comment without periods -> split gently at commas
+        comma_parts = [p.strip() for p in re.split(r",\s+", clean) if p.strip()]
+        rebuilt: List[str] = []
+        buf = ""
+        for cp in comma_parts:
+            candidate = f"{buf}, {cp}" if buf else cp
+            if len(candidate) < 52:
+                buf = candidate
+            else:
+                if buf:
+                    rebuilt.append(buf + ",")
+                buf = cp
+        if buf:
+            rebuilt.append(buf)
+        if len(rebuilt) >= 2:
+            raw_parts = rebuilt
+
+    # Merge tiny fragments (< 18 chars) into neighbors for calm, natural human eye rhythm
+    merged: List[str] = []
+    for part in raw_parts:
+        if merged and len(part) < 18:
+            merged[-1] = f"{merged[-1]} {part}".strip()
+        elif merged and len(merged[-1]) < 18:
+            merged[-1] = f"{merged[-1]} {part}".strip()
+        else:
+            merged.append(part)
+
+    max_beats = max(1, min(6, total_dur_ms // 1250))
+    while len(merged) > max_beats and len(merged) >= 2:
+        # Merge shortest adjacent pair so pacing stays unhurried
+        best_i = min(
+            range(len(merged) - 1),
+            key=lambda i: len(merged[i]) + len(merged[i + 1]),
+        )
+        merged[best_i] = f"{merged[best_i]} {merged[best_i + 1]}".strip()
+        merged.pop(best_i + 1)
+
+    if len(merged) <= 1:
+        return [(clean, max(500, total_dur_ms))]
+
+    weights = [max(8, len(re.sub(r"\s+", "", s))) for s in merged]
+    w_sum = max(sum(weights), 1)
+    min_beat_ms = min(850, total_dur_ms // len(merged))
+    alloc = [max(min_beat_ms, int(round(total_dur_ms * w / float(w_sum)))) for w in weights]
+
+    # Normalize exact sum == total_dur_ms
+    diff = total_dur_ms - sum(alloc)
+    if diff != 0:
+        longest_idx = max(range(len(alloc)), key=lambda i: alloc[i])
+        alloc[longest_idx] = max(350, alloc[longest_idx] + diff)
+        rem = total_dur_ms - sum(alloc)
+        if rem != 0:
+            alloc[-1] = max(350, alloc[-1] + rem)
+
+    return list(zip(merged, alloc))
+
+
+def _wrap_tagged_sentences(
+    draw: ImageDraw.ImageDraw,
+    sentences: List[str],
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width_px: int,
+    max_lines: int = 10,
+) -> List[Tuple[str, int]]:
+    """Wrap sentences into `(line_text, sentence_idx)` while preserving exact total card height."""
+    if not sentences:
+        return [("", 0)]
+    tagged: List[Tuple[str, int]] = []
+    truncated = False
+    for s_idx, sent in enumerate(sentences):
+        paras = [p.strip() for p in (sent or "").splitlines() if p.strip()]
+        for p_i, para in enumerate(paras):
+            words = para.split()
+            cur: List[str] = []
+            for w in words:
+                trial = " ".join(cur + [w])
+                bb = draw.textbbox((0, 0), trial, font=font)
+                if cur and (bb[2] - bb[0]) > max_width_px:
+                    tagged.append((" ".join(cur), s_idx))
+                    cur = [w]
+                    if len(tagged) >= max_lines:
+                        truncated = True
+                        break
+                else:
+                    cur.append(w)
+            if truncated:
+                break
+            if cur:
+                tagged.append((" ".join(cur), s_idx))
+                if len(tagged) >= max_lines and (p_i < len(paras) - 1 or s_idx < len(sentences) - 1):
+                    truncated = True
+                    break
+        if truncated:
+            break
+
+    if not tagged:
+        return [("", 0)]
+    if len(tagged) > max_lines:
+        tagged = tagged[:max_lines]
+        truncated = True
+    if truncated and tagged[-1][0] and not tagged[-1][0].endswith("…"):
+        tagged[-1] = (tagged[-1][0].rstrip(" .,;:-") + "…", tagged[-1][1])
+    return tagged
+
+
 class ThreadsCardVisualRenderer:
     """Builds transparent RGBA PNG floating cards for OP Thread post & replies (with attached images)."""
 
@@ -192,6 +314,10 @@ class ThreadsCardVisualRenderer:
         canvas_h: int = 1920,
         comment_rank: int = 1,
         total_comments: int = 1,
+        sentences_override: Optional[List[str]] = None,
+        active_sentence_idx: Optional[int] = None,
+        eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.STATIC_FULL,
+        safe_zone_guard: bool = True,
     ) -> Path:
         """Render a single transparent `canvas_w x canvas_h` RGBA PNG containing the floating card."""
         out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -235,16 +361,36 @@ class ThreadsCardVisualRenderer:
         f_meta = _load_card_font(25, bold=True)
         f_avatar = _load_card_font(29, bold=True)
 
-        card_w = int(canvas_w * 0.88)
-        card_x = (canvas_w - card_w) // 2
-        text_left_pad = 122
-        text_right_pad = 44
+        # TikTok / Reels / Shorts UI Safe-Zone Guard on vertical 9:16:
+        # Leaves generous right-hand clearance for Heart/Comment/Share buttons & bottom caption
+        is_vertical_916 = canvas_h > int(canvas_w * 1.5)
+        if safe_zone_guard and is_vertical_916:
+            card_w = int(canvas_w * 0.84)
+            card_x = int(canvas_w * 0.035)
+        else:
+            card_w = int(canvas_w * 0.88)
+            card_x = (canvas_w - card_w) // 2
+        text_left_pad = 120
+        text_right_pad = 40
         max_text_w = card_w - text_left_pad - text_right_pad
 
-        wrapped_lines = _wrap_pixel_lines(
-            probe_draw, body_text, f_body, max_text_w, max_lines=max_allowed_lines
+        use_eye_guide = (
+            eye_guide_mode != ThreadsEyeGuideMode.STATIC_FULL
+            and sentences_override is not None
+            and len(sentences_override) > 1
+            and active_sentence_idx is not None
         )
-        body_h = max(line_spacing, len(wrapped_lines) * line_spacing)
+        if use_eye_guide and sentences_override is not None:
+            tagged_lines = _wrap_tagged_sentences(
+                probe_draw, sentences_override, f_body, max_text_w, max_lines=max_allowed_lines
+            )
+        else:
+            plain_wrapped = _wrap_pixel_lines(
+                probe_draw, body_text, f_body, max_text_w, max_lines=max_allowed_lines
+            )
+            tagged_lines = [(w_ln, 0) for w_ln in plain_wrapped]
+
+        body_h = max(line_spacing, len(tagged_lines) * line_spacing)
 
         # Theme colors
         if card_theme == ThreadsCardTheme.LIGHT_THREADS:
@@ -254,6 +400,7 @@ class ThreadsCardVisualRenderer:
             txt_muted = (100, 116, 139, 255)
             thread_line_col = (214, 222, 234, 255)
             photo_border = (203, 213, 225, 220)
+            accent_guide_col = (2, 132, 199, 245)
         elif card_theme == ThreadsCardTheme.FROSTED_GLASS:
             bg_fill = (17, 24, 39, 206)
             border_col = (125, 211, 252, 165)
@@ -261,6 +408,7 @@ class ThreadsCardVisualRenderer:
             txt_muted = (186, 230, 253, 215)
             thread_line_col = (56, 189, 248, 135)
             photo_border = (125, 211, 252, 145)
+            accent_guide_col = (56, 189, 248, 250)
         else:
             bg_fill = (16, 18, 22, 244)
             border_col = (52, 58, 70, 235)
@@ -268,6 +416,7 @@ class ThreadsCardVisualRenderer:
             txt_muted = (148, 163, 184, 255)
             thread_line_col = (63, 71, 86, 255)
             photo_border = (71, 85, 105, 210)
+            accent_guide_col = (56, 189, 248, 245)
 
         # Prepare optional attached post/comment photo
         card_photo_im: Optional[Image.Image] = None
@@ -286,8 +435,17 @@ class ThreadsCardVisualRenderer:
 
         header_h = 96
         footer_h = 82
-        card_h = min(int(canvas_h * 0.85), header_h + body_h + photo_block_h + footer_h + 20)
-        card_y = max(int(canvas_h * 0.075), (canvas_h - card_h) // 2 - int(canvas_h * 0.02))
+        max_card_h_ratio = 0.77 if (safe_zone_guard and is_vertical_916) else 0.85
+        card_h = min(
+            int(canvas_h * max_card_h_ratio), header_h + body_h + photo_block_h + footer_h + 20
+        )
+        if safe_zone_guard and is_vertical_916:
+            top_safe_y = int(canvas_h * 0.085)
+            bot_safe_y = int(canvas_h * 0.855)
+            ideal_y = (top_safe_y + bot_safe_y - card_h) // 2
+            card_y = max(top_safe_y, min(ideal_y, max(top_safe_y, bot_safe_y - card_h)))
+        else:
+            card_y = max(int(canvas_h * 0.075), (canvas_h - card_h) // 2 - int(canvas_h * 0.02))
 
         # 1. Soft Ambient Drop Shadow
         shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
@@ -393,14 +551,53 @@ class ThreadsCardVisualRenderer:
                 fill=txt_muted,
             )
 
-        # 5. Wrapped Comment Body Text
+        # 5. Wrapped Comment Body Text (supports Eye-Guided Active Highlight & Progressive Reveal)
         cur_y = card_y + header_h
-        for w_ln in wrapped_lines:
+        active_y_start: Optional[int] = None
+        active_y_end: Optional[int] = None
+
+        for w_ln, s_idx in tagged_lines:
             if not w_ln:
                 cur_y += int(line_spacing * 0.45)
                 continue
-            cd.text((tx_x, cur_y), w_ln, font=f_body, fill=txt_primary)
+            if use_eye_guide and active_sentence_idx is not None:
+                if eye_guide_mode == ThreadsEyeGuideMode.PROGRESSIVE_REVEAL:
+                    if s_idx > active_sentence_idx:
+                        # Reserve exact vertical height without drawing future sentences yet
+                        cur_y += line_spacing
+                        continue
+                    line_col = (
+                        txt_primary
+                        if s_idx == active_sentence_idx
+                        else (*txt_primary[:3], 210)
+                    )
+                else:
+                    # ACTIVE_HIGHLIGHT: active sentence 100% crisp, read sentences 62%, upcoming 46%
+                    if s_idx == active_sentence_idx:
+                        line_col = txt_primary
+                    elif s_idx < active_sentence_idx:
+                        line_col = (*txt_primary[:3], 158)
+                    else:
+                        line_col = (*txt_primary[:3], 118)
+
+                if s_idx == active_sentence_idx:
+                    if active_y_start is None:
+                        active_y_start = cur_y + 5
+                    active_y_end = cur_y + body_font_px + 3
+            else:
+                line_col = txt_primary
+
+            cd.text((tx_x, cur_y), w_ln, font=f_body, fill=line_col)
             cur_y += line_spacing
+
+        # Subtle vertical eye-guide accent bar next to the currently spoken sentence
+        if use_eye_guide and active_y_start is not None and active_y_end is not None:
+            bar_x = tx_x - 15
+            cd.rounded_rectangle(
+                [(bar_x, active_y_start), (bar_x + 4, max(active_y_start + 12, active_y_end))],
+                radius=2,
+                fill=accent_guide_col,
+            )
 
         # 6. Embedded Post / Comment Photo Attachment (if present)
         if card_photo_im is not None:
@@ -432,8 +629,10 @@ class ThreadsCardVisualRenderer:
         anonymize_handles: bool = False,
         aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
         on_progress: Optional[ProgressCallback] = None,
+        eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT,
+        safe_zone_guard: bool = True,
     ) -> VisualAssetListDTO:
-        """Render all transparent RGBA card PNGs aligned to each narration line in `clip`."""
+        """Render transparent RGBA card PNGs (with optional sentence-level eye-guiding beats)."""
         cards_dir = out_dir / clip.clip_id / "threads_cards"
         cards_dir.mkdir(parents=True, exist_ok=True)
         canvas_w, canvas_h = resolve_aspect_dimensions(aspect_ratio)
@@ -446,33 +645,76 @@ class ThreadsCardVisualRenderer:
             if not ln.is_op_post:
                 cmt_counter += 1
             dur_ms = max(500, ln.rel_end_ms - ln.rel_start_ms)
-            png_path = cards_dir / f"card_{idx:04d}.png"
-            await asyncio.to_thread(
-                cls.render_single_card_png,
-                line=ln,
-                out_png=png_path,
-                card_theme=card_theme,
-                anonymize_handles=anonymize_handles,
-                canvas_w=canvas_w,
-                canvas_h=canvas_h,
-                comment_rank=max(1, cmt_counter),
-                total_comments=non_op_total,
+            group_id = f"thr_card_{idx:04d}"
+            body_text = (ln.display_card_text or ln.original_text or ln.vi_text).strip()
+
+            beats = (
+                _split_sentences_for_eye_guide(body_text, dur_ms)
+                if eye_guide_mode != ThreadsEyeGuideMode.STATIC_FULL
+                else [(body_text, dur_ms)]
             )
-            items.append(
-                SceneVisualItemDTO(
-                    seq_index=ln.seq_index,
-                    asset_path=png_path,
-                    asset_type=AssetType.IMAGE,
-                    duration_ms=dur_ms,
-                    motion_effect=MotionEffect.ZOOM_IN,
+
+            if len(beats) <= 1:
+                png_path = cards_dir / f"card_{idx:04d}.png"
+                await asyncio.to_thread(
+                    cls.render_single_card_png,
+                    line=ln,
+                    out_png=png_path,
+                    card_theme=card_theme,
+                    anonymize_handles=anonymize_handles,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    comment_rank=max(1, cmt_counter),
+                    total_comments=non_op_total,
+                    eye_guide_mode=ThreadsEyeGuideMode.STATIC_FULL,
+                    safe_zone_guard=safe_zone_guard,
                 )
-            )
+                items.append(
+                    SceneVisualItemDTO(
+                        seq_index=len(items),
+                        asset_path=png_path,
+                        asset_type=AssetType.IMAGE,
+                        duration_ms=dur_ms,
+                        motion_effect=MotionEffect.ZOOM_IN,
+                        card_group_id=group_id,
+                    )
+                )
+            else:
+                sent_texts = [b[0] for b in beats]
+                for b_idx, (_, beat_dur_ms) in enumerate(beats):
+                    png_path = cards_dir / f"card_{idx:04d}_s{b_idx:02d}.png"
+                    await asyncio.to_thread(
+                        cls.render_single_card_png,
+                        line=ln,
+                        out_png=png_path,
+                        card_theme=card_theme,
+                        anonymize_handles=anonymize_handles,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                        comment_rank=max(1, cmt_counter),
+                        total_comments=non_op_total,
+                        sentences_override=sent_texts,
+                        active_sentence_idx=b_idx,
+                        eye_guide_mode=eye_guide_mode,
+                        safe_zone_guard=safe_zone_guard,
+                    )
+                    items.append(
+                        SceneVisualItemDTO(
+                            seq_index=len(items),
+                            asset_path=png_path,
+                            asset_type=AssetType.IMAGE,
+                            duration_ms=max(300, beat_dur_ms),
+                            motion_effect=MotionEffect.ZOOM_IN,
+                            card_group_id=group_id,
+                        )
+                    )
+
             if on_progress:
                 pct = round(((idx + 1) / max(len(clip.lines), 1)) * 100.0, 1)
                 on_progress(
                     "GENERATING_ASSETS",
                     pct,
-                    f"Đã thiết kế thẻ Threads {idx + 1}/{len(clip.lines)}",
+                    f"Đã thiết kế thẻ Threads dẫn mắt {idx + 1}/{len(clip.lines)}",
                 )
 
         return VisualAssetListDTO(clip_id=clip.clip_id, items=items)

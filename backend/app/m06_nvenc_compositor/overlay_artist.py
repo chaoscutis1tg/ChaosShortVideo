@@ -94,13 +94,15 @@ class StudioOverlayArtist:
         qr_code_label: str = "Quét xem mẫu",
         canvas_w: int = CANVAS_WIDTH,
         canvas_h: int = CANVAS_HEIGHT,
+        safe_zone_guard: bool = True,
     ) -> Path:
         """Render optional pure-white top title, optional luxury badges, QR & watermark."""
         out_png.parent.mkdir(parents=True, exist_ok=True)
         canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
 
-        top_base_y = int(canvas_h * 0.075)
+        is_vert_916 = canvas_h > int(canvas_w * 1.5)
+        top_base_y = int(canvas_h * (0.086 if (safe_zone_guard and is_vert_916) else 0.075))
         y_txt_end = top_base_y
 
         if show_top_banner and banner_text.strip():
@@ -151,7 +153,9 @@ class StudioOverlayArtist:
                 cw = bb2[2] - bb2[0]
                 cbw = min(canvas_w - 72, cw + 60)
                 cbx = (canvas_w - cbw) // 2
-                cby = canvas_h - int(canvas_h * 0.085)
+                cby = canvas_h - int(
+                    canvas_h * (0.135 if (safe_zone_guard and is_vert_916) else 0.085)
+                )
                 draw.rounded_rectangle(
                     [(cbx, cby), (cbx + cbw, cby + 58)],
                     radius=29,
@@ -165,8 +169,14 @@ class StudioOverlayArtist:
         if qr_code_content.strip():
             qr_card = _render_qr_badge(qr_code_content, qr_code_label)
             if qr_card is not None:
-                qr_y = max(120, canvas_h - int(canvas_h * 0.26) - qr_card.height // 2)
-                canvas.alpha_composite(qr_card, (canvas_w - qr_card.width - 26, qr_y))
+                if safe_zone_guard and is_vert_916:
+                    # Place cleanly on bottom-left above TikTok caption or upper-right above Heart icon
+                    qr_x = 34
+                    qr_y = max(140, canvas_h - int(canvas_h * 0.28) - qr_card.height // 2)
+                else:
+                    qr_x = canvas_w - qr_card.width - 26
+                    qr_y = max(120, canvas_h - int(canvas_h * 0.26) - qr_card.height // 2)
+                canvas.alpha_composite(qr_card, (qr_x, qr_y))
 
         if logo_path and logo_path.exists():
             try:

@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Edit3,
   FileText,
+  Flame,
   Image,
   KeyRound,
   Layers,
@@ -123,6 +124,46 @@ export default function TopicStudioForm({
   const [smartKeywordHighlight, setSmartKeywordHighlight] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [radarOpen, setRadarOpen] = useState(false);
+  const [radarItems, setRadarItems] = useState([]);
+  const [loadingRadar, setLoadingRadar] = useState(false);
+  const [hookScoreRes, setHookScoreRes] = useState(null);
+  const [scoringHook, setScoringHook] = useState(false);
+
+  const handleOpenTopicRadar = async (niche = 'ALL_HOT') => {
+    setRadarOpen(true);
+    setLoadingRadar(true);
+    try {
+      const items = await studioApi.fetchViralRadar(niche, 6);
+      setRadarItems(items || []);
+    } catch (err) {
+      notify(`Lỗi quét chủ đề Viral: ${err.message}`);
+    } finally {
+      setLoadingRadar(false);
+    }
+  };
+
+  const handleScoreTopicHook = async () => {
+    const cleanT = (topicTitle.trim() || shortBrief.trim()).slice(0, 300);
+    if (cleanT.length < 4) {
+      notify('Vui lòng nhập tiêu đề hoặc ý tưởng ngắn trước khi chấm điểm Hook 3 giây.');
+      return;
+    }
+    setScoringHook(true);
+    try {
+      const res = await studioApi.scoreOpeningHook({
+        hook_text: cleanT,
+        body_context: (keyPoints || shortBrief || '').slice(0, 1000),
+        mode: 'TOPIC_VIDEO',
+      });
+      setHookScoreRes(res);
+      notify(`Điểm giữ chân 3 giây đầu: ${res.overall_score}/100 — Đã tạo 3 phương án A/B!`);
+    } catch (err) {
+      notify(`Lỗi chấm điểm Hook: ${err.message}`);
+    } finally {
+      setScoringHook(false);
+    }
+  };
 
   const clearError = (...keys) => {
     setErrors((prev) => {
@@ -444,7 +485,7 @@ export default function TopicStudioForm({
           notify={notify}
         />
 
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
           <button
             type="button"
             className={`btn btn-sm ${!batchMode ? 'btn-primary' : 'btn-secondary'}`}
@@ -459,7 +500,92 @@ export default function TopicStudioForm({
           >
             Chạy hàng loạt nhiều chủ đề (Batch Queue)
           </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ marginLeft: 'auto', borderColor: 'var(--brand-border)' }}
+            onClick={() => (radarOpen ? setRadarOpen(false) : handleOpenTopicRadar('ALL_HOT'))}
+          >
+            <Flame size={13} /> {radarOpen ? 'Đóng Radar Viral' : 'Săn Chủ Đề Đang Viral'}
+          </button>
         </div>
+
+        {radarOpen && (
+          <div
+            className="surface-box fade-slide-in"
+            style={{
+              marginBottom: 12,
+              borderColor: 'rgba(245, 158, 11, 0.5)',
+              background: 'rgba(245, 158, 11, 0.05)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <strong style={{ fontSize: 12.8 }}>🔥 Chủ đề thảo luận sôi nổi dễ lên xu hướng</strong>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {[
+                  ['ALL_HOT', 'Đang Hot'],
+                  ['CRUSH_LOVE', 'Tình cảm'],
+                  ['WORK_CAREER', 'Công sở'],
+                  ['MUSIC_HOBBY', 'Nhạc cụ'],
+                ].map(([nid, nlbl]) => (
+                  <button
+                    key={nid}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11.4, padding: '2px 8px' }}
+                    disabled={loadingRadar}
+                    onClick={() => handleOpenTopicRadar(nid)}
+                  >
+                    {nlbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {loadingRadar ? (
+              <div className="text-sub" style={{ fontSize: 12 }}>
+                <Loader2 size={14} className="spin" /> Đang quét chủ đề...
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                {radarItems.map((it) => (
+                  <div
+                    key={it.item_id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '7px 9px',
+                      borderRadius: 7,
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div style={{ fontSize: 12.5, flex: 1 }}>
+                      <span className="badge badge-info" style={{ fontSize: 10.5, marginRight: 6 }}>
+                        {it.community_label}
+                      </span>
+                      <strong>{it.title_vi}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setBatchMode(false);
+                        setTopicTitle(it.title_vi);
+                        setShortBrief(it.preview_snippet || it.title_vi);
+                        setRadarOpen(false);
+                        notify('Đã điền chủ đề Viral — bấm Phân tích AI để triển khai kịch bản!');
+                      }}
+                    >
+                      Chọn chủ đề
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {batchMode ? (
           <div className="surface-box" style={{ marginBottom: 12, borderColor: 'var(--brand)' }}>
@@ -500,16 +626,28 @@ export default function TopicStudioForm({
             <label className="form-label" style={{ marginBottom: 0 }}>
               Tiêu đề hoặc chủ đề của video
             </label>
-            {previousTitle && previousTitle !== topicTitle && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                style={{ padding: '3px 9px', fontSize: 11.8 }}
-                onClick={() => setTopicTitle(previousTitle)}
+                style={{ padding: '3px 9px', fontSize: 11.8, borderColor: 'var(--brand-border)' }}
+                disabled={scoringHook}
+                onClick={handleScoreTopicHook}
               >
-                <RotateCcw size={12} /> Khôi phục tiêu đề ban đầu
+                {scoringHook ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{' '}
+                {scoringHook ? 'Đang chấm điểm...' : '🎯 Chấm điểm Hook 3 giây & Gợi ý A/B'}
               </button>
-            )}
+              {previousTitle && previousTitle !== topicTitle && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '3px 9px', fontSize: 11.8 }}
+                  onClick={() => setTopicTitle(previousTitle)}
+                >
+                  <RotateCcw size={12} /> Khôi phục tiêu đề ban đầu
+                </button>
+              )}
+            </div>
           </div>
           <input
             className={`input ${errors.topicTitle ? 'input-error' : ''}`}
@@ -521,6 +659,59 @@ export default function TopicStudioForm({
             }}
           />
           <FieldError message={errors.topicTitle} />
+          {hookScoreRes && (
+            <div
+              className="surface-box fade-slide-in"
+              style={{
+                marginTop: 8,
+                padding: '9px 11px',
+                borderColor: 'rgba(14, 165, 233, 0.5)',
+                background: 'rgba(14, 165, 233, 0.07)',
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 12.6, marginBottom: 4 }}>
+                Điểm Hook 3 Giây Đầu: <span style={{ color: '#38bdf8' }}>{hookScoreRes.overall_score}/100</span> — {hookScoreRes.verdict_label}
+              </div>
+              {hookScoreRes.weakness_note && (
+                <div className="text-sub" style={{ fontSize: 11.8, marginBottom: 6 }}>
+                  💡 {hookScoreRes.weakness_note}
+                </div>
+              )}
+              <div style={{ display: 'grid', gap: 5 }}>
+                {(hookScoreRes.variants || []).map((v, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <span style={{ fontSize: 12 }}>
+                      <strong style={{ color: 'var(--brand-text)' }}>[{v.style_label}]</strong> {v.hook_text}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ fontSize: 11.2, whiteSpace: 'nowrap' }}
+                      onClick={() => {
+                        setPreviousTitle(topicTitle);
+                        setTopicTitle(v.hook_text.slice(0, 175));
+                        notify(`Đã đổi sang Hook "${v.style_label}"!`);
+                      }}
+                    >
+                      Dùng câu này
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="form-group">

@@ -9,10 +9,14 @@ from app.m00_core_contracts import (
     AIContentBrainError,
     BriefExpandRequestDTO,
     BriefExpandResultDTO,
+    ChatStoryGenerateRequestDTO,
     ClipSpecDTO,
     CopywritingTone,
     CutConfigDTO,
     CutPlanDTO,
+    HookScoreRequestDTO,
+    HookScoreResultDTO,
+    HookVariantDTO,
     ILLMService,
     LLMQuotaExceededError,
     MAX_ALLOWED_CLIP_SEC,
@@ -31,6 +35,7 @@ from app.m00_core_contracts import (
     ThreadsExtractRequestDTO,
     TopicPromptDTO,
     TranscriptResultDTO,
+    ViralRadarItemDTO,
     VisualMode,
     WordTimestampDTO,
 )
@@ -1629,6 +1634,340 @@ class GeminiContentBrainService(ILLMService):
             project_id=project_id,
             mode=ProjectMode.THREADS_TOPIC,
             clips=[clip],
+        )
+
+    async def translate_radar_items(
+        self, items: List[ViralRadarItemDTO]
+    ) -> List[ViralRadarItemDTO]:
+        """Auto-translate foreign Reddit radar titles & snippets into natural Vietnamese."""
+        if not items:
+            return []
+        _vi_re = re.compile(
+            r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]",
+            re.IGNORECASE,
+        )
+        foreign_indices = [
+            idx
+            for idx, it in enumerate(items)
+            if len(re.findall(r"[A-Za-z]", it.title_vi)) >= 8 and not bool(_vi_re.search(it.title_vi))
+        ]
+        if not foreign_indices:
+            return items
+
+        raw_titles = [items[i].title_vi for i in foreign_indices]
+        try:
+            vi_titles = await FreeVietnameseTranslator.translate_lines(
+                raw_titles, source_lang="auto", concurrency=6
+            )
+        except Exception:
+            vi_titles = raw_titles
+
+        patched = list(items)
+        for pos, item_idx in enumerate(foreign_indices):
+            tr = (vi_titles[pos] if pos < len(vi_titles) else "").strip()
+            if tr:
+                patched[item_idx] = patched[item_idx].model_copy(update={"title_vi": tr[:280]})
+        return patched
+
+    async def generate_chat_story_bundle(
+        self, req: ChatStoryGenerateRequestDTO
+    ) -> ScrapedThreadBundleDTO:
+        """Generate a realistic 2-person Messenger/Zalo/iMessage conversation bundle ready for Chat Story render."""
+        idea = req.story_idea.strip()
+        name_a = (req.sender_a_name.strip() or "Mình").lstrip("@")
+        name_b = (req.sender_b_name.strip() or "Crush").lstrip("@")
+        handle_a = f"@{name_a}"
+        handle_b = f"@{name_b}"
+        voice_a = req.female_voice_id if req.sender_a_is_female else req.male_voice_id
+        voice_b = req.male_voice_id if req.sender_a_is_female else req.female_voice_id
+        msg_total = max(4, min(18, int(req.message_count)))
+
+        vibe_map = {
+            "CRUSH_ROMANTIC": "Ngọt ngào, thả thính tinh tế, hồi hộp rung động tuổi trẻ, câu chốt bất ngờ dễ thương",
+            "DRAMA_PLOT_TWIST": "Kịch tính, bắt đầu bình thường nhưng lật kèo (plot twist) căng thẳng ở 2 tin nhắn cuối",
+            "FUNNY_BANTER": "Lầy lội, hài hước duyên dáng kiểu GenZ nhắn tin trêu nhau, đọc tới đâu bật cười tới đó",
+            "SALES_CONSULT": "Khách nhắn hỏi thật tâm – Chủ shop tư vấn tận tình có tâm, chốt đơn mượt tự nhiên không gượng",
+        }
+        vibe_desc = vibe_map.get(req.story_vibe, vibe_map["CRUSH_ROMANTIC"])
+
+        if self.api_key:
+            prompt = (
+                "Bạn là biên kịch chuyên viết kịch bản Video Tin Nhắn Chat (Messenger / Zalo / iMessage) triệu view trên TikTok/Shorts.\n"
+                f"Ý tưởng tình huống: {idea}\n"
+                f"Nhân vật bên phải (người nhắn chính): {name_a}\n"
+                f"Nhân vật bên trái (người đối thoại): {name_b}\n"
+                f"Tông màu cảm xúc: {vibe_desc}\n"
+                f"Tổng số tin nhắn qua lại: ĐÚNG {msg_total} tin nhắn (tin đầu tiên là tin mở màn kích thích tò mò ngay 2 giây đầu).\n"
+                "Yêu cầu:\n"
+                "- Mỗi tin nhắn ngắn gọn tự nhiên như người thật nhắn Zalo/Messenger (8–32 chữ/tin), câu đối đáp ăn miếng trả miếng hợp lý.\n"
+                "- `display_text` có thể giữ nhịp điệu chat tự nhiên; `spoken_vi_text` viết tròn chữ tiếng Việt tự nhiên để AI lồng tiếng truyền cảm.\n"
+                "Trả về JSON chuẩn:\n"
+                "{\n"
+                '  "topic_title": "Tiêu đề SEO hấp dẫn dưới 90 ký tự",\n'
+                '  "messages": [\n'
+                '    {"sender": "A hoặc B", "display_text": "...", "spoken_vi_text": "..."}\n'
+                "  ]\n"
+                "}"
+            )
+            try:
+                parsed = await self._call_gemini_json(prompt)
+                raw_msgs = parsed.get("messages") or []
+                if isinstance(raw_msgs, list) and len(raw_msgs) >= 3:
+                    first_m = raw_msgs[0]
+                    first_is_a = str(first_m.get("sender", "A")).strip().upper() != "B"
+                    op_disp = str(first_m.get("display_text") or idea).strip()
+                    op_sp = str(first_m.get("spoken_vi_text") or self._expand_slang_vi(op_disp) or op_disp).strip()
+                    cmts: List[ThreadCommentItemDTO] = []
+                    for i, m in enumerate(raw_msgs[1:msg_total], start=1):
+                        is_a = str(m.get("sender", "B" if i % 2 == 1 else "A")).strip().upper() == "A"
+                        d_txt = str(m.get("display_text") or "").strip()
+                        if not d_txt:
+                            continue
+                        s_txt = str(m.get("spoken_vi_text") or self._expand_slang_vi(d_txt) or d_txt).strip()
+                        cmts.append(
+                            ThreadCommentItemDTO(
+                                comment_id=f"chat_{i:02d}",
+                                author_handle=handle_a if is_a else handle_b,
+                                display_name=name_a if is_a else name_b,
+                                raw_text=d_txt,
+                                display_text=d_txt,
+                                spoken_vi_text=s_txt,
+                                likes_count=0,
+                                likes_display="Đã xem",
+                                voice_profile_id=voice_a if is_a else voice_b,
+                                selected=True,
+                            )
+                        )
+                    if cmts:
+                        return ScrapedThreadBundleDTO(
+                            source_url="",
+                            platform="chat_story",
+                            topic_title=str(parsed.get("topic_title") or idea)[:160],
+                            op_author_handle=handle_a if first_is_a else handle_b,
+                            op_display_text=op_disp,
+                            op_spoken_vi_text=op_sp,
+                            op_likes_display="Đang hoạt động",
+                            op_replies_display=str(len(cmts) + 1),
+                            op_voice_profile_id=voice_a if first_is_a else voice_b,
+                            male_voice_id=req.male_voice_id,
+                            female_voice_id=req.female_voice_id,
+                            comments=cmts,
+                            used_api_key=True,
+                            extraction_note=f"AI đã biên kịch {len(cmts) + 1} tin nhắn hội thoại giữa {name_a} & {name_b}.",
+                        )
+            except Exception:
+                if not self.allow_offline_fallback:
+                    raise
+
+        # Smart structured fallback dialogue tailored by vibe & idea
+        if req.story_vibe == "SALES_CONSULT":
+            pairs = [
+                ("B", f"Shop ơi cho mình hỏi {idea} thì người mới bắt đầu dùng có hợp không ạ?"),
+                ("A", "Dạ hợp cực kỳ luôn bạn ơi! Dòng này bên mình căn chỉnh sẵn hết rồi, cầm vào là cảm nhận rõ độ êm ngay."),
+                ("B", "Mình sợ nhất mua online về âm bị phô hoặc khó bấm giống mấy cây giá rẻ trên mạng ấy."),
+                ("A", "Chuẩn tâm lý số đông luôn ạ. Trước khi gửi bên mình đều quay video test âm thực tế từng cây gửi riêng cho bạn duyệt trước."),
+                ("B", "Ồ có quay clip test riêng luôn hả shop? Phụ kiện đi kèm đã đủ dùng luôn chưa ạ?"),
+                ("A", "Dạ tặng kèm trọn bộ phụ kiện chuẩn từ hộp chống sốc tới giáo trình tự học, mở hộp là tập được liền không phát sinh gì thêm!"),
+                ("B", "Nghe yên tâm hẳn luôn, vậy giữ cho mình một bộ gửi về Hà Nội giúp mình nhé!"),
+                ("A", "Dạ vâng ạ, để mình chọn ngay bản vân đẹp nhất quay test âm gửi bạn xem liền nha!"),
+            ]
+        elif req.story_vibe == "DRAMA_PLOT_TWIST":
+            pairs = [
+                ("A", f"Này, hỏi thật một câu nhé... chuyện {idea} hôm qua là sao vậy?"),
+                ("B", "Ơ sao tự nhiên hỏi thế? Ai lại đi đồn linh tinh gì với cậu à?"),
+                ("A", "Không ai đồn cả. Chiều qua tớ đứng ngay ở quầy cà phê góc đường, nhìn thấy hết từ đầu tới cuối rồi."),
+                ("B", "Khoan đã... cậu nhìn thấy tớ đi chọn quà ở đó thật hả?!"),
+                ("A", "Ủa... chọn quà gì cơ? Tớ tưởng hai người hẹn riêng nhau mà?"),
+                ("B", "Trời đất ơi nhờ nhỏ bạn thân của cậu đi chọn quà sinh nhật bất ngờ cho cậu tuần tới đó bà tướng ạ!"),
+                ("A", "Hả?! Thật luôn á?! Làm người ta suy nghĩ nguyên cả đêm không ngủ được..."),
+                ("B", "Thôi lộ hết kế hoạch rồi, tối mai 7h chuẩn bị lên đồ đi ăn bù đền cho tớ đi nhé!"),
+            ]
+        else:
+            pairs = [
+                ("A", f"Ngủ chưa đấy? Tự nhiên nhớ lại chuyện {idea} cái tỉnh ngủ luôn..."),
+                ("B", "Chưa ngủ nè. Mà ủa sao giờ này tự nhiên lại nhắc chuyện đó vậy?"),
+                ("A", "Thì thắc mắc thật mà, hôm đó trời mưa to thế sao lại cố nán lại đợi cùng làm gì?"),
+                ("B", "À... tại tiện đường về chung hướng thôi chứ có gì đâu mà hỏi kỹ thế."),
+                ("A", "Nhà đằng ấy ở tận quận bên kia, ngược đường hoàn toàn mà bảo tiện đường hả? Khai thật đi!"),
+                ("B", "Thì... sợ có người đứng đợi xe một mình trời tối lại lạnh, nên kiếm cớ đứng cùng thêm chút thôi."),
+                ("A", "Biết ngay mà! Giấu kỹ thế thảo nào tim người ta cứ đập loạn nhịp suốt từ hôm đó tới giờ."),
+                ("B", "Vậy cuối tuần này không cần đợi trời mưa nữa đâu, 7h tối mình qua đón đi uống cacao nóng nhé?"),
+            ]
+
+        selected_turns = pairs[:msg_total]
+        first_side, first_txt = selected_turns[0]
+        first_is_a = first_side == "A"
+        cmts_fb: List[ThreadCommentItemDTO] = []
+        for idx, (side, txt) in enumerate(selected_turns[1:], start=1):
+            is_a = side == "A"
+            sp_txt = self._expand_slang_vi(txt) or txt
+            cmts_fb.append(
+                ThreadCommentItemDTO(
+                    comment_id=f"chat_fb_{idx:02d}",
+                    author_handle=handle_a if is_a else handle_b,
+                    display_name=name_a if is_a else name_b,
+                    raw_text=txt,
+                    display_text=txt,
+                    spoken_vi_text=sp_txt,
+                    likes_display="Đã xem",
+                    voice_profile_id=voice_a if is_a else voice_b,
+                    selected=True,
+                )
+            )
+        return ScrapedThreadBundleDTO(
+            source_url="",
+            platform="chat_story",
+            topic_title=idea[:140],
+            op_author_handle=handle_a if first_is_a else handle_b,
+            op_display_text=first_txt,
+            op_spoken_vi_text=self._expand_slang_vi(first_txt) or first_txt,
+            op_likes_display="Đang hoạt động",
+            op_replies_display=str(len(cmts_fb) + 1),
+            op_voice_profile_id=voice_a if first_is_a else voice_b,
+            male_voice_id=req.male_voice_id,
+            female_voice_id=req.female_voice_id,
+            comments=cmts_fb,
+            used_api_key=False,
+            extraction_note=f"Đã dựng kịch bản {len(cmts_fb) + 1} tin nhắn đối thoại giữa {name_a} & {name_b}.",
+        )
+
+    async def score_and_optimize_hook(
+        self, req: HookScoreRequestDTO
+    ) -> HookScoreResultDTO:
+        """Analyze 3-second retention power of an opening Hook/OP and suggest 3 stronger A/B variants."""
+        hook = req.hook_text.strip()
+        words = [w for w in hook.split() if w]
+        est_sec = round(max(0.8, len(words) / 3.9), 1)
+
+        if self.api_key:
+            prompt = (
+                "Bạn là chuyên gia tối ưu tỷ lệ giữ chân 3 giây đầu (3-Second Hook Retention) trên TikTok, Reels & YouTube Shorts.\n"
+                f"Câu mở đầu hiện tại: \"{hook}\"\n"
+                f"Ngữ cảnh nội dung tiếp theo: \"{(req.body_context or '')[:800]}\"\n"
+                "Hãy chấm điểm khắt khe trên thang 0-100 và viết lại 3 phương án Hook A/B sắc bén hơn (dưới 20 chữ, không chào hỏi rườm rà, đánh trúng tò mò ngay giây đầu tiên).\n"
+                "Trả về JSON chuẩn:\n"
+                "{\n"
+                '  "overall_score": 78,\n'
+                '  "curiosity_score": 75,\n'
+                '  "pacing_3s_score": 82,\n'
+                '  "emotion_score": 76,\n'
+                '  "verdict_label": "Nhận định ngắn gọn 4-8 chữ",\n'
+                '  "weakness_note": "Chỉ rõ điểm yếu cụ thể của câu hiện tại trong 1-2 câu",\n'
+                '  "variants": [\n'
+                '    {"style_label": "Gây tò mò bỏ lửng", "hook_text": "...", "spoken_vi_text": "...", "predicted_score": 92},\n'
+                '    {"style_label": "Chạm thẳng cảm xúc", "hook_text": "...", "spoken_vi_text": "...", "predicted_score": 90},\n'
+                '    {"style_label": "Tình huống kịch tính", "hook_text": "...", "spoken_vi_text": "...", "predicted_score": 89}\n'
+                "  ]\n"
+                "}"
+            )
+            try:
+                parsed = await self._call_gemini_json(prompt)
+                raw_vars = parsed.get("variants") or []
+                vars_out: List[HookVariantDTO] = []
+                for v in raw_vars[:3]:
+                    ht = str(v.get("hook_text") or "").strip()
+                    if not ht:
+                        continue
+                    sp = str(v.get("spoken_vi_text") or self._expand_slang_vi(ht) or ht).strip()
+                    vars_out.append(
+                        HookVariantDTO(
+                            style_label=str(v.get("style_label") or "Biến thể Viral")[:70],
+                            hook_text=ht[:1000],
+                            spoken_vi_text=sp[:1000],
+                            predicted_score=max(65, min(99, int(v.get("predicted_score") or 90))),
+                        )
+                    )
+                if vars_out:
+                    return HookScoreResultDTO(
+                        overall_score=max(10, min(100, int(parsed.get("overall_score") or 75))),
+                        curiosity_score=max(10, min(100, int(parsed.get("curiosity_score") or 75))),
+                        pacing_3s_score=max(10, min(100, int(parsed.get("pacing_3s_score") or 75))),
+                        emotion_score=max(10, min(100, int(parsed.get("emotion_score") or 75))),
+                        estimated_intro_sec=est_sec,
+                        verdict_label=str(parsed.get("verdict_label") or "Đánh giá câu mở đầu")[:110],
+                        weakness_note=str(parsed.get("weakness_note") or "")[:550],
+                        variants=vars_out,
+                        used_api_key=True,
+                    )
+            except Exception:
+                if not self.allow_offline_fallback:
+                    raise
+
+        # Deterministic Vietnamese Retention Heuristic Analyzer + 3 Smart Hook Rewriters
+        low = hook.lower()
+        has_question = "?" in hook or any(
+            kw in low for kw in ("ai từng", "sao lại", "có ai", "tại sao", "bí mật", "khoảnh khắc", "sai lầm")
+        )
+        has_number = bool(re.search(r"\d+", hook))
+        has_slow_greeting = low.startswith(("xin chào", "chào mọi người", "hello mọi người", "hôm nay mình"))
+        pacing_sc = 92 if 7 <= len(words) <= 18 else (74 if len(words) <= 25 else 56)
+        if has_slow_greeting:
+            pacing_sc = max(40, pacing_sc - 22)
+        curiosity_sc = 88 if (has_question and has_number) else (80 if (has_question or has_number) else 62)
+        emotion_sc = (
+            86
+            if any(
+                k in low
+                for k in ("khóc", "rung động", "hối hận", "bí mật", "crush", "sốc", "nhớ mãi", "suýt", "đắt giá")
+            )
+            else 68
+        )
+        overall = int(round(0.40 * curiosity_sc + 0.32 * pacing_sc + 0.28 * emotion_sc))
+
+        issues: List[str] = []
+        if has_slow_greeting:
+            issues.append("Mở đầu bằng lời chào làm mất 1.5 giây vàng khiến người xem dễ lướt qua.")
+        if len(words) > 22:
+            issues.append(f"Câu mở đầu dài {len(words)} từ (~{est_sec}s), nên rút gọn xuống dưới 18 từ để bắt nhịp nhanh hơn.")
+        if not has_question and not has_number:
+            issues.append("Chưa có câu hỏi gợi tò mò hoặc con số cụ thể để neo mắt người xem trong 3 giây đầu.")
+        if not issues:
+            issues.append("Nhịp câu đã khá gọn; có thể đẩy mạnh độ tương phản cảm xúc để tăng tỷ lệ xem hết video.")
+
+        verdict = (
+            "🔥 Hook Giữ Chân Tốt — Sẵn sàng lên xu hướng"
+            if overall >= 82
+            else ("⚡ Khá Ổn — Tối ưu nhẹ để bùng nổ hơn" if overall >= 68 else "⚠️ Dễ Bị Lướt Qua — Nên đổi câu mở đầu")
+        )
+        core_topic = re.sub(r"^(?:topic\s*[:\-]\s*|xin chào[^,.!?]*[,.!?\s]*)", "", hook, flags=re.IGNORECASE).strip()
+        core_short = core_topic.rstrip(".!?…")[:95]
+
+        raw_variants = [
+            (
+                "Gây tò mò bỏ lửng (Curiosity)",
+                f"90% mọi người đều từng trải qua chuyện này mà không dám thú nhận: {core_short}?",
+                92,
+            ),
+            (
+                "Chạm thẳng cảm xúc (Empathy)",
+                f"Chỉ một chi tiết nhỏ thôi nhưng đủ khiến người ta nhớ suốt nhiều năm: {core_short}...",
+                90,
+            ),
+            (
+                "Hỏi xoáy kích thích bình luận",
+                f"Thật lòng đi, nếu rơi vào đúng cảnh '{core_short}' thì bạn sẽ chọn im lặng hay nói thẳng?",
+                89,
+            ),
+        ]
+        variants = [
+            HookVariantDTO(
+                style_label=lbl,
+                hook_text=ht,
+                spoken_vi_text=self._expand_slang_vi(ht) or ht,
+                predicted_score=sc,
+            )
+            for lbl, ht, sc in raw_variants
+        ]
+        return HookScoreResultDTO(
+            overall_score=overall,
+            curiosity_score=curiosity_sc,
+            pacing_3s_score=pacing_sc,
+            emotion_score=emotion_sc,
+            estimated_intro_sec=est_sec,
+            verdict_label=verdict,
+            weakness_note=" ".join(issues),
+            variants=variants,
+            used_api_key=False,
         )
 
 

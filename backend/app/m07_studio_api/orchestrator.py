@@ -34,6 +34,7 @@ from app.m00_core_contracts import (
     SQLiteRepository,
     StudioBaseError,
     StudioSettings,
+    ThreadsCardTheme,
     TopicPromptDTO,
     VisualMode,
     VoiceProfileDTO,
@@ -546,10 +547,19 @@ class PipelineOrchestrator:
                 orig_stereo = (
                     media.original_stereo_wav_path if synced_audio_cfg.keep_original_audio else None
                 )
+                is_chat_theme = layout_config.threads_card_theme in (
+                    ThreadsCardTheme.CHAT_MESSENGER_ZALO,
+                    ThreadsCardTheme.CHAT_IMESSAGE_LIGHT,
+                )
+                threads_audio_cfg = (
+                    synced_audio_cfg.model_copy(update={"chat_sfx_mode": True})
+                    if is_chat_theme
+                    else synced_audio_cfg
+                )
                 audio_sub = await self.audio_mixer.process(
                     clip=clip,
                     profile=voice_profile,
-                    audio_config=synced_audio_cfg,
+                    audio_config=threads_audio_cfg,
                     out_dir=project_work_dir,
                     orig_stereo_wav=orig_stereo,
                     on_progress=cb,

@@ -23,11 +23,13 @@ class ThreadFilterVibe(str, Enum):
 
 
 class ThreadsCardTheme(str, Enum):
-    """Visual overlay card styles for floating Threads / Reddit posts & comments."""
+    """Visual overlay card styles for floating Threads / Reddit posts & Chat Story bubbles."""
 
     DARK_THREADS = "DARK_THREADS"
     LIGHT_THREADS = "LIGHT_THREADS"
     FROSTED_GLASS = "FROSTED_GLASS"
+    CHAT_MESSENGER_ZALO = "CHAT_MESSENGER_ZALO"
+    CHAT_IMESSAGE_LIGHT = "CHAT_IMESSAGE_LIGHT"
 
 
 class ThreadsEyeGuideMode(str, Enum):

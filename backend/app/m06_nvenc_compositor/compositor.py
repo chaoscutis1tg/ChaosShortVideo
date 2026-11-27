@@ -1203,7 +1203,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 or it_c.card_group_id is None
                 or it_c.card_group_id != card_items[idx_c + 1].card_group_id
             )
-            m_f = 18 if (f_first and f_last) else 10
+            m_f = 8 if getattr(it_c, "is_typing_indicator", False) else (18 if (f_first and f_last) else 10)
             item_frame_counts.append(max(m_f, int(round((it_c.duration_ms / 1000.0) * TARGET_FPS))))
         outro_f_total = (
             max(15, int(round((outro_extra_ms / 1000.0) * TARGET_FPS)))

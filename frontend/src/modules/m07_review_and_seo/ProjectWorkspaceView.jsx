@@ -1350,15 +1350,26 @@ export default function ProjectWorkspaceView({
 
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                   {completedClips.length > 0 && (
-                    <a
-                      href={studioApi.getProjectZipUrl(detail.id)}
-                      download={`ChaosShortVideo_${detail.id}.zip`}
-                      className="btn btn-primary btn-sm"
-                      style={{ textDecoration: 'none' }}
-                      title="Tải trọn gói 1 tệp .ZIP gồm toàn bộ Video MP4, Ảnh bìa & Nội dung SEO"
-                    >
-                      <Archive size={14} /> Tải trọn gói (.ZIP)
-                    </a>
+                    <>
+                      <a
+                        href={studioApi.getProjectZipUrl(detail.id)}
+                        download={`ChaosShortVideo_${detail.id}.zip`}
+                        className="btn btn-primary btn-sm"
+                        style={{ textDecoration: 'none' }}
+                        title="Tải trọn gói 1 tệp .ZIP gồm toàn bộ Video MP4, Ảnh bìa & Nội dung SEO"
+                      >
+                        <Archive size={14} /> Tải trọn gói (.ZIP)
+                      </a>
+                      <a
+                        href={studioApi.getProjectCapcutPackUrl(detail.id)}
+                        download={`CapCut_StemPack_${detail.id}.zip`}
+                        className="btn btn-secondary btn-sm"
+                        style={{ textDecoration: 'none', borderColor: 'var(--brand-border)' }}
+                        title="Tải Gói Tách Lớp cho CapCut PC (Voice sạch không nhạc nền .wav + Phụ đề .srt + Thẻ PNG trong suốt)"
+                      >
+                        <Columns size={14} /> Gói Tách Lớp CapCut (.ZIP)
+                      </a>
+                    </>
                   )}
 
                   {canQuickEdit && detail.state !== 'AWAITING_REVIEW' && (

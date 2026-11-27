@@ -143,6 +143,21 @@ export const studioApi = {
       body: JSON.stringify(payload),
     }),
 
+  fetchViralRadar: (niche = 'ALL_HOT', limit = 8) =>
+    requestJSON(`/api/viral-radar?niche=${encodeURIComponent(niche)}&limit=${Number(limit) || 8}`),
+
+  generateChatStory: (payload) =>
+    requestJSON('/api/threads/generate-chat-story', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  scoreOpeningHook: (payload) =>
+    requestJSON('/api/brain/score-hook', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   listBgVideos: () => requestJSON('/api/threads/bg-videos'),
 
   async uploadBgVideo(file, title = '', category_tag = 'Chill / Đời sống') {
@@ -218,6 +233,7 @@ export const studioApi = {
     }),
 
   getProjectZipUrl: (projectId) => `/api/projects/${projectId}/download-zip`,
+  getProjectCapcutPackUrl: (projectId) => `/api/projects/${projectId}/download-capcut-pack`,
 
   listProductTemplates: () => requestJSON('/api/product/templates'),
 

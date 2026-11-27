@@ -329,6 +329,7 @@ class SceneVisualItemDTO(BaseContractDTO):
     show_soundwave: bool = False
     soundwave_audio_path: Optional[Path] = None
     card_group_id: Optional[str] = None
+    is_typing_indicator: bool = False
 
 
 class VisualAssetListDTO(BaseContractDTO):
@@ -385,6 +386,7 @@ class AudioSubConfigDTO(BaseContractDTO):
     voice_speed_global: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_global: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
     enable_card_pop_sfx: bool = False
+    chat_sfx_mode: bool = False
     enable_smart_sfx: bool = True
     smart_sfx_volume: float = Field(default=0.22, ge=0.0, le=1.0)
     smart_keyword_highlight: bool = True
@@ -396,7 +398,9 @@ class MasterAudioAndSubDTO(BaseContractDTO):
 
     clip_id: str = Field(min_length=1)
     master_audio_wav_path: Path
+    clean_narration_wav_path: Optional[Path] = None
     ass_subtitle_path: Optional[Path] = None
+    srt_subtitle_path: Optional[Path] = None
     total_audio_duration_ms: int = Field(gt=0)
     line_spans_ms: List[tuple[int, int]] = Field(default_factory=list)
 
@@ -741,6 +745,65 @@ class ProjectPublishStatusDTO(BaseContractDTO):
     published_channels: List[str] = Field(default_factory=list)
     published_note: str = Field(default="", max_length=500)
     updated_at: str = ""
+
+
+class ViralRadarItemDTO(BaseContractDTO):
+    """Trending discussion post or curated viral topic discovered by the 1-Click Viral Radar."""
+
+    item_id: str = Field(min_length=1)
+    source_platform: str = Field(default="reddit", max_length=32)
+    community_label: str = Field(default="r/AskReddit", max_length=80)
+    title_vi: str = Field(min_length=2, max_length=300)
+    original_title: str = Field(default="", max_length=300)
+    preview_snippet: str = Field(default="", max_length=800)
+    post_url: str = Field(default="", max_length=1000)
+    upvotes: int = Field(default=0, ge=0)
+    comments_count: int = Field(default=0, ge=0)
+    niche_tag: str = Field(default="Tâm sự / Đời sống", max_length=80)
+
+
+class ChatStoryGenerateRequestDTO(BaseContractDTO):
+    """Input contract for generating a 2-person Messenger/Zalo/iMessage chat story script."""
+
+    story_idea: str = Field(min_length=3, max_length=2000)
+    sender_a_name: str = Field(default="Mình", max_length=60)
+    sender_b_name: str = Field(default="Crush", max_length=60)
+    message_count: int = Field(default=8, ge=4, le=18)
+    story_vibe: str = Field(default="CRUSH_ROMANTIC", max_length=40)
+    male_voice_id: str = "threads_nam_chinh"
+    female_voice_id: str = "threads_nu_chinh"
+    sender_a_is_female: bool = True
+
+
+class HookVariantDTO(BaseContractDTO):
+    """Alternative high-retention 3-second opening hook suggested by AI."""
+
+    style_label: str = Field(min_length=2, max_length=80)
+    hook_text: str = Field(min_length=2, max_length=1200)
+    spoken_vi_text: str = Field(default="", max_length=1200)
+    predicted_score: int = Field(default=88, ge=0, le=100)
+
+
+class HookScoreRequestDTO(BaseContractDTO):
+    """Input contract for 3-second retention hook scoring & A/B variant generation."""
+
+    hook_text: str = Field(min_length=2, max_length=1500)
+    body_context: str = Field(default="", max_length=4000)
+    mode: ProjectMode = ProjectMode.THREADS_TOPIC
+
+
+class HookScoreResultDTO(BaseContractDTO):
+    """Output contract of AI 3-second Hook Retention Scorer & A/B Optimizer."""
+
+    overall_score: int = Field(ge=0, le=100)
+    curiosity_score: int = Field(ge=0, le=100)
+    pacing_3s_score: int = Field(ge=0, le=100)
+    emotion_score: int = Field(ge=0, le=100)
+    estimated_intro_sec: float = Field(ge=0.2)
+    verdict_label: str = Field(min_length=2, max_length=120)
+    weakness_note: str = Field(default="", max_length=600)
+    variants: List[HookVariantDTO] = Field(default_factory=list)
+    used_api_key: bool = False
 
 
 

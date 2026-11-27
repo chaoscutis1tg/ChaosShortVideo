@@ -35,6 +35,7 @@ from app.m00_core_contracts import (
     AudioSubConfigDTO,
     BrandKitDTO,
     BriefExpandRequestDTO,
+    ChatStoryGenerateRequestDTO,
     ClipSpecDTO,
     CopywritingTone,
     CoverTemplateStyle,
@@ -42,6 +43,7 @@ from app.m00_core_contracts import (
     CutPlanDTO,
     GPUResourceManager,
     HardsubMaskMode,
+    HookScoreRequestDTO,
     IngestRequestDTO,
     JobState,
     LayoutAndAntiCopyConfigDTO,
@@ -1705,6 +1707,34 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/viral-radar")
+    async def fetch_viral_radar_posts(
+        niche: str = "ALL_HOT", limit: int = 8
+    ) -> List[Dict[str, Any]]:
+        """Scan hot community discussions + curated Vietnamese viral seeds, auto-translated to Vietnamese."""
+        safe_lim = max(2, min(16, int(limit)))
+        raw_items = await ThreadsScraperService.fetch_viral_radar(niche=niche, limit=safe_lim)
+        vi_items = await orchestrator.brain.translate_radar_items(raw_items)
+        return [it.model_dump() for it in vi_items]
+
+    @app.post("/api/threads/generate-chat-story")
+    async def generate_chat_story_script(req: ChatStoryGenerateRequestDTO) -> Dict[str, Any]:
+        """Generate a 2-person Messenger/Zalo/iMessage chat story bundle ready for preview & render."""
+        try:
+            bundle = await orchestrator.brain.generate_chat_story_bundle(req)
+            return bundle.model_dump()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/brain/score-hook")
+    async def score_and_optimize_opening_hook(req: HookScoreRequestDTO) -> Dict[str, Any]:
+        """Score 3-second retention of an opening Hook/OP and suggest 3 stronger A/B variants."""
+        try:
+            res = await orchestrator.brain.score_and_optimize_hook(req)
+            return res.model_dump()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/threads/bg-videos")
     async def list_saved_background_videos() -> List[Dict[str, Any]]:
         """List reusable background videos stored in the Studio Background Library."""
@@ -2926,6 +2956,80 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             path=str(zip_path),
             media_type="application/zip",
             filename=safe_dl,
+        )
+
+    @app.get("/api/projects/{project_id}/download-capcut-pack")
+    async def download_project_capcut_stem_pack(project_id: str) -> FileResponse:
+        """Export separated multi-layer stems (`Voice_Sach.wav`, `.srt`, transparent RGBA `.png` cards & MP4) for CapCut PC."""
+        proj = repo.get_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dự án.")
+
+        proj_work = settings.work_dir / project_id
+        files_to_pack: List[tuple[Path, str]] = []
+
+        for clip in proj.get("clips", []):
+            p_num = int(clip.get("part_number") or 1)
+            cid = str(clip.get("clip_id") or f"{project_id}_part_{p_num:02d}")
+            part_prefix = f"Part_{p_num:02d}"
+            clip_work = proj_work / cid
+
+            clean_v = clip_work / "audio" / "narration_clean.wav"
+            master_v = clip_work / "audio" / "master_audio.wav"
+            srt_f = clip_work / "audio" / "subs.srt"
+            ass_f = clip_work / "audio" / "subs.ass"
+            if clean_v.exists():
+                files_to_pack.append((clean_v, f"{part_prefix}/01_Voice_Sach_KhongNhacNen.wav"))
+            if master_v.exists():
+                files_to_pack.append((master_v, f"{part_prefix}/02_Master_Audio_DaTronNhac.wav"))
+            if srt_f.exists():
+                files_to_pack.append((srt_f, f"{part_prefix}/03_Phu_De_Chuan_CapCut.srt"))
+            if ass_f.exists():
+                files_to_pack.append((ass_f, f"{part_prefix}/04_Phu_De_Karaoke_ASS.ass"))
+
+            cards_dir = clip_work / "threads_cards"
+            if cards_dir.exists():
+                for png_p in sorted(cards_dir.glob("*.png")):
+                    files_to_pack.append((png_p, f"{part_prefix}/The_Trong_Suot_RGBA/{png_p.name}"))
+
+            vis_dir = clip_work / "visuals"
+            if vis_dir.exists():
+                for v_p in sorted(vis_dir.iterdir()):
+                    if v_p.is_file() and v_p.suffix.lower() in (".png", ".jpg", ".jpeg", ".mp4"):
+                        files_to_pack.append((v_p, f"{part_prefix}/Canh_Hinh_Anh/{v_p.name}"))
+
+            mp4_s = clip.get("output_mp4_path") or ""
+            if mp4_s and Path(mp4_s).exists():
+                files_to_pack.append((Path(mp4_s), f"{part_prefix}/Video_Ban_Goc.mp4"))
+            cov_s = clip.get("cover_jpg_path") or ""
+            if cov_s and Path(cov_s).exists():
+                files_to_pack.append((Path(cov_s), f"{part_prefix}/Anh_Bia.jpg"))
+
+        if not files_to_pack:
+            raise HTTPException(
+                status_code=400,
+                detail="Dự án chưa sinh tài nguyên âm thanh/hình ảnh tách lớp (hãy chạy xuất video trước).",
+            )
+
+        zips_dir = settings.work_dir / "_zips"
+        zips_dir.mkdir(parents=True, exist_ok=True)
+        zip_path = zips_dir / f"{project_id}_capcut_pack.zip"
+        guide_txt = (
+            "=== HƯỚNG DẪN ĐƯA GÓI TÁCH LỚP VÀO CAPCUT PC TRONG 15 GIÂY ===\n\n"
+            "1. Mở CapCut PC -> Tạo dự án tỉ lệ 9:16 (1080x1920).\n"
+            "2. Kéo tệp `01_Voice_Sach_KhongNhacNen.wav` vào tầng Âm thanh (giọng đọc sạch 100% chưa dính nhạc nền).\n"
+            "3. Vào mục Văn bản (Text) -> Phụ đề nội bộ (Local Captions) -> Chọn `03_Phu_De_Chuan_CapCut.srt` để tự nhảy khớp mili-giây.\n"
+            "4. Kéo thư mục `The_Trong_Suot_RGBA/*.png` (hoặc `Canh_Hinh_Anh`) đặt lên tầng Overlay phía trên video nền tùy ý!\n"
+        )
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("Huong_Dan_Import_CapCut_PC.txt", guide_txt.encode("utf-8"))
+            for src_p, arc_name in files_to_pack:
+                zf.write(src_p, arcname=arc_name)
+
+        return FileResponse(
+            path=str(zip_path),
+            media_type="application/zip",
+            filename=f"CapCut_StemPack_{project_id}.zip",
         )
 
     @app.websocket("/ws/progress/{project_id}")

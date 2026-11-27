@@ -134,6 +134,34 @@ const CARD_THEME_CHOICES = [
     subtitle: 'Hiệu ứng kính mờ hiện đại nhìn xuyên chuyển động video nền',
     icon: Layers,
   },
+  {
+    value: 'CHAT_MESSENGER_ZALO',
+    title: 'Chat Messenger / Zalo Tối',
+    subtitle: 'Khung điện thoại chat 2 chiều tự cuộn mượt, có bong bóng ••• đang nhập & tiếng Ting',
+    icon: MessageSquareText,
+  },
+  {
+    value: 'CHAT_IMESSAGE_LIGHT',
+    title: 'Chat iMessage Sáng Tinh Tế',
+    subtitle: 'Phong cách tin nhắn iPhone sáng thanh lịch cho chuyện Crush, tâm sự & tư vấn',
+    icon: MessageSquarePlus,
+  },
+];
+
+const RADAR_NICHES = [
+  { id: 'ALL_HOT', label: '🔥 Đang Hot Nhất' },
+  { id: 'CRUSH_LOVE', label: '💕 Tình cảm & Crush' },
+  { id: 'CONFESSION_SECRET', label: '🤫 Bí mật thầm kín' },
+  { id: 'VN_COMMUNITY', label: '🇻🇳 Cộng đồng Việt' },
+  { id: 'WORK_CAREER', label: '💼 Chuyện công sở' },
+  { id: 'MUSIC_HOBBY', label: '🎸 Nhạc cụ & Đam mê' },
+];
+
+const CHAT_VIBE_OPTIONS = [
+  { id: 'CRUSH_ROMANTIC', label: '💕 Thả thính Crush / Rung động' },
+  { id: 'DRAMA_PLOT_TWIST', label: '😱 Kịch tính & Lật kèo cuối bài' },
+  { id: 'FUNNY_BANTER', label: '🤣 Trêu nhau lầy lội hài hước' },
+  { id: 'SALES_CONSULT', label: '🛍️ Khách hỏi — Shop tư vấn chốt đơn' },
 ];
 
 const EYE_GUIDE_CHOICES = [
@@ -239,6 +267,21 @@ export default function ThreadsStudioForm({
   const [extracting, setExtracting] = useState(false);
   const [bundle, setBundle] = useState(savedDraft.bundle || null);
   const [batchMode, setBatchMode] = useState(false);
+  const [chatStoryMode, setChatStoryMode] = useState(false);
+  const [chatIdea, setChatIdea] = useState('');
+  const [chatSenderA, setChatSenderA] = useState('Mình');
+  const [chatSenderB, setChatSenderB] = useState('Crush');
+  const [chatMsgCount, setChatMsgCount] = useState(8);
+  const [chatVibe, setChatVibe] = useState('CRUSH_ROMANTIC');
+  const [generatingChat, setGeneratingChat] = useState(false);
+
+  // Viral Radar & 3s Hook Scorer states
+  const [radarOpen, setRadarOpen] = useState(false);
+  const [radarNiche, setRadarNiche] = useState('ALL_HOT');
+  const [radarItems, setRadarItems] = useState([]);
+  const [loadingRadar, setLoadingRadar] = useState(false);
+  const [hookScoreRes, setHookScoreRes] = useState(null);
+  const [scoringHook, setScoringHook] = useState(false);
   const [batchUrlsText, setBatchUrlsText] = useState('');
   const [rotateBgLibrary, setRotateBgLibrary] = useState(true);
   const [rotateLofiBgm, setRotateLofiBgm] = useState(true);
@@ -403,6 +446,85 @@ export default function ThreadsStudioForm({
   const updateThreadsLayout = (patch) => {
     if (setLayoutConfig) {
       setLayoutConfig((prev) => ({ ...prev, ...patch }));
+    }
+  };
+
+  const handleLoadViralRadar = async (nextNiche = radarNiche) => {
+    setRadarNiche(nextNiche);
+    setRadarOpen(true);
+    setLoadingRadar(true);
+    try {
+      const items = await studioApi.fetchViralRadar(nextNiche, 8);
+      setRadarItems(items || []);
+    } catch (err) {
+      notify(`Lỗi quét Radar chủ đề: ${err.message}`);
+    } finally {
+      setLoadingRadar(false);
+    }
+  };
+
+  const handleGenerateChatStory = async () => {
+    const cleanIdea = chatIdea.trim();
+    if (cleanIdea.length < 4) {
+      setErrors({ chatIdea: 'Vui lòng nhập tình huống hoặc chủ đề cuộc trò chuyện (ít nhất 4 ký tự).' });
+      notify('Vui lòng nhập tình huống tin nhắn Chat trước khi gọi AI.');
+      return;
+    }
+    clearError('chatIdea');
+    setGeneratingChat(true);
+    try {
+      const res = await studioApi.generateChatStory({
+        story_idea: cleanIdea,
+        sender_a_name: chatSenderA.trim() || 'Mình',
+        sender_b_name: chatSenderB.trim() || 'Crush',
+        message_count: Number(chatMsgCount) || 8,
+        story_vibe: chatVibe,
+        male_voice_id: maleVoiceId,
+        female_voice_id: femaleVoiceId,
+        sender_a_is_female: opSpeakerGender !== 'MALE',
+      });
+      setBundle(res);
+      setHookScoreRes(null);
+      if (
+        layoutConfig.threads_card_theme !== 'CHAT_MESSENGER_ZALO' &&
+        layoutConfig.threads_card_theme !== 'CHAT_IMESSAGE_LIGHT'
+      ) {
+        updateThreadsLayout({ threads_card_theme: 'CHAT_MESSENGER_ZALO' });
+      }
+      notify(
+        `Đã dựng kịch bản ${(res.comments?.length || 0) + 1} tin nhắn Chat & bật sẵn giao diện Bong Bóng Chat!`
+      );
+    } catch (err) {
+      notify(`Lỗi viết kịch bản Chat: ${err.message}`);
+    } finally {
+      setGeneratingChat(false);
+    }
+  };
+
+  const handleScoreOpeningHook = async () => {
+    if (!bundle) return;
+    const hookTxt = (bundle.op_display_text || bundle.topic_title || '').trim();
+    if (hookTxt.length < 3) {
+      notify('Vui lòng nhập nội dung Thẻ mở đầu trước khi chấm điểm Hook.');
+      return;
+    }
+    setScoringHook(true);
+    try {
+      const ctx = (bundle.comments || [])
+        .slice(0, 3)
+        .map((c) => c.display_text)
+        .join(' | ');
+      const res = await studioApi.scoreOpeningHook({
+        hook_text: hookTxt,
+        body_context: ctx,
+        mode: 'THREADS_TOPIC',
+      });
+      setHookScoreRes(res);
+      notify(`Điểm giữ chân 3 giây đầu: ${res.overall_score}/100 — Đã gợi ý 3 biến thể A/B!`);
+    } catch (err) {
+      notify(`Lỗi chấm điểm Hook: ${err.message}`);
+    } finally {
+      setScoringHook(false);
     }
   };
 
@@ -1015,22 +1137,165 @@ export default function ThreadsStudioForm({
           label="Thuộc Dự Án Cha (Gom theo Series Chuyện Threads / Reddit / Tâm sự)"
         />
 
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
           <button
             type="button"
-            className={`btn btn-sm ${!batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setBatchMode(false)}
+            className={`btn btn-sm ${!batchMode && !chatStoryMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              setBatchMode(false);
+              setChatStoryMode(false);
+            }}
           >
-            Làm 1 bài Threads / Reddit (Xem &amp; duyệt thẻ trước)
+            Làm 1 bài Threads / Reddit
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${chatStoryMode && !batchMode ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              setBatchMode(false);
+              setChatStoryMode(true);
+              if (
+                layoutConfig.threads_card_theme !== 'CHAT_MESSENGER_ZALO' &&
+                layoutConfig.threads_card_theme !== 'CHAT_IMESSAGE_LIGHT'
+              ) {
+                updateThreadsLayout({ threads_card_theme: 'CHAT_MESSENGER_ZALO' });
+              }
+            }}
+          >
+            💬 Video Tin Nhắn Chat (Messenger / Zalo / iMessage)
           </button>
           <button
             type="button"
             className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setBatchMode(true)}
+            onClick={() => {
+              setBatchMode(true);
+              setChatStoryMode(false);
+            }}
           >
-            Chạy hàng loạt nhiều link Threads / Reddit (Batch Queue)
+            Chạy hàng loạt (Batch Queue)
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ marginLeft: 'auto', borderColor: 'var(--brand-border)' }}
+            onClick={() => {
+              if (radarOpen) setRadarOpen(false);
+              else handleLoadViralRadar(radarNiche);
+            }}
+          >
+            <Flame size={13} /> {radarOpen ? 'Đóng Radar Viral' : 'Radar Săn Bài Đang Viral'}
           </button>
         </div>
+
+        {/* 1-CLICK VIRAL RADAR DRAWER */}
+        {radarOpen && (
+          <div
+            className="surface-box fade-slide-in"
+            style={{
+              marginBottom: 14,
+              borderColor: 'rgba(245, 158, 11, 0.55)',
+              background: 'rgba(245, 158, 11, 0.05)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Flame size={15} style={{ color: '#f59e0b' }} />
+                Radar Săn Bài &amp; Chủ Đề Đang Nhiều Bình Luận Nhất (Tự dịch sang tiếng Việt)
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {RADAR_NICHES.map((nc) => (
+                  <button
+                    key={nc.id}
+                    type="button"
+                    className={`btn btn-sm ${radarNiche === nc.id ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: 11.5, padding: '3px 8px' }}
+                    disabled={loadingRadar}
+                    onClick={() => handleLoadViralRadar(nc.id)}
+                  >
+                    {nc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingRadar ? (
+              <div className="text-sub" style={{ padding: '12px 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Loader2 size={15} className="spin" /> Đang quét các bài thảo luận sôi nổi &amp; dịch tiêu đề tiếng Việt...
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 7, maxHeight: 260, overflowY: 'auto', paddingRight: 4 }}>
+                {radarItems.map((it) => (
+                  <div
+                    key={it.item_id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--border-subtle)',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                        <span className="badge badge-info" style={{ fontSize: 10.5 }}>{it.community_label}</span>
+                        <span className="text-muted" style={{ fontSize: 11 }}>
+                          ♥ {it.upvotes} • 💬 {it.comments_count} bình luận
+                        </span>
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: 12.8 }}>{it.title_vi}</div>
+                      {it.preview_snippet && (
+                        <div className="text-sub" style={{ fontSize: 11.6, marginTop: 2 }}>
+                          {it.preview_snippet.slice(0, 125)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setBatchMode(false);
+                          if (it.post_url) {
+                            setChatStoryMode(false);
+                            setPostUrl(it.post_url);
+                            setRawPastedText('');
+                            setRadarOpen(false);
+                            notify('Đã điền link bài Viral — bấm "Hút bài viết & Lọc bình luận" bên dưới để lấy trọn bộ!');
+                          } else {
+                            setChatStoryMode(true);
+                            setChatIdea(it.title_vi);
+                            setRadarOpen(false);
+                            notify('Đã nạp chủ đề hot vào trình viết Hội Thoại Chat!');
+                          }
+                        }}
+                      >
+                        Dùng ngay
+                      </button>
+                      {it.post_url && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setBatchUrlsText((prev) =>
+                              prev.includes(it.post_url) ? prev : `${prev ? `${prev}\n` : ''}${it.post_url}`
+                            );
+                            notify('Đã thêm link vào danh sách Batch Queue!');
+                          }}
+                        >
+                          + Batch
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {batchMode ? (
           <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
@@ -1066,6 +1331,98 @@ export default function ThreadsStudioForm({
               >
                 {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
                 {submitting ? 'Đang đưa lô vào hàng đợi...' : 'Xếp hàng hút bài, dịch & dựng toàn bộ lô'}
+              </button>
+            </div>
+          </div>
+        ) : chatStoryMode ? (
+          <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13.4, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MessageSquareText size={15} style={{ color: 'var(--brand-text)' }} />
+              Tạo Kịch Bản Hội Thoại Tin Nhắn Chat 2 Chiều (Messenger / Zalo / iMessage)
+            </div>
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label">
+                Ý tưởng tình huống cuộc trò chuyện (Chỉ cần gõ 1 dòng ngắn gọn)
+              </label>
+              <input
+                className={`input ${errors.chatIdea ? 'input-error' : ''}`}
+                placeholder="VD: Nhắn tin thử lòng Crush lúc 11h đêm và câu trả lời khiến tim đập loạn nhịp..."
+                value={chatIdea}
+                onChange={(e) => {
+                  setChatIdea(e.target.value);
+                  clearError('chatIdea');
+                }}
+              />
+              <FieldError message={errors.chatIdea} />
+            </div>
+
+            <div className="form-grid" style={{ marginBottom: 10 }}>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>
+                  Tên người nhắn bên Phải (Bong bóng Xanh)
+                </label>
+                <input
+                  className="input"
+                  value={chatSenderA}
+                  onChange={(e) => setChatSenderA(e.target.value)}
+                  placeholder="VD: Mình / Chủ shop"
+                />
+              </div>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>
+                  Tên người đối thoại bên Trái (Có Avatar &amp; Đang hoạt động)
+                </label>
+                <input
+                  className="input"
+                  value={chatSenderB}
+                  onChange={(e) => setChatSenderB(e.target.value)}
+                  placeholder="VD: Crush 💕 / Khách hàng"
+                />
+              </div>
+            </div>
+
+            <div className="form-grid" style={{ marginBottom: 10 }}>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>Tông màu câu chuyện Chat</label>
+                <select
+                  className="select"
+                  value={chatVibe}
+                  onChange={(e) => setChatVibe(e.target.value)}
+                >
+                  {CHAT_VIBE_OPTIONS.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>
+                  Số lượng tin nhắn qua lại: <strong>{chatMsgCount} tin nhắn</strong>
+                </label>
+                <input
+                  type="range"
+                  min="4"
+                  max="16"
+                  step="1"
+                  style={{ width: '100%', marginTop: 6 }}
+                  value={chatMsgCount}
+                  onChange={(e) => setChatMsgCount(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="text-sub" style={{ fontSize: 12 }}>
+                Tự động chèn hiệu ứng <strong>• • • đang nhập</strong> &amp; tiếng <strong>Ting</strong> gửi/nhận tin nhắn 2 chiều!
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 40, fontWeight: 700 }}
+                disabled={generatingChat || submitting}
+                onClick={handleGenerateChatStory}
+              >
+                {generatingChat ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}{' '}
+                {generatingChat ? 'Đang viết hội thoại Chat...' : `AI Viết ${chatMsgCount} Tin Nhắn Chat`}
               </button>
             </div>
           </div>
@@ -1626,9 +1983,22 @@ export default function ThreadsStudioForm({
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 8 }}>
-                  <label className="form-label" style={{ fontSize: 12 }}>
-                    Tiêu đề SEO của dự án video
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <label className="form-label" style={{ fontSize: 12, marginBottom: 0 }}>
+                      Tiêu đề SEO của dự án video
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: 11.6, padding: '3px 9px', borderColor: 'var(--brand-border)' }}
+                      disabled={scoringHook}
+                      onClick={handleScoreOpeningHook}
+                      title="AI chấm điểm tỷ lệ giữ chân 3 giây đầu của Thẻ Mở Đầu & gợi ý 3 câu Hook A/B bắt tai hơn"
+                    >
+                      {scoringHook ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{' '}
+                      {scoringHook ? 'Đang chấm điểm Hook 3s...' : '🎯 Chấm điểm Hook 3 giây & Gợi ý A/B'}
+                    </button>
+                  </div>
                   <input
                     className={`input ${errors.topicTitle ? 'input-error' : ''}`}
                     style={{ minHeight: 35 }}
@@ -1640,6 +2010,69 @@ export default function ThreadsStudioForm({
                   />
                   <FieldError message={errors.topicTitle} />
                 </div>
+
+                {hookScoreRes && (
+                  <div
+                    className="surface-box fade-slide-in"
+                    style={{
+                      marginBottom: 10,
+                      padding: '10px 12px',
+                      borderColor: 'rgba(14, 165, 233, 0.5)',
+                      background: 'rgba(14, 165, 233, 0.07)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 12.8 }}>
+                        Điểm Giữ Chân 3 Giây Đầu: <span style={{ color: '#38bdf8' }}>{hookScoreRes.overall_score}/100</span> — {hookScoreRes.verdict_label}
+                      </div>
+                      <span className="badge badge-info" style={{ fontSize: 11 }}>
+                        Đọc mở đầu ~{hookScoreRes.estimated_intro_sec}s • Tò mò {hookScoreRes.curiosity_score} • Cảm xúc {hookScoreRes.emotion_score}
+                      </span>
+                    </div>
+                    {hookScoreRes.weakness_note && (
+                      <div className="text-sub" style={{ fontSize: 12, marginBottom: 8 }}>
+                        💡 {hookScoreRes.weakness_note}
+                      </div>
+                    )}
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {(hookScoreRes.variants || []).map((v, vIdx) => (
+                        <div
+                          key={vIdx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '6px 9px',
+                            borderRadius: 7,
+                            background: 'var(--bg-panel)',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <div style={{ fontSize: 12.2, flex: 1 }}>
+                            <strong style={{ color: 'var(--brand-text)' }}>[{v.style_label} • {v.predicted_score}đ]</strong>{' '}
+                            {v.hook_text}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            style={{ fontSize: 11.4, whiteSpace: 'nowrap' }}
+                            onClick={() => {
+                              setBundle((prev) => ({
+                                ...prev,
+                                op_display_text: v.hook_text,
+                                op_spoken_vi_text: v.spoken_vi_text || v.hook_text,
+                              }));
+                              notify(`Đã áp dụng phương án Hook "${v.style_label}" vào Thẻ Mở Đầu!`);
+                            }}
+                          >
+                            Áp dụng Hook này
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="form-grid">
                   <div>

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Bell,
+  BellOff,
   Clapperboard,
   Copy,
   Cpu,
@@ -53,22 +55,39 @@ function playCompletionChime() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
-    const notes = [523.25, 659.25];
+    const notes = [523.25, 659.25, 783.99];
     notes.forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.055, ctx.currentTime + idx * 0.12 + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.12 + 0.28);
+      gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.11);
+      gain.gain.exponentialRampToValueAtTime(0.085, ctx.currentTime + idx * 0.11 + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.11 + 0.34);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.12);
-      osc.stop(ctx.currentTime + idx * 0.12 + 0.3);
+      osc.start(ctx.currentTime + idx * 0.11);
+      osc.stop(ctx.currentTime + idx * 0.11 + 0.36);
     });
   } catch {
     // ignore autoplay restriction
+  }
+}
+
+function fireDesktopNotification(title, body) {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification(title, {
+        body,
+        silent: false,
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -98,6 +117,14 @@ export default function App() {
   const [selectedLanUrl, setSelectedLanUrl] = useState('');
   const [showMobilePreviewDrawer, setShowMobilePreviewDrawer] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
+  const [completionAlertOn, setCompletionAlertOn] = useState(
+    () => localStorage.getItem('chaos_alert_on') !== 'false'
+  );
+  const alertOnRef = useRef(completionAlertOn);
+  useEffect(() => {
+    alertOnRef.current = completionAlertOn;
+    localStorage.setItem('chaos_alert_on', String(completionAlertOn));
+  }, [completionAlertOn]);
 
   const prevStatesRef = useRef({});
   const hasRunningRef = useRef(false);
@@ -120,14 +147,38 @@ export default function App() {
 
   const syncProjectsWithCompletionAlert = (pList, isInitial = false) => {
     setProjects(pList);
-    hasRunningRef.current = pList.some((p) => ACTIVE_STATES.includes(p.state));
+    const activeJob = pList.find((p) => ACTIVE_STATES.includes(p.state));
+    hasRunningRef.current = Boolean(activeJob);
+    if (activeJob) {
+      const pct = Math.round(Number(activeJob.live_progress?.percent || 0));
+      document.title = `⏳ ${pct}% • ${activeJob.name.slice(0, 28)} — ChaosShortVideo`;
+    } else if (!document.hidden) {
+      document.title = 'ChaosShortVideo Studio';
+    }
+
     const prevMap = prevStatesRef.current;
     if (!isInitial) {
       for (const p of pList) {
         const oldState = prevMap[p.id];
         if (oldState && ACTIVE_STATES.includes(oldState) && p.state === 'COMPLETED') {
-          playCompletionChime();
+          if (alertOnRef.current) {
+            playCompletionChime();
+            fireDesktopNotification(
+              '✅ ChaosShortVideo — Xuất video hoàn tất!',
+              `Dự án "${p.name}" đã dựng xong MP4 & gói SEO.`
+            );
+          }
+          if (document.hidden) {
+            document.title = `✅ XONG VIDEO: ${p.name.slice(0, 26)}!`;
+          }
           notify(`Đã xuất xong video: "${p.name}"!`);
+        } else if (oldState && ACTIVE_STATES.includes(oldState) && p.state === 'FAILED') {
+          if (alertOnRef.current) {
+            fireDesktopNotification(
+              '⚠️ Dự án gặp sự cố khi xử lý',
+              `"${p.name}": ${p.error_message || 'Vui lòng mở ứng dụng để xem chi tiết.'}`
+            );
+          }
         }
       }
     }
@@ -182,9 +233,16 @@ export default function App() {
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = document.hidden ? 25000 : hasRunningRef.current ? 2600 : 18000;
+      // Keep polling every 5.5s in background tabs WHILE a video is rendering so Chime + Desktop Notification fire on time!
+      const delay = hasRunningRef.current
+        ? document.hidden
+          ? 5500
+          : 2600
+        : document.hidden
+        ? 30000
+        : 18000;
       timerId = setTimeout(async () => {
-        if (!document.hidden) {
+        if (!document.hidden || hasRunningRef.current) {
           try {
             const [st, pList, gList] = await Promise.all([
               studioApi.getSystemStatus(),
@@ -206,7 +264,10 @@ export default function App() {
 
     scheduleNext();
     const onVisChange = () => {
-      if (!document.hidden) refreshGroupsAndProjects();
+      if (!document.hidden) {
+        if (!hasRunningRef.current) document.title = 'ChaosShortVideo Studio';
+        refreshGroupsAndProjects();
+      }
     };
     document.addEventListener('visibilitychange', onVisChange);
     return () => {
@@ -375,6 +436,32 @@ export default function App() {
           >
             {showDesktopInspector ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
             <span>Khung 9:16 &amp; GPU</span>
+          </button>
+
+          <button
+            type="button"
+            className={`btn btn-sm ${completionAlertOn ? 'btn-primary' : 'btn-secondary'} hide-on-mobile`}
+            onClick={async () => {
+              const nextVal = !completionAlertOn;
+              setCompletionAlertOn(nextVal);
+              if (nextVal) {
+                playCompletionChime();
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+                  try {
+                    await Notification.requestPermission();
+                  } catch {
+                    // ignore
+                  }
+                }
+                notify('Đã bật chuông & thông báo màn hình khi xuất xong video ở tab khác!');
+              } else {
+                notify('Đã tắt chuông báo hoàn tất.');
+              }
+            }}
+            title="Bật / Tắt chuông báo & thông báo Windows khi render xong lúc bạn đang ở tab khác"
+          >
+            {completionAlertOn ? <Bell size={14} /> : <BellOff size={14} />}
+            <span>{completionAlertOn ? 'Chuông báo' : 'Tắt chuông'}</span>
           </button>
 
           <button

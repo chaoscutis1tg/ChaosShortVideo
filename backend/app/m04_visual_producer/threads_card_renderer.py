@@ -301,7 +301,263 @@ def _wrap_tagged_sentences(
 
 
 class ThreadsCardVisualRenderer:
-    """Builds transparent RGBA PNG floating cards for OP Thread post & replies (with attached images)."""
+    """Builds transparent RGBA PNG floating cards for OP Thread post, replies & Chat Story screens."""
+
+    @classmethod
+    def render_chat_window_png(
+        cls,
+        history_lines: List[NarrationLineDTO],
+        out_png: Path,
+        card_theme: ThreadsCardTheme = ThreadsCardTheme.CHAT_MESSENGER_ZALO,
+        anonymize_handles: bool = False,
+        canvas_w: int = 1080,
+        canvas_h: int = 1920,
+        primary_right_speaker: str = "",
+        typing_speaker: Optional[str] = None,
+        safe_zone_guard: bool = True,
+    ) -> Path:
+        """Render a realistic smartphone Messenger/Zalo/iMessage chat window with scrolling bubbles
+        and optional `• • •` typing indicator.
+        """
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        probe = ImageDraw.Draw(canvas)
+
+        is_light = card_theme == ThreadsCardTheme.CHAT_IMESSAGE_LIGHT
+        is_vertical_916 = canvas_h > int(canvas_w * 1.5)
+        if safe_zone_guard and is_vertical_916:
+            win_w = int(canvas_w * 0.84)
+            win_x = int(canvas_w * 0.035)
+            win_y = int(canvas_h * 0.095)
+            win_h = int(canvas_h * 0.745)
+        else:
+            win_w = int(canvas_w * 0.86)
+            win_x = (canvas_w - win_w) // 2
+            win_y = int(canvas_h * 0.08)
+            win_h = int(canvas_h * 0.82)
+
+        win_bg = (250, 251, 254, 246) if is_light else (13, 17, 26, 242)
+        win_border = (212, 220, 232, 245) if is_light else (51, 65, 85, 230)
+        hdr_bg = (255, 255, 255, 252) if is_light else (20, 26, 38, 250)
+        txt_main = (15, 23, 42, 255) if is_light else (248, 250, 252, 255)
+        txt_sub = (100, 116, 139, 255) if is_light else (148, 163, 184, 255)
+        in_bub_bg = (233, 235, 240, 255) if is_light else (34, 41, 56, 252)
+        in_bub_txt = (15, 23, 42, 255) if is_light else (241, 245, 249, 255)
+        out_bub_bg = (0, 122, 255, 255) if is_light else (14, 116, 244, 255)
+        out_bub_accent = (10, 132, 255, 255) if is_light else (99, 102, 241, 255)
+
+        # Drop shadow
+        shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [(win_x + 4, win_y + 12), (win_x + win_w + 4, win_y + win_h + 12)],
+            radius=40,
+            fill=(0, 0, 0, 145),
+        )
+        canvas = Image.alpha_composite(canvas, shadow.filter(ImageFilter.GaussianBlur(radius=18)))
+
+        # Phone Window container clipped via rounded mask
+        win_im = Image.new("RGBA", (win_w, win_h), win_bg)
+        wd = ImageDraw.Draw(win_im)
+
+        # Identify contact partner name for header
+        right_key = (primary_right_speaker or "").strip().lower()
+        partner_handle = "@Crush"
+        for ln_item in history_lines:
+            sp = (ln_item.speaker_handle or "").strip()
+            if sp and sp.lower() != right_key:
+                partner_handle = sp
+                break
+        if anonymize_handles:
+            partner_handle = "@Người_Ấy"
+        partner_title = partner_handle.lstrip("@").replace("_", " ")[:24] or "Crush"
+
+        # 1. Top Contact Bar (`88px`)
+        hdr_h = 88
+        wd.rectangle([(0, 0), (win_w, hdr_h)], fill=hdr_bg)
+        wd.line([(0, hdr_h), (win_w, hdr_h)], fill=win_border, width=2)
+
+        f_hdr_name = _load_card_font(28, bold=True)
+        f_hdr_status = _load_card_font(20, bold=False)
+        f_bub = _load_card_font(29, bold=False)
+        f_lbl = _load_card_font(20, bold=True)
+        f_seen = _load_card_font(19, bold=False)
+
+        # Back chevron `<`
+        wd.line([(24, 44), (38, 30)], fill=out_bub_bg, width=4)
+        wd.line([(24, 44), (38, 58)], fill=out_bub_bg, width=4)
+
+        # Header Avatar + Online Emerald Dot
+        av_s = 52
+        av_hx, av_hy = 54, 18
+        h_dig = int(hashlib.md5(partner_handle.encode("utf-8")).hexdigest()[:6], 16)
+        c1, c2 = AVATAR_PALETTE[h_dig % len(AVATAR_PALETTE)]
+        wd.ellipse([(av_hx, av_hy), (av_hx + av_s, av_hy + av_s)], fill=(*c1, 255))
+        wd.ellipse([(av_hx + 3, av_hy + 3), (av_hx + av_s - 3, av_hy + av_s - 3)], fill=(*c2, 255))
+        init_txt = partner_title[:2].upper()
+        bb_i = wd.textbbox((0, 0), init_txt, font=f_lbl)
+        wd.text(
+            (av_hx + (av_s - (bb_i[2] - bb_i[0])) // 2, av_hy + 13),
+            init_txt,
+            font=f_lbl,
+            fill=(255, 255, 255, 255),
+        )
+        wd.ellipse([(av_hx + av_s - 15, av_hy + av_s - 15), (av_hx + av_s + 1, av_hy + av_s + 1)], fill=hdr_bg)
+        wd.ellipse([(av_hx + av_s - 12, av_hy + av_s - 12), (av_hx + av_s - 2, av_hy + av_s - 2)], fill=(34, 197, 94, 255))
+
+        wd.text((120, 18), partner_title, font=f_hdr_name, fill=txt_main)
+        wd.text((120, 52), "Đang hoạt động", font=f_hdr_status, fill=(34, 197, 94, 255))
+
+        # Subtle Call + Video icons on right of header
+        rx_ic = win_w - 98
+        wd.ellipse([(rx_ic, 28), (rx_ic + 32, 60)], outline=out_bub_bg, width=3)
+        wd.rounded_rectangle([(rx_ic + 46, 31), (rx_ic + 78, 57)], radius=6, outline=out_bub_bg, width=3)
+
+        # 2. Bottom Input Pill Bar (`66px`)
+        inp_h = 66
+        inp_y0 = win_h - inp_h
+        wd.rectangle([(0, inp_y0), (win_w, win_h)], fill=hdr_bg)
+        wd.line([(0, inp_y0), (win_w, inp_y0)], fill=win_border, width=2)
+        wd.rounded_rectangle(
+            [(22, inp_y0 + 12), (win_w - 74, win_h - 12)],
+            radius=22,
+            fill=in_bub_bg,
+        )
+        wd.text((42, inp_y0 + 20), "Nhắn tin...", font=f_hdr_status, fill=txt_sub)
+        _draw_heart_icon(wd, win_w - 54, inp_y0 + 20, 26, out_bub_accent)
+
+        # 3. Measure & Layout Scrolling Message Bubbles inside `[hdr_h + 16 .. inp_y0 - 16]`
+        feed_top = hdr_h + 18
+        feed_bot = inp_y0 - 18
+        avail_feed_h = max(240, feed_bot - feed_top)
+        max_bub_w = int(win_w * 0.68)
+        line_sp = 39
+
+        visible_msgs = history_lines[-5:] if len(history_lines) > 5 else list(history_lines)
+        measured_blocks = []
+        for m_idx, m_ln in enumerate(visible_msgs):
+            spk = (m_ln.speaker_handle or "").strip()
+            is_right = bool(right_key and spk.lower() == right_key) or (not right_key and m_ln.is_op_post)
+            raw_t = (m_ln.display_card_text or m_ln.original_text or m_ln.vi_text).strip()
+            wrapped = _wrap_pixel_lines(probe, raw_t, f_bub, max_bub_w - 44, max_lines=9)
+            max_lw = max(
+                (probe.textbbox((0, 0), wl, font=f_bub)[2] for wl in wrapped if wl),
+                default=80,
+            )
+            photo_im = None
+            if m_ln.card_image_path and Path(m_ln.card_image_path).exists():
+                photo_im = _prepare_rounded_card_photo(
+                    Path(m_ln.card_image_path),
+                    max_w=max_bub_w - 36,
+                    max_h=210,
+                    radius=18,
+                )
+            bw = max(116, min(max_bub_w, max(max_lw + 46, (photo_im.width + 32) if photo_im else 0)))
+            bh = len(wrapped) * line_sp + 26 + ((photo_im.height + 14) if photo_im else 0)
+            extra_lbl_h = 26 if (not is_right) else 0
+            extra_seen_h = 24 if (is_right and m_idx == len(visible_msgs) - 1 and not typing_speaker) else 0
+            measured_blocks.append(
+                (m_ln, is_right, wrapped, bw, bh, extra_lbl_h, extra_seen_h, photo_im)
+            )
+
+        typing_h = 68 if typing_speaker else 0
+        # Trim oldest visible messages until stack fits comfortably inside `avail_feed_h`
+        while len(measured_blocks) > 1:
+            total_stack_h = (
+                sum(b[4] + b[5] + b[6] + 16 for b in measured_blocks) + typing_h
+            )
+            if total_stack_h <= avail_feed_h:
+                break
+            measured_blocks.pop(0)
+
+        cur_y = feed_top + 4
+        n_vis = len(measured_blocks)
+        for b_i, (m_ln, is_right, wrapped, bw, bh, extra_lbl_h, extra_seen_h, photo_im) in enumerate(
+            measured_blocks
+        ):
+            is_newest = (b_i == n_vis - 1) and (typing_speaker is None)
+            alpha_txt = 255 if is_newest else 222
+            spk_disp = (
+                "@Người_Lạ"
+                if anonymize_handles
+                else (m_ln.speaker_handle or partner_handle).lstrip("@")[:22]
+            )
+
+            if is_right:
+                bx = win_w - bw - 24
+                by = cur_y
+                # Subtle two-tone Messenger gradient feel
+                bub_col = out_bub_bg if is_newest else (*out_bub_accent[:3], 228)
+                wd.rounded_rectangle([(bx, by), (bx + bw, by + bh)], radius=26, fill=bub_col)
+                # Right-bottom tail accent
+                wd.rounded_rectangle([(bx + bw - 18, by + bh - 18), (bx + bw, by + bh)], radius=6, fill=bub_col)
+                ty = by + 13
+                for wl in wrapped:
+                    wd.text((bx + 22, ty), wl, font=f_bub, fill=(255, 255, 255, alpha_txt))
+                    ty += line_sp
+                if photo_im is not None:
+                    win_im.alpha_composite(photo_im, dest=(bx + 16, ty + 4))
+                cur_y = by + bh + 6
+                if extra_seen_h > 0:
+                    seen_lbl = "Đã xem"
+                    sb = wd.textbbox((0, 0), seen_lbl, font=f_seen)
+                    wd.text((win_w - (sb[2] - sb[0]) - 28, cur_y), seen_lbl, font=f_seen, fill=txt_sub)
+                    cur_y += extra_seen_h
+                cur_y += 10
+            else:
+                av_mini = 38
+                avx = 18
+                by = cur_y + extra_lbl_h
+                if extra_lbl_h > 0:
+                    wd.text((avx + av_mini + 14, cur_y + 2), spk_disp, font=f_lbl, fill=txt_sub)
+                bx = avx + av_mini + 10
+                wd.rounded_rectangle([(bx, by), (bx + bw, by + bh)], radius=26, fill=in_bub_bg)
+                wd.rounded_rectangle([(bx, by + bh - 18), (bx + 18, by + bh)], radius=6, fill=in_bub_bg)
+                # Small sender avatar aligned to bottom of incoming bubble
+                avy = by + bh - av_mini
+                s_dig = int(hashlib.md5(spk_disp.encode("utf-8")).hexdigest()[:6], 16)
+                sc1, _ = AVATAR_PALETTE[s_dig % len(AVATAR_PALETTE)]
+                wd.ellipse([(avx, avy), (avx + av_mini, avy + av_mini)], fill=(*sc1, 255))
+                s_init = spk_disp[:1].upper() or "U"
+                wd.text((avx + 12, avy + 7), s_init, font=f_lbl, fill=(255, 255, 255, 255))
+
+                ty = by + 13
+                for wl in wrapped:
+                    wd.text((bx + 22, ty), wl, font=f_bub, fill=(*in_bub_txt[:3], alpha_txt))
+                    ty += line_sp
+                if photo_im is not None:
+                    win_im.alpha_composite(photo_im, dest=(bx + 16, ty + 4))
+                cur_y = by + bh + 16
+
+        # 4. Optional `• • •` Typing Indicator Bubble right before next message pops!
+        if typing_speaker is not None and cur_y + 52 <= feed_bot:
+            t_is_right = bool(right_key and typing_speaker.strip().lower() == right_key)
+            tw_b, th_b = 104, 50
+            tbx = (win_w - tw_b - 24) if t_is_right else 66
+            tby = cur_y + 4
+            t_fill = (*out_bub_bg[:3], 215) if t_is_right else in_bub_bg
+            wd.rounded_rectangle([(tbx, tby), (tbx + tw_b, tby + th_b)], radius=24, fill=t_fill)
+            dot_cols = (
+                [(255, 255, 255, 245), (255, 255, 255, 180), (255, 255, 255, 125)]
+                if t_is_right
+                else [(*txt_sub[:3], 235), (*txt_sub[:3], 175), (*txt_sub[:3], 120)]
+            )
+            for d_i, d_col in enumerate(dot_cols):
+                dx0 = tbx + 24 + d_i * 22
+                dy0 = tby + 19
+                wd.ellipse([(dx0, dy0), (dx0 + 12, dy0 + 12)], fill=d_col)
+
+        # Apply smooth rounded corner mask to the phone window
+        win_mask = Image.new("L", (win_w, win_h), 0)
+        ImageDraw.Draw(win_mask).rounded_rectangle([(0, 0), (win_w - 1, win_h - 1)], radius=38, fill=255)
+        framed_win = Image.new("RGBA", (win_w, win_h), (0, 0, 0, 0))
+        framed_win.paste(win_im, (0, 0), win_mask)
+        ImageDraw.Draw(framed_win).rounded_rectangle(
+            [(0, 0), (win_w - 1, win_h - 1)], radius=38, outline=win_border, width=2
+        )
+
+        canvas.alpha_composite(framed_win, dest=(win_x, win_y))
+        canvas.save(out_png, format="PNG")
+        return out_png
 
     @classmethod
     def render_single_card_png(
@@ -320,6 +576,28 @@ class ThreadsCardVisualRenderer:
         safe_zone_guard: bool = True,
     ) -> Path:
         """Render a single transparent `canvas_w x canvas_h` RGBA PNG containing the floating card."""
+        if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT):
+            reply_preview = NarrationLineDTO(
+                seq_index=1,
+                rel_start_ms=1500,
+                rel_end_ms=3000,
+                vi_text="Nhắn thế này bảo sao tim không đập loạn nhịp cơ chứ!",
+                display_card_text="Nhắn thế này bảo sao tim không đập loạn nhịp cơ chứ!",
+                speaker_handle="@Crush",
+                is_op_post=False,
+            )
+            return cls.render_chat_window_png(
+                history_lines=[line, reply_preview],
+                out_png=out_png,
+                card_theme=card_theme,
+                anonymize_handles=anonymize_handles,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+                primary_right_speaker=line.speaker_handle or "@minh",
+                typing_speaker=None,
+                safe_zone_guard=safe_zone_guard,
+            )
+
         out_png.parent.mkdir(parents=True, exist_ok=True)
         canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
         probe_draw = ImageDraw.Draw(canvas)
@@ -642,11 +920,82 @@ class ThreadsCardVisualRenderer:
         cmt_counter = 0
 
         if on_progress:
+            mode_lbl = (
+                "Chat Story"
+                if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT)
+                else "Threads Card"
+            )
             on_progress(
                 "GENERATING_VISUALS",
                 2.0,
-                f"[Threads Card] Đang kết xuất {len(clip.lines)} thẻ bình luận RGBA 1080p & nhịp dẫn mắt...",
+                f"[{mode_lbl}] Đang kết xuất {len(clip.lines)} khung hội thoại RGBA 1080p...",
             )
+
+        if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT):
+            primary_spk = (clip.lines[0].speaker_handle or "@minh") if clip.lines else "@minh"
+            history: List[NarrationLineDTO] = []
+            for idx, ln in enumerate(clip.lines):
+                dur_ms = max(500, ln.rel_end_ms - ln.rel_start_ms)
+                typing_ms = 300 if (idx >= 1 and dur_ms >= 950) else 0
+                if typing_ms > 0:
+                    typ_png = cards_dir / f"chat_{idx:04d}_typing.png"
+                    await asyncio.to_thread(
+                        cls.render_chat_window_png,
+                        history_lines=list(history),
+                        out_png=typ_png,
+                        card_theme=card_theme,
+                        anonymize_handles=anonymize_handles,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                        primary_right_speaker=primary_spk,
+                        typing_speaker=ln.speaker_handle or "@Crush",
+                        safe_zone_guard=safe_zone_guard,
+                    )
+                    items.append(
+                        SceneVisualItemDTO(
+                            seq_index=len(items),
+                            asset_path=typ_png,
+                            asset_type=AssetType.IMAGE,
+                            duration_ms=typing_ms,
+                            motion_effect=MotionEffect.ZOOM_IN,
+                            card_group_id="chat_window_session",
+                            is_typing_indicator=True,
+                        )
+                    )
+
+                history.append(ln)
+                msg_png = cards_dir / f"chat_{idx:04d}_msg.png"
+                await asyncio.to_thread(
+                    cls.render_chat_window_png,
+                    history_lines=list(history),
+                    out_png=msg_png,
+                    card_theme=card_theme,
+                    anonymize_handles=anonymize_handles,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    primary_right_speaker=primary_spk,
+                    typing_speaker=None,
+                    safe_zone_guard=safe_zone_guard,
+                )
+                items.append(
+                    SceneVisualItemDTO(
+                        seq_index=len(items),
+                        asset_path=msg_png,
+                        asset_type=AssetType.IMAGE,
+                        duration_ms=max(350, dur_ms - typing_ms),
+                        motion_effect=MotionEffect.ZOOM_IN,
+                        card_group_id="chat_window_session",
+                        is_typing_indicator=False,
+                    )
+                )
+                if on_progress:
+                    pct = round(((idx + 1) / max(len(clip.lines), 1)) * 100.0, 1)
+                    on_progress(
+                        "GENERATING_VISUALS",
+                        pct,
+                        f"[Chat Story {idx + 1}/{len(clip.lines)}] Đã vẽ tin nhắn {ln.speaker_handle or f'#{idx + 1}'}",
+                    )
+            return VisualAssetListDTO(clip_id=clip.clip_id, items=items)
 
         for idx, ln in enumerate(clip.lines):
             if not ln.is_op_post:

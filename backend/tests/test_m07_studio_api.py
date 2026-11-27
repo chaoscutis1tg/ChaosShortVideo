@@ -1320,6 +1320,161 @@ async def test_m07_real_progress_console_logs_and_tts_circuit_breaker(
         assert pcts[-1] == 100.0
 
 
+def test_m07_uc18_viral_radar_chat_story_hook_scorer_and_capcut_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify Features #3, #4, #5, #6 end-to-end:
+    - #3: `/api/viral-radar` returns Vietnamese-translated trending items.
+    - #4: `/api/threads/generate-chat-story` + `CHAT_MESSENGER_ZALO` renders scrolling chat window,
+          `• • •` typing indicator PNGs, and dual-direction chat SFX into valid 9:16 MP4.
+    - #5: `/api/brain/score-hook` evaluates 3s retention & returns 3 A/B Hook variants.
+    - #6: `/api/projects/{id}/download-capcut-pack` exports separated `Voice_Sach.wav`, `.srt` & RGBA `.png` cards.
+    """
+    from io import BytesIO
+    import zipfile
+    from app.m00_core_contracts import ViralRadarItemDTO
+    from app.m01_media_ingest import ThreadsScraperService
+
+    async def _mock_radar(niche: str = "ALL_HOT", limit: int = 8):
+        return [
+            ViralRadarItemDTO(
+                item_id="rd_mock_1",
+                source_platform="reddit",
+                community_label="r/CasualConversation",
+                title_vi="Khoảnh khắc nhỏ nào của Crush khiến bạn nhớ mãi không quên?",
+                original_title="What small moment with your crush made you never forget them?",
+                preview_snippet="Chiếc ô nghiêng dưới cơn mưa chiều hôm ấy...",
+                post_url="https://www.reddit.com/r/CasualConversation/comments/xyz/crush/",
+                upvotes=1540,
+                comments_count=210,
+                niche_tag="Tình cảm & Đời sống",
+            )
+        ]
+
+    monkeypatch.setattr(ThreadsScraperService, "fetch_viral_radar", _mock_radar)
+
+    bg_mp4 = tmp_path / "chat_bg.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=360x640:rate=30:duration=1.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=300:sample_rate=44100:duration=1.5",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(bg_mp4),
+        ],
+        check=True,
+    )
+
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_uc18.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+    with TestClient(studio_app) as client:
+        # 1. Feature #3: Viral Radar
+        radar_res = client.get("/api/viral-radar?niche=CRUSH_LOVE&limit=4")
+        assert radar_res.status_code == 200
+        radar_list = radar_res.json()
+        assert len(radar_list) >= 1
+        assert "Crush" in radar_list[0]["title_vi"]
+
+        # 2. Feature #5: AI 3s Hook Scorer & A/B Variants
+        hook_res = client.post(
+            "/api/brain/score-hook",
+            json={
+                "hook_text": "Xin chào mọi người hôm nay mình muốn kể về chuyện hôm qua đi học gặp trời mưa",
+                "body_context": "Bạn cùng bàn đưa ô che suốt quãng đường về nhà.",
+                "mode": "THREADS_TOPIC",
+            },
+        )
+        assert hook_res.status_code == 200
+        h_json = hook_res.json()
+        assert 10 <= h_json["overall_score"] <= 100
+        assert len(h_json["variants"]) == 3
+        assert h_json["variants"][0]["predicted_score"] >= h_json["overall_score"]
+
+        # 3. Feature #4: Generate 2-Person Chat Story & Render `CHAT_MESSENGER_ZALO`
+        chat_res = client.post(
+            "/api/threads/generate-chat-story",
+            json={
+                "story_idea": "Nhắn tin hỏi Crush sao hôm mưa lại đứng đợi cùng",
+                "sender_a_name": "Minh Anh",
+                "sender_b_name": "Crush",
+                "message_count": 4,
+                "story_vibe": "CRUSH_ROMANTIC",
+                "male_voice_id": "local_vais_studio",
+                "female_voice_id": "local_vais_studio",
+                "sender_a_is_female": True,
+            },
+        )
+        assert chat_res.status_code == 200
+        chat_bundle = chat_res.json()
+        assert chat_bundle["platform"] == "chat_story"
+        assert len(chat_bundle["comments"]) == 3
+
+        st_res = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": chat_bundle,
+                "bg_source_type": "LOCAL_FILE",
+                "bg_path_or_url": str(bg_mp4),
+                "append_cta_comment": "",
+                "voice_profile_id": "local_vais_studio",
+                "voice_speed_global": 1.3,
+                "bgm_preset_id": "",
+                "subtitle_style": "NONE",
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "show_top_banner": False,
+                    "threads_card_theme": "CHAT_MESSENGER_ZALO",
+                },
+                "auto_one_click": True,
+            },
+        )
+        assert st_res.status_code == 200
+        pid = st_res.json()["project_id"]
+
+        detail = {}
+        for _ in range(220):
+            detail = client.get(f"/api/projects/{pid}").json()
+            if detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.3)
+        assert detail["state"] == "COMPLETED", detail.get("error_message")
+
+        # 4. Feature #6: Download CapCut Multi-Layer Stem Pack (.ZIP)
+        cc_res = client.get(f"/api/projects/{pid}/download-capcut-pack")
+        assert cc_res.status_code == 200
+        assert f"CapCut_StemPack_{pid}.zip" in cc_res.headers.get("content-disposition", "")
+        with zipfile.ZipFile(BytesIO(cc_res.content), "r") as zf:
+            arc_names = zf.namelist()
+            assert "Huong_Dan_Import_CapCut_PC.txt" in arc_names
+            assert "Part_01/01_Voice_Sach_KhongNhacNen.wav" in arc_names
+            assert "Part_01/03_Phu_De_Chuan_CapCut.srt" in arc_names
+            assert any("typing.png" in n for n in arc_names), f"Expected typing indicator PNG in {arc_names}"
+            assert any("_msg.png" in n for n in arc_names)
+
+
 
 
 

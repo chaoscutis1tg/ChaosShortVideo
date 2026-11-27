@@ -501,77 +501,175 @@ export default function Canvas916Designer({
                   background: `rgba(0, 0, 0, ${layoutConfig.threads_bg_dim ?? 0.28})`,
                 }}
               >
-                <div
-                  style={{
-                    width: '100%',
-                    padding: '10px 11px',
-                    borderRadius: 12,
-                    background:
-                      layoutConfig.threads_card_theme === 'LIGHT_THREADS'
-                        ? 'rgba(255,255,255,0.96)'
-                        : layoutConfig.threads_card_theme === 'FROSTED_GLASS'
-                        ? 'rgba(17,24,39,0.76)'
-                        : 'rgba(18,20,25,0.95)',
-                    color:
-                      layoutConfig.threads_card_theme === 'LIGHT_THREADS'
-                        ? '#0f172a'
-                        : '#f8fafc',
-                    border:
-                      layoutConfig.threads_card_theme === 'FROSTED_GLASS'
-                        ? '1px solid rgba(125,211,252,0.65)'
-                        : '1px solid rgba(148,163,184,0.35)',
-                    boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                    <span
+                {layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
+                layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT' ? (
+                  <div
+                    style={{
+                      width: '100%',
+                      borderRadius: 14,
+                      overflow: 'hidden',
+                      background:
+                        layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
+                          ? 'rgba(250,251,254,0.97)'
+                          : 'rgba(13,17,26,0.95)',
+                      color:
+                        layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
+                          ? '#0f172a'
+                          : '#f8fafc',
+                      border: '1px solid rgba(148,163,184,0.35)',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div
                       style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 99,
-                        background: '#0ea5e9',
-                        color: '#fff',
-                        fontSize: 8,
-                        fontWeight: 800,
-                        display: 'inline-flex',
+                        padding: '6px 9px',
+                        borderBottom: '1px solid rgba(148,163,184,0.22)',
+                        display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
+                        gap: 6,
+                        fontSize: 8.8,
                       }}
                     >
-                      TH
-                    </span>
-                    <strong style={{ fontSize: 9.5 }}>
-                      {layoutConfig.threads_anonymize_handles
-                        ? 'nguoila_01'
-                        : 'minhanh.threads'}
-                    </strong>
-                    <span
-                      style={{
-                        marginLeft: 'auto',
-                        fontSize: 8,
-                        opacity: 0.6,
-                      }}
-                    >
-                      18 phút •••
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 9.2, lineHeight: 1.4, marginBottom: 5 }}>
-                    {(layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT') === 'ACTIVE_HIGHLIGHT' ? (
-                      <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
-                        <div>Thẻ bình luận dẫn mắt sáng rõ câu đang đọc!</div>
-                        <div style={{ opacity: 0.52 }}>Câu tiếp theo dịu nhẹ giúp mắt không mỏi.</div>
+                      <span style={{ color: '#0ea5e9', fontWeight: 800 }}>&lt;</span>
+                      <span
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 99,
+                          background: '#ec4899',
+                          color: '#fff',
+                          fontSize: 7.5,
+                          fontWeight: 800,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        CR
+                      </span>
+                      <div>
+                        <div style={{ fontWeight: 700, lineHeight: 1.1 }}>Crush</div>
+                        <div style={{ fontSize: 7.2, color: '#22c55e' }}>● Đang hoạt động</div>
                       </div>
-                    ) : layoutConfig.threads_eye_guide_mode === 'PROGRESSIVE_REVEAL' ? (
-                      <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
-                        Chữ mở dần từng câu khớp đúng nhịp giọng đọc...
+                    </div>
+                    <div style={{ padding: '8px 8px 6px', display: 'grid', gap: 5, fontSize: 8.5 }}>
+                      <div
+                        style={{
+                          justifySelf: 'end',
+                          maxWidth: '82%',
+                          padding: '5px 8px',
+                          borderRadius: '11px 11px 3px 11px',
+                          background: '#0e74f4',
+                          color: '#fff',
+                        }}
+                      >
+                        Ngủ chưa đấy? Hỏi thật câu này nhé...
                       </div>
-                    ) : (
-                      'Thẻ bình luận nổi tự động nảy lên khớp từng giọng đọc trên video nền lặp vòng!'
-                    )}
+                      <div
+                        style={{
+                          justifySelf: 'start',
+                          maxWidth: '82%',
+                          padding: '5px 8px',
+                          borderRadius: '11px 11px 11px 3px',
+                          background:
+                            layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
+                              ? '#e9ebef'
+                              : '#222938',
+                        }}
+                      >
+                        Chưa ngủ nè, nhắn thế làm tim đập loạn nhịp á!
+                      </div>
+                      <div
+                        style={{
+                          justifySelf: 'start',
+                          padding: '3px 9px',
+                          borderRadius: 99,
+                          fontSize: 9,
+                          opacity: 0.75,
+                          background:
+                            layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
+                              ? '#e9ebef'
+                              : '#222938',
+                        }}
+                      >
+                        • • •
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 8, opacity: 0.72 }}>♥ 1,4K • Trả lời • Đăng lại</div>
-                </div>
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      padding: '10px 11px',
+                      borderRadius: 12,
+                      background:
+                        layoutConfig.threads_card_theme === 'LIGHT_THREADS'
+                          ? 'rgba(255,255,255,0.96)'
+                          : layoutConfig.threads_card_theme === 'FROSTED_GLASS'
+                          ? 'rgba(17,24,39,0.76)'
+                          : 'rgba(18,20,25,0.95)',
+                      color:
+                        layoutConfig.threads_card_theme === 'LIGHT_THREADS'
+                          ? '#0f172a'
+                          : '#f8fafc',
+                      border:
+                        layoutConfig.threads_card_theme === 'FROSTED_GLASS'
+                          ? '1px solid rgba(125,211,252,0.65)'
+                          : '1px solid rgba(148,163,184,0.35)',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                      <span
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 99,
+                          background: '#0ea5e9',
+                          color: '#fff',
+                          fontSize: 8,
+                          fontWeight: 800,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        TH
+                      </span>
+                      <strong style={{ fontSize: 9.5 }}>
+                        {layoutConfig.threads_anonymize_handles
+                          ? 'nguoila_01'
+                          : 'minhanh.threads'}
+                      </strong>
+                      <span
+                        style={{
+                          marginLeft: 'auto',
+                          fontSize: 8,
+                          opacity: 0.6,
+                        }}
+                      >
+                        18 phút •••
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 9.2, lineHeight: 1.4, marginBottom: 5 }}>
+                      {(layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT') === 'ACTIVE_HIGHLIGHT' ? (
+                        <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
+                          <div>Thẻ bình luận dẫn mắt sáng rõ câu đang đọc!</div>
+                          <div style={{ opacity: 0.52 }}>Câu tiếp theo dịu nhẹ giúp mắt không mỏi.</div>
+                        </div>
+                      ) : layoutConfig.threads_eye_guide_mode === 'PROGRESSIVE_REVEAL' ? (
+                        <div style={{ borderLeft: '2.5px solid #38bdf8', paddingLeft: 6 }}>
+                          Chữ mở dần từng câu khớp đúng nhịp giọng đọc...
+                        </div>
+                      ) : (
+                        'Thẻ bình luận nổi tự động nảy lên khớp từng giọng đọc trên video nền lặp vòng!'
+                      )}
+                    </div>
+                    <div style={{ fontSize: 8, opacity: 0.72 }}>♥ 1,4K • Trả lời • Đăng lại</div>
+                  </div>
+                )}
               </div>
             ) : !previewFrameUrl ? (
               <div

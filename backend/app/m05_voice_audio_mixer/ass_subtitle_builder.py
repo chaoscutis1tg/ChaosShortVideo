@@ -129,8 +129,45 @@ def _escape_ass_text(raw: str) -> str:
     return raw.replace("\\", "").replace("{", "(").replace("}", ")").strip()
 
 
+def _fmt_srt_time(ms: int) -> str:
+    ms = max(0, int(ms))
+    millis = ms % 1000
+    total_sec = ms // 1000
+    s = total_sec % 60
+    total_min = total_sec // 60
+    m = total_min % 60
+    h = total_min // 60
+    return f"{h:02d}:{m:02d}:{s:02d},{millis:03d}"
+
+
 class ASSSubtitleBuilder:
-    """Generates styled `.ass` files for vertical 1080x1920 Shorts/TikTok rendering."""
+    """Generates styled `.ass` and standard `.srt` files for Shorts/TikTok & CapCut PC."""
+
+    @classmethod
+    def build_srt_file(
+        cls,
+        events: List[TimedSubtitleEvent],
+        out_srt_path: Path,
+    ) -> Optional[Path]:
+        """Export standard UTF-8 `.srt` subtitle file for CapCut PC / Premiere import."""
+        if not events:
+            return None
+        out_srt_path.parent.mkdir(parents=True, exist_ok=True)
+        blocks: List[str] = []
+        seq = 1
+        for ev in events:
+            txt = (ev.text or "").strip()
+            if not txt:
+                continue
+            end_ms = max(ev.start_ms + 250, ev.end_ms)
+            blocks.append(
+                f"{seq}\n{_fmt_srt_time(ev.start_ms)} --> {_fmt_srt_time(end_ms)}\n{txt}\n"
+            )
+            seq += 1
+        if not blocks:
+            return None
+        out_srt_path.write_text("\n".join(blocks), encoding="utf-8")
+        return out_srt_path
 
     @classmethod
     def build_ass_file(

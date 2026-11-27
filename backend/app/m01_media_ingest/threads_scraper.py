@@ -21,6 +21,7 @@ from app.m00_core_contracts import (
     MediaIngestError,
     ScrapedThreadBundleDTO,
     ThreadCommentItemDTO,
+    ViralRadarItemDTO,
 )
 
 SCRIPT_JSON_RE = re.compile(
@@ -1077,3 +1078,154 @@ class ThreadsScraperService:
             comments=comments,
             extraction_note=f"Đã tách bài gốc và {len(comments)} bình luận từ văn bản dán vào.",
         )
+
+    @classmethod
+    async def fetch_viral_radar(
+        cls, niche: str = "ALL_HOT", limit: int = 8
+    ) -> List[ViralRadarItemDTO]:
+        """Scan public Reddit communities + curated Vietnamese viral seeds for 1-click video creation."""
+        niche_key = (niche or "ALL_HOT").strip().upper()
+        subreddit_map: Dict[str, List[tuple[str, str]]] = {
+            "CRUSH_LOVE": [
+                ("CasualConversation", "Tình cảm & Đời sống"),
+                ("AskReddit", "Hỏi đáp triệu view"),
+            ],
+            "CONFESSION_SECRET": [
+                ("confession", "Bí mật thầm kín"),
+                ("TrueOffMyChest", "Tâm sự giấu tên"),
+            ],
+            "VN_COMMUNITY": [
+                ("vozforums", "Cộng đồng Việt"),
+                ("VietNam", "Đời sống Việt Nam"),
+            ],
+            "WORK_CAREER": [
+                ("careerguidance", "Chuyện công sở"),
+                ("AskReddit", "Góc nhìn đi làm"),
+            ],
+            "MUSIC_HOBBY": [
+                ("Guitar", "Đam mê Guitar"),
+                ("violinist", "Hội chơi Violin"),
+            ],
+            "ALL_HOT": [
+                ("vozforums", "Cộng đồng Việt"),
+                ("AskReddit", "Hỏi đáp triệu view"),
+                ("CasualConversation", "Tâm sự gần gũi"),
+            ],
+        }
+        targets = subreddit_map.get(niche_key, subreddit_map["ALL_HOT"])
+        collected: List[ViralRadarItemDTO] = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ChaosShortVideoStudio/3.4",
+            "Accept": "application/json",
+        }
+
+        async def _pull_sub(client: httpx.AsyncClient, sub_name: str, tag_label: str) -> List[ViralRadarItemDTO]:
+            out: List[ViralRadarItemDTO] = []
+            try:
+                resp = await client.get(
+                    f"https://www.reddit.com/r/{sub_name}/hot.json?limit=12&raw_json=1",
+                    timeout=6.0,
+                )
+                if resp.status_code != 200:
+                    return out
+                children = resp.json().get("data", {}).get("children", [])
+                for ch in children:
+                    d = ch.get("data") or {}
+                    if d.get("stickied") or d.get("over_18"):
+                        continue
+                    raw_t = (d.get("title") or "").strip()
+                    n_cmts = int(d.get("num_comments") or 0)
+                    ups = max(0, int(d.get("ups") or d.get("score") or 0))
+                    permalink = (d.get("permalink") or "").strip()
+                    if len(raw_t) < 10 or n_cmts < 3 or not permalink:
+                        continue
+                    selftext = re.sub(r"\s+", " ", (d.get("selftext") or "").strip())[:240]
+                    out.append(
+                        ViralRadarItemDTO(
+                            item_id=f"rd_{d.get('id') or uuid.uuid4().hex[:8]}",
+                            source_platform="reddit",
+                            community_label=f"r/{sub_name}",
+                            title_vi=raw_t[:260],
+                            original_title=raw_t[:260],
+                            preview_snippet=selftext,
+                            post_url=f"https://www.reddit.com{permalink}",
+                            upvotes=ups,
+                            comments_count=n_cmts,
+                            niche_tag=tag_label,
+                        )
+                    )
+            except Exception:
+                return out
+            return out
+
+        try:
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
+                batches = await asyncio.gather(*[_pull_sub(client, s, lbl) for s, lbl in targets])
+                for b in batches:
+                    collected.extend(b)
+        except Exception:
+            pass
+
+        collected.sort(key=lambda x: (x.comments_count * 2 + x.upvotes), reverse=True)
+
+        # Curated Vietnamese high-retention discussion prompts ensuring instant results even offline
+        curated_vn: List[ViralRadarItemDTO] = [
+            ViralRadarItemDTO(
+                item_id="vn_seed_crush_01",
+                source_platform="studio_trend",
+                community_label="Xu hướng Threads VN",
+                title_vi="Khoảnh khắc nhỏ xíu nào khiến bạn nhận ra người ấy cũng đang thích thầm mình?",
+                preview_snippet="Từ ánh mắt lén nhìn, chiếc ô nghiêng trong mưa đến tin nhắn chúc ngủ ngon đúng 23h59...",
+                upvotes=2480,
+                comments_count=312,
+                niche_tag="Tình cảm & Đời sống",
+            ),
+            ViralRadarItemDTO(
+                item_id="vn_seed_secret_02",
+                source_platform="studio_trend",
+                community_label="Tâm sự Đêm khuya",
+                title_vi="Bí mật nào bạn đã giấu kín hơn 3 năm chưa từng kể cho bất kỳ ai trong gia đình?",
+                preview_snippet="Những câu chuyện dở khóc dở cười thời đi học và những lời hứa thầm lặng đến giờ vẫn nhớ...",
+                upvotes=3190,
+                comments_count=428,
+                niche_tag="Bí mật thầm kín",
+            ),
+            ViralRadarItemDTO(
+                item_id="vn_seed_work_03",
+                source_platform="studio_trend",
+                community_label="Chuyện Công sở VN",
+                title_vi="Bài học đắt giá nhất bạn nhận ra sau 2 năm đầu đi làm công sở là gì?",
+                preview_snippet="Đừng biến đồng nghiệp thành nơi trút hết bí mật riêng tư và hãy luôn giữ đường lùi tài chính...",
+                upvotes=1850,
+                comments_count=196,
+                niche_tag="Chuyện công sở",
+            ),
+            ViralRadarItemDTO(
+                item_id="vn_seed_music_04",
+                source_platform="studio_trend",
+                community_label="Hội Yêu Nhạc Cụ",
+                title_vi="Sai lầm kinh điển nhất hồi mới tự tập đàn Guitar / Violin khiến bạn suýt bỏ cuộc?",
+                preview_snippet="Đau đầu ngón tay tuần đầu, mua nhầm đàn action cao chót vót và cảm giác vỡ òa khi đánh trọn bài đầu tiên...",
+                upvotes=1420,
+                comments_count=164,
+                niche_tag="Đam mê Nhạc cụ",
+            ),
+        ]
+
+        if niche_key == "CRUSH_LOVE":
+            curated_vn = [curated_vn[0], curated_vn[1]]
+        elif niche_key == "WORK_CAREER":
+            curated_vn = [curated_vn[2], curated_vn[0]]
+        elif niche_key == "MUSIC_HOBBY":
+            curated_vn = [curated_vn[3], curated_vn[0]]
+
+        merged = [*collected[: max(2, limit - 2)], *curated_vn]
+        seen_ids: set[str] = set()
+        deduped: List[ViralRadarItemDTO] = []
+        for it in merged:
+            if it.item_id not in seen_ids:
+                seen_ids.add(it.item_id)
+                deduped.append(it)
+            if len(deduped) >= limit:
+                break
+        return deduped

@@ -136,6 +136,42 @@ def _build_photo_click_sfx_wav(dst_wav: Path) -> Path:
     return dst_wav
 
 
+def _build_chat_send_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a crisp 72ms Messenger/iMessage outgoing right-bubble swoosh-pop."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.072
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    freq = 560.0 + (1040.0 - 560.0) * (t / dur_sec) ** 0.58
+    phase = 2.0 * np.pi * np.cumsum(freq) / float(MASTER_AUDIO_SAMPLE_RATE)
+    env = np.minimum(1.0, t / 0.004) * np.exp(-t * 44.0)
+    sig = (np.sin(phase) * env * 0.18).astype(np.float32)
+    stereo = np.column_stack((sig * 0.90, sig * 1.06))
+    _write_wav_float32_stereo(dst_wav, stereo)
+    return dst_wav
+
+
+def _build_chat_receive_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a warm 125ms 2-note incoming chat message chime (G5 -> C6)."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.125
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    note1 = np.sin(2.0 * np.pi * 783.99 * t) * np.exp(-t * 36.0) * np.minimum(1.0, t / 0.004)
+    t2 = np.maximum(0.0, t - 0.042)
+    note2 = np.where(
+        t >= 0.042,
+        np.sin(2.0 * np.pi * 1046.50 * t2) * np.exp(-t2 * 30.0) * np.minimum(1.0, t2 / 0.004),
+        0.0,
+    )
+    sig = ((note1 * 0.52 + note2 * 0.68) * 0.16).astype(np.float32)
+    stereo = np.column_stack((sig * 1.06, sig * 0.90))
+    _write_wav_float32_stereo(dst_wav, stereo)
+    return dst_wav
+
+
 class MovieAudioAndSubMixer(IVoiceAudioMixer):
     """Synthesizes 3-tier Vietnamese narration, time-syncs lines, ducks original movie audio,
     mixes optional anti-copyright BGM, and builds `.ass` subtitles.
@@ -164,11 +200,19 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         chunks_dir.mkdir(parents=True, exist_ok=True)
 
         default_provider = self._tts_factory.get_provider(profile.tier)
+        is_chat_sfx = bool(getattr(audio_config, "chat_sfx_mode", False))
         pop_sfx_wav: Optional[Path] = (
             _build_ui_pop_sfx_wav(chunks_dir / "_ui_card_pop.wav")
-            if getattr(audio_config, "enable_card_pop_sfx", False)
+            if (getattr(audio_config, "enable_card_pop_sfx", False) and not is_chat_sfx)
             else None
         )
+        chat_send_wav: Optional[Path] = (
+            _build_chat_send_sfx_wav(chunks_dir / "_sfx_chat_send.wav") if is_chat_sfx else None
+        )
+        chat_recv_wav: Optional[Path] = (
+            _build_chat_receive_sfx_wav(chunks_dir / "_sfx_chat_recv.wav") if is_chat_sfx else None
+        )
+        primary_speaker = (clip.lines[0].speaker_handle or "").strip().lower() if clip.lines else ""
         use_smart_sfx = bool(getattr(audio_config, "enable_smart_sfx", True))
         sfx_gain = max(0.0, min(2.0, float(getattr(audio_config, "smart_sfx_volume", 0.22)) / 0.22))
         shimmer_wav = _build_hook_shimmer_sfx_wav(chunks_dir / "_sfx_shimmer.wav") if use_smart_sfx else None
@@ -260,9 +304,20 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 eff_profile = base_prof.model_copy(
                     update={"speed_rate": eff_speed, "pitch_hz": eff_pitch}
                 )
-                speech_offset_ms = 85 if pop_sfx_wav is not None else 0
+                speech_offset_ms = (
+                    310
+                    if (is_chat_sfx and idx >= 1)
+                    else (85 if (pop_sfx_wav is not None or is_chat_sfx) else 0)
+                )
                 if pop_sfx_wav is not None:
                     pop_sfx_starts_ms.append(eff_start_ms)
+                elif is_chat_sfx:
+                    cur_spk = (line.speaker_handle or "").strip().lower()
+                    is_outgoing = bool(cur_spk and cur_spk == primary_speaker) or (idx == 0)
+                    chosen_chat_wav = chat_send_wav if is_outgoing else chat_recv_wav
+                    if chosen_chat_wav is not None:
+                        cue_t = eff_start_ms + (250 if idx >= 1 else 10)
+                        smart_sfx_cues.append((cue_t, chosen_chat_wav, max(0.85, sfx_gain)))
                 if use_smart_sfx:
                     if idx >= 1 and pop_sfx_wav is None and whoosh_wav is not None:
                         if (eff_start_ms - last_whoosh_ms) >= 2800:
@@ -316,6 +371,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         outro_tail_ms = max(0, int(audio_config.outro_tail_ms))
         total_target_ms = speech_target_ms + outro_tail_ms
         master_wav = clip_dir / "master_audio.wav"
+        clean_voice_wav = clip_dir / "narration_clean.wav"
         if on_progress:
             on_progress(
                 "GENERATING_AUDIO",
@@ -330,6 +386,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             audio_config=audio_config,
             orig_stereo_wav=orig_stereo_wav,
             master_wav=master_wav,
+            clean_voice_wav=clean_voice_wav,
             real_demo_windows_ms=real_demo_windows_ms,
             pop_sfx_wav=pop_sfx_wav,
             pop_sfx_starts_ms=pop_sfx_starts_ms,
@@ -352,6 +409,11 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             subtitle_pos_y=audio_config.subtitle_pos_y,
             subtitle_font_size=audio_config.subtitle_font_size,
             smart_keyword_highlight=bool(getattr(audio_config, "smart_keyword_highlight", True)),
+        )
+        srt_path = await asyncio.to_thread(
+            ASSSubtitleBuilder.build_srt_file,
+            events=timed_events,
+            out_srt_path=clip_dir / "subs.srt",
         )
 
         if on_progress:
@@ -376,7 +438,9 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         return MasterAudioAndSubDTO(
             clip_id=clip.clip_id,
             master_audio_wav_path=master_wav,
+            clean_narration_wav_path=clean_voice_wav if clean_voice_wav.exists() else None,
             ass_subtitle_path=ass_path,
+            srt_subtitle_path=srt_path,
             total_audio_duration_ms=actual_dur_ms,
             line_spans_ms=line_spans,
         )
@@ -442,6 +506,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         audio_config: AudioSubConfigDTO,
         orig_stereo_wav: Optional[Path],
         master_wav: Path,
+        clean_voice_wav: Optional[Path] = None,
         real_demo_windows_ms: Optional[List[tuple[int, int]]] = None,
         pop_sfx_wav: Optional[Path] = None,
         pop_sfx_starts_ms: Optional[List[int]] = None,
@@ -449,6 +514,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
     ) -> int:
         total_samples = max(1, int(round((total_target_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE)))
         mix = np.zeros((total_samples, 2), dtype=np.float32)
+        voice_stem = np.zeros((total_samples, 2), dtype=np.float32)
 
         # 1. Load & slice original movie / looped background video audio if enabled
         if audio_config.keep_original_audio and orig_stereo_wav and orig_stereo_wav.exists():
@@ -537,6 +603,9 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             mix *= envelope[:, None]
             for s_idx, arr in loaded_narration:
                 mix[s_idx : s_idx + arr.shape[0]] += arr * 1.08
+                voice_stem[s_idx : s_idx + arr.shape[0]] += arr * 1.05
+            if clean_voice_wav is not None:
+                _write_wav_float32_stereo(clean_voice_wav, voice_stem)
 
         # 2B. Overlay crisp Threads Card Pop SFX & Smart Micro-SFX (Hook Shimmer, Soft Whoosh, Shutter)
         if pop_sfx_wav and pop_sfx_wav.exists() and pop_sfx_starts_ms:

@@ -140,13 +140,54 @@ class TopicPromptDTO(BaseContractDTO):
 
     project_id: str = Field(min_length=1)
     topic_title: str = Field(min_length=3, max_length=200)
-    key_points: str = Field(default="", max_length=4000)
+    key_points: str = Field(default="", max_length=6000)
     visual_mode: VisualMode = VisualMode.AI_IMAGE
     target_duration_sec: int = Field(
         default=90, ge=MIN_ALLOWED_CLIP_SEC, le=MAX_ALLOWED_CLIP_SEC
     )
     part_count: int = Field(default=1, ge=1, le=20)
     narrative_tone: str = Field(default="cuốn hút, kịch tính kiểu kể chuyện Shorts/TikTok")
+
+
+class BriefExpandRequestDTO(BaseContractDTO):
+    """Input contract for AI short-idea analysis & detailed brief expansion (`ILLMService.expand_short_brief`)."""
+
+    mode: ProjectMode = ProjectMode.TOPIC_VIDEO
+    raw_title: str = Field(default="", max_length=250)
+    short_brief: str = Field(default="", max_length=4000)
+    product_category: ProductCategory = ProductCategory.MUSICAL_INSTRUMENT
+    target_duration_sec: int = Field(
+        default=75, ge=MIN_ALLOWED_CLIP_SEC, le=MAX_ALLOWED_CLIP_SEC
+    )
+    part_count: int = Field(default=1, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def _validate_non_empty_seed(self) -> "BriefExpandRequestDTO":
+        if len(self.raw_title.strip()) + len(self.short_brief.strip()) < 3:
+            raise ValueError("Vui lòng nhập tiêu đề hoặc mô tả ngắn ít nhất 3 ký tự.")
+        return self
+
+
+class BriefExpandResultDTO(BaseContractDTO):
+    """Output contract of AI brief analyzer: refined title, structured detailed outline & optimal settings."""
+
+    refined_title: str = Field(min_length=3, max_length=200)
+    alternative_titles: List[str] = Field(default_factory=list)
+    hook_opening: str = ""
+    expanded_description: str = Field(min_length=10, max_length=6000)
+    visual_direction: str = ""
+    recommended_tone: str = ""
+    recommended_sales_angle: Optional[SalesScriptAngle] = None
+    recommended_cta: str = ""
+    recommended_duration_sec: int = Field(
+        default=75, ge=MIN_ALLOWED_CLIP_SEC, le=MAX_ALLOWED_CLIP_SEC
+    )
+    recommended_part_count: int = Field(default=1, ge=1, le=20)
+    recommended_voice_id: str = ""
+    recommended_bgm_id: str = ""
+    recommended_visual_mode: VisualMode = VisualMode.AI_IMAGE
+    used_api_key: bool = False
+    analysis_summary: str = ""
 
 
 class ProductReviewPromptDTO(BaseContractDTO):
@@ -565,5 +606,18 @@ class MediaTrimResultDTO(BaseContractDTO):
     duration_ms: int = Field(gt=0)
     start_ms: int = Field(ge=0)
     end_ms: int = Field(gt=0)
+
+
+class ProjectGroupDTO(BaseContractDTO):
+    """Parent project container / campaign folder managing multiple child video projects."""
+
+    group_id: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=600)
+    color_tag: str = Field(default="#0ea5e9", max_length=24)
+    created_at: str = ""
+    updated_at: str = ""
+    project_count: int = Field(default=0, ge=0)
+    completed_count: int = Field(default=0, ge=0)
 
 

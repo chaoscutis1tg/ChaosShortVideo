@@ -246,6 +246,8 @@ export default function ProductStudioForm({
   onPreviewFrameReady,
   onProjectStarted,
   notify,
+  apiKeyConfigured = false,
+  onOpenApiSettings,
 }) {
   const [templates, setTemplates] = useState([]);
   const [selectedTplId, setSelectedTplId] = useState('');
@@ -290,6 +292,8 @@ export default function ProductStudioForm({
 
   const [complianceReport, setComplianceReport] = useState(null);
   const [checkingPolicy, setCheckingPolicy] = useState(false);
+  const [analyzingBrief, setAnalyzingBrief] = useState(false);
+  const [productAiAnalysis, setProductAiAnalysis] = useState(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadingFeedback, setUploadingFeedback] = useState(false);
   const [uploadingDemo, setUploadingDemo] = useState(false);
@@ -596,6 +600,50 @@ export default function ProductStudioForm({
   };
 
   const updateSalesLayout = (patch) => setLayoutConfig((prev) => ({ ...prev, ...patch }));
+
+  const handleExpandProductBrief = async () => {
+    if ((productName.trim() + rawDescription.trim()).length < 3) {
+      notify('Vui lòng nhập tên sản phẩm hoặc vài từ mô tả ngắn trước khi bấm Phân tích AI.');
+      return;
+    }
+    setAnalyzingBrief(true);
+    try {
+      const res = await studioApi.expandShortBrief({
+        mode: 'PRODUCT_SHOWCASE',
+        raw_title: productName.trim(),
+        short_brief: rawDescription.trim(),
+        product_category: category,
+        target_duration_sec: Number(durationSec),
+        part_count: 1,
+      });
+      if (res.refined_title) setProductName(res.refined_title);
+      if (res.expanded_description) setRawDescription(res.expanded_description);
+      if (res.recommended_cta) setCtaText(res.recommended_cta);
+      if (res.recommended_tone) setCopywritingTone(res.recommended_tone);
+      if (res.recommended_sales_angle) setSalesAngle(res.recommended_sales_angle);
+      if (res.recommended_duration_sec) setDurationSec(Number(res.recommended_duration_sec));
+      if (res.recommended_voice_id && voices.some((v) => v.profile_id === res.recommended_voice_id)) {
+        const mv = voices.find((v) => v.profile_id === res.recommended_voice_id);
+        setVoiceId(mv.profile_id);
+        if (typeof mv.speed_rate === 'number') setVoiceSpeed(mv.speed_rate);
+        if (typeof mv.pitch_hz === 'number') setVoicePitch(mv.pitch_hz);
+      }
+      if (res.recommended_bgm_id && bgmPresets.some((b) => b.preset_id === res.recommended_bgm_id)) {
+        setBgmPresetId(res.recommended_bgm_id);
+      }
+      setComplianceReport(null);
+      setProductAiAnalysis(res);
+      notify(
+        res.used_api_key
+          ? 'Đã gọi API Key phân tích & viết chi tiết mô tả sản phẩm chuẩn bán hàng!'
+          : 'Đã mở rộng mô tả chi tiết cho sản phẩm!'
+      );
+    } catch (err) {
+      notify(`Lỗi phân tích AI: ${err.message}`);
+    } finally {
+      setAnalyzingBrief(false);
+    }
+  };
 
   const handleStart = async (autoOneClick) => {
     if (productName.trim().length < 2) {
@@ -1305,11 +1353,32 @@ export default function ProductStudioForm({
           />
         </div>
 
-        <div className="form-group" style={{ marginBottom: complianceReport ? 10 : 0 }}>
-          <label className="form-label">Thông số sản phẩm, phụ kiện tặng kèm & quyền lợi khách hàng</label>
+        <div className="form-group" style={{ marginBottom: complianceReport || productAiAnalysis ? 10 : 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Mô tả ngắn hoặc thông số sản phẩm (Gõ vài ý ngắn rồi bấm Phân tích AI để tự viết chi tiết)
+            </label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {!apiKeyConfigured && onOpenApiSettings && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
+                  Gắn API Key AI
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={analyzingBrief || submitting}
+                onClick={handleExpandProductBrief}
+              >
+                <Wand2 size={13} />{' '}
+                {analyzingBrief ? 'Đang gọi API phân tích...' : 'Phân tích & Viết chi tiết (AI)'}
+              </button>
+            </div>
+          </div>
           <textarea
             className="textarea"
             style={{ minHeight: 124 }}
+            placeholder="Chỉ cần gõ ngắn gọn vài từ (VD: Đàn Guitar gỗ thông nguyên tấm cho người mới tập, âm ấm, tặng kèm bao da) rồi bấm nút 'Phân tích & Viết chi tiết (AI)'..."
             value={rawDescription}
             onChange={(e) => {
               setRawDescription(e.target.value);
@@ -1317,6 +1386,55 @@ export default function ProductStudioForm({
             }}
           />
         </div>
+
+        {productAiAnalysis && (
+          <div
+            className="surface-box"
+            style={{
+              marginTop: 8,
+              marginBottom: complianceReport ? 10 : 0,
+              borderColor: 'rgba(16, 185, 129, 0.45)',
+              background: 'rgba(16, 185, 129, 0.07)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <strong style={{ color: 'var(--success-text)', fontSize: 13.1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={15} />
+                {productAiAnalysis.used_api_key
+                  ? 'AI đã nâng cấp tiêu đề, mô tả chi tiết & chọn giọng tư vấn tối ưu'
+                  : 'Đã chuẩn hóa mô tả chi tiết cho sản phẩm'}
+              </strong>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={submitting || analyzingBrief}
+                onClick={() => handleStart(true)}
+              >
+                <Play size={13} /> Tiếp theo: Chạy tạo video ngay
+              </button>
+            </div>
+            {productAiAnalysis.analysis_summary && (
+              <div className="text-sub" style={{ fontSize: 12.5, marginBottom: productAiAnalysis.alternative_titles?.length ? 6 : 0 }}>
+                {productAiAnalysis.analysis_summary}
+              </div>
+            )}
+            {productAiAnalysis.alternative_titles?.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {productAiAnalysis.alternative_titles.map((alt, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11.8 }}
+                    onClick={() => setProductName(alt)}
+                  >
+                    Đổi tiêu đề: {alt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {complianceReport && (
           <div

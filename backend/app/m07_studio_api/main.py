@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from app.m00_core_contracts import (
     AudioSubConfigDTO,
     BrandKitDTO,
+    BriefExpandRequestDTO,
     ClipSpecDTO,
     CopywritingTone,
     CoverTemplateStyle,
@@ -110,6 +111,7 @@ class TopicStartRequest(BaseModel):
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
+    parent_group_id: Optional[str] = None
     auto_one_click: bool = True
 
 
@@ -127,6 +129,7 @@ class MovieStartRequest(BaseModel):
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
+    parent_group_id: Optional[str] = None
     auto_one_click: bool = True
 
 
@@ -158,11 +161,32 @@ class ProductStartRequest(BaseModel):
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
+    parent_group_id: Optional[str] = None
     auto_one_click: bool = True
 
 
 class ComplianceCheckRequest(BaseModel):
     text: str = Field(default="", max_length=8000)
+
+
+class ProjectGroupSaveRequest(BaseModel):
+    group_id: Optional[str] = None
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=600)
+    color_tag: str = Field(default="#0ea5e9", max_length=24)
+
+
+class ProjectGroupAssignRequest(BaseModel):
+    group_id: Optional[str] = None
+
+
+class BriefExpandAPIRequest(BaseModel):
+    mode: ProjectMode = ProjectMode.TOPIC_VIDEO
+    raw_title: str = Field(default="", max_length=250)
+    short_brief: str = Field(default="", max_length=4000)
+    product_category: ProductCategory = ProductCategory.MUSICAL_INSTRUMENT
+    target_duration_sec: int = Field(default=75, ge=15, le=180)
+    part_count: int = Field(default=1, ge=1, le=20)
 
 
 class ProductTemplateSaveRequest(BaseModel):
@@ -1183,6 +1207,25 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             "failed_urls": failed_urls,
         }
 
+    @app.post("/api/brain/expand-brief")
+    async def expand_short_brief_endpoint(req: BriefExpandAPIRequest) -> Dict[str, Any]:
+        """Analyze a short title + rough idea via API Key and expand into full script brief & optimal settings."""
+        try:
+            dto = BriefExpandRequestDTO(
+                mode=req.mode,
+                raw_title=req.raw_title,
+                short_brief=req.short_brief,
+                product_category=req.product_category,
+                target_duration_sec=req.target_duration_sec,
+                part_count=req.part_count,
+            )
+            expanded = await orchestrator.brain.expand_short_brief(dto)
+            return expanded.model_dump()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Lỗi phân tích nội dung AI: {exc}") from exc
+
     @app.post("/api/product/compliance-check")
     async def check_product_script_compliance(req: ComplianceCheckRequest) -> Dict[str, Any]:
         """Audit product description/script against TikTok Shop & Ad Law rules."""
@@ -1307,6 +1350,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             target_min_sec=max(15, req.target_duration_sec - 15),
             target_max_sec=min(180, req.target_duration_sec + 20),
             request_payload_json=req.model_dump_json(),
+            parent_group_id=req.parent_group_id,
         )
         demo_p = (
             Path(req.demo_clip_path)
@@ -1384,6 +1428,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             target_min_sec=max(15, req.target_duration_sec - 15),
             target_max_sec=min(180, req.target_duration_sec + 15),
             request_payload_json=req.model_dump_json(),
+            parent_group_id=req.parent_group_id,
         )
         prompt_dto = TopicPromptDTO(
             project_id=project_id,
@@ -1442,6 +1487,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             target_min_sec=normalized_req.cut_config.min_clip_sec,
             target_max_sec=normalized_req.cut_config.max_clip_sec,
             request_payload_json=normalized_req.model_dump_json(),
+            parent_group_id=normalized_req.parent_group_id,
         )
         ingest_dto = IngestRequestDTO(
             project_id=project_id,
@@ -1476,6 +1522,40 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             ),
         )
         return {"project_id": project_id, "state": initial_state}
+
+    @app.get("/api/project-groups")
+    async def list_parent_project_groups() -> List[Dict[str, Any]]:
+        """List all parent project containers with child project counts."""
+        return [g.model_dump() for g in repo.list_project_groups()]
+
+    @app.post("/api/project-groups")
+    async def save_parent_project_group(req: ProjectGroupSaveRequest) -> Dict[str, Any]:
+        """Create or update a parent project container."""
+        gid = (req.group_id or "").strip() or f"grp_{uuid.uuid4().hex[:8]}"
+        saved = repo.upsert_project_group(
+            group_id=gid,
+            name=req.name,
+            description=req.description,
+            color_tag=req.color_tag,
+        )
+        return saved.model_dump()
+
+    @app.delete("/api/project-groups/{group_id}")
+    async def remove_parent_project_group(group_id: str) -> Dict[str, Any]:
+        """Delete a parent project group while preserving all child projects."""
+        repo.delete_project_group(group_id)
+        return {"deleted_group_id": group_id}
+
+    @app.post("/api/projects/{project_id}/assign-group")
+    async def assign_project_group_endpoint(
+        project_id: str, req: ProjectGroupAssignRequest
+    ) -> Dict[str, Any]:
+        """Assign or detach a child project to/from a parent project group."""
+        proj = repo.get_project(project_id)
+        if proj is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dự án.")
+        repo.assign_project_to_group(project_id, req.group_id)
+        return await get_project_detail(project_id)
 
     @app.get("/api/projects")
     async def get_all_projects() -> List[Dict[str, Any]]:

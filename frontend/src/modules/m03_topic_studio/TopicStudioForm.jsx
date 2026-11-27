@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import {
+  CheckCircle2,
   Edit3,
   FileText,
   Image,
+  KeyRound,
   Layers,
   Play,
+  RotateCcw,
   Sparkles,
   Video,
+  Wand2,
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import {
@@ -38,16 +42,19 @@ const VISUAL_SOURCE_CHOICES = [
 
 const QUICK_TOPICS = [
   {
-    title: 'Cách chọn cây đàn Violin đầu tiên chuẩn âm cho người mới học',
-    points: '- Phân biệt mặt đàn gỗ thịt tự nhiên và gỗ ép công nghiệp\n- Cách đo sải tay chọn size đàn phù hợp\n- Bộ phụ kiện thiết yếu cần kiểm tra khi nhận đàn',
+    title: '4 cấp độ chơi đàn Guitar — Bạn đang ở đâu?',
+    shortBrief:
+      'Cách tự nhận biết trình độ chơi đàn hiện tại từ mới bấm hợp âm cơ bản, đệm hát mượt cho tới cảm âm solo tự do.',
   },
   {
-    title: '3 mẹo bảo quản đàn gỗ tự nhiên luôn bền đẹp trong khí hậu ẩm',
-    points: '- Giữ độ ẩm hộp đàn ổn định\n- Vệ sinh bụi nhựa thông trên mặt đàn và dây sau khi tập\n- Nới vừa phải lông vĩ kéo khi cất đàn',
+    title: 'Tin nhắn lúc 2 giờ sáng từ tương lai',
+    shortBrief:
+      'Đang ngủ thì điện thoại sáng lên tin nhắn gửi từ chính số của mình dặn tuyệt đối đừng mở cửa phòng lúc 3 giờ 15.',
   },
   {
-    title: 'Bí quyết phối đồ thanh lịch tôn dáng cho ngày đi làm bận rộn',
-    points: '- Chọn phom áo đứng dáng ít nhăn\n- Phối tông màu trung tính sang trọng\n- Điểm nhấn phụ kiện tinh tế',
+    title: 'Cách chọn cây đàn Violin đầu tiên chuẩn âm cho người mới',
+    shortBrief:
+      'Phân biệt gỗ thịt tự nhiên với gỗ ép, cách đo sải tay chọn kích cỡ đàn và các phụ kiện cần kiểm tra.',
   },
 ];
 
@@ -57,9 +64,16 @@ export default function TopicStudioForm({
   layoutConfig,
   onProjectStarted,
   notify,
+  apiKeyConfigured = false,
+  onOpenApiSettings,
 }) {
   const [topicTitle, setTopicTitle] = useState('');
+  const [shortBrief, setShortBrief] = useState('');
   const [keyPoints, setKeyPoints] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [previousTitle, setPreviousTitle] = useState('');
+
   const [visualMode, setVisualMode] = useState('AI_IMAGE');
   const [voiceId, setVoiceId] = useState(
     voices.find((v) => v.profile_id === 'edge_hoai_my_fast')?.profile_id ||
@@ -67,8 +81,8 @@ export default function TopicStudioForm({
       voices[0]?.profile_id ||
       'edge_hoai_my_fast'
   );
-  const [voiceSpeed, setVoiceSpeed] = useState(1.15);
-  const [voicePitch, setVoicePitch] = useState(0.4);
+  const [voiceSpeed, setVoiceSpeed] = useState(1.12);
+  const [voicePitch, setVoicePitch] = useState(0.0);
   const [bgmPresetId, setBgmPresetId] = useState('bgm_lofi_story');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.08);
@@ -78,16 +92,70 @@ export default function TopicStudioForm({
   const [tone, setTone] = useState('Mở đầu cuốn hút trong 3 giây đầu, giọng kể tự nhiên sâu sắc');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleStart = async (autoOneClick) => {
-    if (topicTitle.trim().length < 3) {
-      notify('Vui lòng nhập chủ đề video (ít nhất 3 ký tự).');
+  const handleAnalyzeBrief = async () => {
+    if ((topicTitle.trim() + shortBrief.trim()).length < 3) {
+      notify('Vui lòng nhập tiêu đề hoặc vài từ mô tả ngắn trước khi bấm Phân tích.');
       return;
     }
+    setAnalyzing(true);
+    try {
+      const origTitle = topicTitle.trim();
+      const res = await studioApi.expandShortBrief({
+        mode: 'TOPIC_VIDEO',
+        raw_title: origTitle,
+        short_brief: shortBrief.trim(),
+        target_duration_sec: Number(durationSec),
+        part_count: Number(partCount),
+      });
+
+      if (origTitle && origTitle !== res.refined_title) {
+        setPreviousTitle(origTitle);
+      }
+      setTopicTitle(res.refined_title);
+      setKeyPoints(res.expanded_description);
+      if (res.recommended_tone) setTone(res.recommended_tone);
+      if (res.recommended_duration_sec) setDurationSec(Number(res.recommended_duration_sec));
+      if (res.recommended_part_count) setPartCount(Number(res.recommended_part_count));
+      if (res.recommended_visual_mode) setVisualMode(res.recommended_visual_mode);
+
+      if (res.recommended_voice_id && voices.some((v) => v.profile_id === res.recommended_voice_id)) {
+        const matchedVoice = voices.find((v) => v.profile_id === res.recommended_voice_id);
+        setVoiceId(matchedVoice.profile_id);
+        if (typeof matchedVoice.speed_rate === 'number') setVoiceSpeed(matchedVoice.speed_rate);
+        if (typeof matchedVoice.pitch_hz === 'number') setVoicePitch(matchedVoice.pitch_hz);
+      }
+      if (
+        res.recommended_bgm_id &&
+        bgmPresets.some((b) => b.preset_id === res.recommended_bgm_id)
+      ) {
+        setBgmPresetId(res.recommended_bgm_id);
+      }
+
+      setAiAnalysis(res);
+      notify(
+        res.used_api_key
+          ? 'Đã gọi API Key phân tích & triển khai đầy đủ chủ đề, dàn ý chi tiết và cấu hình tối ưu!'
+          : 'Đã mở rộng dàn ý chi tiết thành công!'
+      );
+    } catch (err) {
+      notify(`Lỗi phân tích AI: ${err.message}`);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleStart = async (autoOneClick) => {
+    const effTitle = topicTitle.trim() || shortBrief.trim().slice(0, 90);
+    if (effTitle.length < 3) {
+      notify('Vui lòng nhập tiêu đề hoặc mô tả ngắn video (ít nhất 3 ký tự).');
+      return;
+    }
+    const effPoints = keyPoints.trim() || shortBrief.trim();
     setSubmitting(true);
     try {
       const res = await studioApi.startTopicProject({
-        topic_title: topicTitle.trim(),
-        key_points: keyPoints,
+        topic_title: effTitle,
+        key_points: effPoints,
         visual_mode: visualMode,
         target_duration_sec: Number(durationSec),
         part_count: Number(partCount),
@@ -113,13 +181,16 @@ export default function TopicStudioForm({
       <div className="page-header">
         <div>
           <div className="page-title">
-            <FileText size={20} strokeWidth={2} /> Tạo Video Mới Từ Chủ Đề & Kiến Thức Chia Sẻ
+            <FileText size={20} strokeWidth={2} /> Tạo Video Mới Từ Chủ Đề & Ý Tưởng Ngắn
           </div>
           <div className="page-subtitle">
-            Nhập tiêu đề hoặc chọn nhanh gợi ý bên dưới — hệ thống tự biên soạn kịch bản, tạo hình minh họa và lồng tiếng hoàn chỉnh
+            Viết tiêu đề kèm vài dòng mô tả ngắn → Bấm <strong>Phân tích &amp; Triển khai chi tiết (AI)</strong> để hệ thống hoàn thiện kịch bản sâu sắc nhất rồi chạy tạo video
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span className={`badge ${apiKeyConfigured ? 'badge-ok' : 'badge-warn'}`}>
+            <KeyRound size={12} /> {apiKeyConfigured ? 'API Key AI sẵn sàng' : 'Chưa gắn API Key'}
+          </span>
           <span className="badge badge-info">Thời lượng: ~{durationSec}s</span>
           <span className="badge">{partCount} tập</span>
         </div>
@@ -128,7 +199,7 @@ export default function TopicStudioForm({
       {/* QUICK STARTER CHIPS */}
       <div className="summary-bar">
         <span style={{ fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Sparkles size={14} style={{ color: 'var(--brand-text)' }} /> Điền nhanh chủ đề mẫu:
+          <Sparkles size={14} style={{ color: 'var(--brand-text)' }} /> Điền nhanh ý tưởng mẫu:
         </span>
         {QUICK_TOPICS.map((qt, idx) => (
           <button
@@ -137,41 +208,189 @@ export default function TopicStudioForm({
             className="btn btn-secondary btn-sm"
             onClick={() => {
               setTopicTitle(qt.title);
-              setKeyPoints(qt.points);
+              setShortBrief(qt.shortBrief);
+              setKeyPoints('');
+              setAiAnalysis(null);
             }}
           >
-            Mẫu {idx + 1}: {qt.title.slice(0, 34)}...
+            Mẫu {idx + 1}: {qt.title.slice(0, 32)}...
           </button>
         ))}
       </div>
 
-      {/* STEP 1 */}
+      {/* STEP 1: SHORT BRIEF -> AI EXPAND -> READY TO RUN */}
       <div className="step-box">
         <div className="step-header">
           <span className="step-num">1</span>
-          <div>
-            <div className="step-title">Chủ đề câu chuyện & các ý chính</div>
+          <div style={{ flex: 1 }}>
+            <div className="step-title">Nhập tiêu đề &amp; mô tả ngắn → Bấm Phân tích AI để triển khai chi tiết</div>
             <div className="step-desc">
-              Bạn có thể để trống phần ý chính nếu muốn AI tự triển khai trọn vẹn nội dung từ tiêu đề
+              Chỉ cần gõ ý tưởng ngắn gọn — API AI sẽ tự nâng cấp tiêu đề, viết dàn ý từng phân cảnh, định hướng hình ảnh và chọn sẵn giọng đọc phù hợp nhất
             </div>
           </div>
+          {!apiKeyConfigured && onOpenApiSettings && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
+              <KeyRound size={13} /> Nhập API Key AI
+            </button>
+          )}
         </div>
 
         <div className="form-group">
-          <label className="form-label">Chủ đề hoặc tiêu đề video</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Tiêu đề hoặc chủ đề của video
+            </label>
+            {previousTitle && previousTitle !== topicTitle && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '3px 9px', fontSize: 11.8 }}
+                onClick={() => setTopicTitle(previousTitle)}
+              >
+                <RotateCcw size={12} /> Khôi phục tiêu đề ban đầu
+              </button>
+            )}
+          </div>
           <input
             className="input"
-            placeholder="VD: Cách chọn cây đàn Violin đầu tiên phù hợp cho người mới học..."
+            placeholder="VD: 4 cấp độ chơi đàn Guitar — Bạn đang ở đâu? (hoặc gõ vắn tắt chủ đề)"
             value={topicTitle}
             onChange={(e) => setTopicTitle(e.target.value)}
           />
         </div>
 
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">Các ý chính muốn nhấn mạnh (mỗi dòng một ý, tùy chọn)</label>
+        <div className="form-group">
+          <label className="form-label">
+            Mô tả ngắn / Ý tưởng sơ lược ban đầu (1 – 3 câu ngắn gọn)
+          </label>
           <textarea
             className="textarea"
-            placeholder="- Cách chọn kích cỡ đàn theo sải tay&#10;- Phân biệt gỗ thịt tự nhiên và gỗ ép&#10;- Những phụ kiện cần có..."
+            style={{ minHeight: 74 }}
+            placeholder="VD: Làm sao biết mình đang ở cấp độ nào khi tập Guitar, từ lúc mới bấm hợp âm bị rè cho tới lúc tự cảm âm đệm hát..."
+            value={shortBrief}
+            onChange={(e) => setShortBrief(e.target.value)}
+          />
+        </div>
+
+        {/* PROMINENT ANALYZE & EXPAND ACTION BAR */}
+        <div
+          className="surface-box"
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            borderColor: 'var(--brand)',
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ minWidth: 220, flex: 1 }}>
+            <div style={{ fontSize: 13.3, fontWeight: 700, color: 'var(--text-primary)' }}>
+              Bước 1A: Gọi API AI phân tích &amp; viết nội dung chi tiết từ ý tưởng ngắn
+            </div>
+            <div className="text-sub" style={{ fontSize: 12.2, marginTop: 2 }}>
+              Tự động tối ưu từ tiêu đề, câu mở đầu 3 giây, dàn ý phân cảnh cho tới bối cảnh hình ảnh để video xuất ra đạt chất lượng tốt nhất
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ minHeight: 40, padding: '8px 16px', fontWeight: 700 }}
+            disabled={analyzing || submitting}
+            onClick={handleAnalyzeBrief}
+          >
+            <Wand2 size={16} />{' '}
+            {analyzing ? 'Đang gọi API phân tích chi tiết...' : 'Phân tích & Triển khai chi tiết (AI)'}
+          </button>
+        </div>
+
+        {/* AI EXPANSION RESULT SUMMARY & 1-CLICK NEXT RUN */}
+        {aiAnalysis && (
+          <div
+            className="surface-box"
+            style={{
+              marginBottom: 14,
+              borderColor: 'rgba(16, 185, 129, 0.45)',
+              background: 'rgba(16, 185, 129, 0.07)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, fontSize: 13.4, color: 'var(--success-text)' }}>
+                <CheckCircle2 size={16} />
+                {aiAnalysis.used_api_key
+                  ? 'Đã phân tích chuyên sâu qua API Key & cập nhật cấu hình tối ưu'
+                  : 'Đã mở rộng dàn ý chi tiết (Gắn thêm API Key để AI viết sâu hơn)'}
+              </div>
+              <span className="badge badge-info">
+                Đề xuất: ~{aiAnalysis.recommended_duration_sec}s • {aiAnalysis.recommended_part_count} tập
+              </span>
+            </div>
+
+            {aiAnalysis.analysis_summary && (
+              <div className="text-sub" style={{ fontSize: 12.8, marginBottom: 8 }}>
+                {aiAnalysis.analysis_summary}
+              </div>
+            )}
+
+            {aiAnalysis.hook_opening && (
+              <div style={{ fontSize: 12.8, marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                <strong>Câu mở đầu 3s giữ chân người xem:</strong> &ldquo;{aiAnalysis.hook_opening}&rdquo;
+              </div>
+            )}
+
+            {aiAnalysis.alternative_titles?.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div className="text-sub" style={{ fontSize: 12, fontWeight: 600, marginBottom: 5 }}>
+                  Bấm để đổi nhanh sang phương án tiêu đề khác nếu thích:
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {aiAnalysis.alternative_titles.map((alt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: 12, textAlign: 'left' }}
+                      onClick={() => setTopicTitle(alt)}
+                    >
+                      {alt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 40, fontWeight: 700 }}
+                disabled={submitting || analyzing}
+                onClick={() => handleStart(true)}
+              >
+                <Play size={15} /> Tiếp theo: Chạy tạo video tự động ngay
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ minHeight: 40 }}
+                disabled={submitting || analyzing}
+                onClick={() => handleStart(false)}
+              >
+                <Edit3 size={14} /> Xem &amp; duyệt từng câu kịch bản trước khi xuất
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">
+            Mô tả chi tiết &amp; dàn ý từng phân cảnh (AI tự điền sau khi phân tích — bạn có thể chỉnh sửa thêm)
+          </label>
+          <textarea
+            className="textarea"
+            style={{ minHeight: 138 }}
+            placeholder="- Mở đầu Hook 3s gây tò mò...&#10;- Diễn biến / Ý chính 1...&#10;- Diễn biến / Ý chính 2...&#10;- Cao trào & Thông điệp kết...&#10;(Hoặc bấm nút 'Phân tích & Triển khai chi tiết (AI)' ở trên để hệ thống tự viết đầy đủ)"
             value={keyPoints}
             onChange={(e) => setKeyPoints(e.target.value)}
           />
@@ -183,9 +402,9 @@ export default function TopicStudioForm({
         <div className="step-header">
           <span className="step-num">2</span>
           <div>
-            <div className="step-title">Nguồn hình ảnh minh họa, giọng đọc & nhạc nền</div>
+            <div className="step-title">Nguồn hình ảnh minh họa, giọng đọc &amp; nhạc nền</div>
             <div className="step-desc">
-              Hiển thị đầy đủ tên giọng đọc, hỗ trợ tinh chỉnh tốc độ/độ trầm và nghe thử trực tiếp
+              Tự động chọn sẵn giọng và nhạc hợp chủ đề sau khi phân tích — bạn vẫn có thể nghe thử hoặc đổi tùy ý
             </div>
           </div>
         </div>
@@ -209,7 +428,10 @@ export default function TopicStudioForm({
             onPitchChange={setVoicePitch}
             defaultCategory="TIKTOK_SHORT"
             label="Giọng đọc dẫn chuyện (Short TikTok / YouTube Shorts / Phim)"
-            sampleText="Chỉ với ba lưu ý đơn giản dưới đây, bạn sẽ chọn được cây đàn ưng ý ngay từ lần đầu tiên."
+            sampleText={
+              aiAnalysis?.hook_opening ||
+              'Chỉ với ba lưu ý đơn giản dưới đây, bạn sẽ nắm bắt trọn vẹn điểm mấu chốt ngay từ lần đầu tiên.'
+            }
             notify={notify}
           />
           <InlineBgmSelector
@@ -231,7 +453,7 @@ export default function TopicStudioForm({
         <div className="step-header">
           <span className="step-num">3</span>
           <div>
-            <div className="step-title">Thời lượng, chia tập & phong cách hiển thị phụ đề</div>
+            <div className="step-title">Thời lượng, chia tập &amp; phong cách hiển thị phụ đề</div>
             <div className="step-desc">
               Cấu hình trực quan ngay trên màn hình để kiểm soát chính xác độ dài video xuất ra
             </div>
@@ -290,7 +512,7 @@ export default function TopicStudioForm({
         <button
           className="btn btn-primary"
           style={{ flex: 1, minWidth: 230, minHeight: 44, fontSize: 14.2 }}
-          disabled={submitting}
+          disabled={submitting || analyzing}
           onClick={() => handleStart(true)}
         >
           <Play size={16} /> Bắt đầu tạo video tự động
@@ -298,7 +520,7 @@ export default function TopicStudioForm({
         <button
           className="btn btn-secondary"
           style={{ minHeight: 44 }}
-          disabled={submitting}
+          disabled={submitting || analyzing}
           onClick={() => handleStart(false)}
         >
           <Edit3 size={15} /> Xem và sửa kịch bản trước khi xuất

@@ -12,6 +12,7 @@ from .dtos import (
     ClipSpecDTO,
     CutPlanDTO,
     MediaAssetDTO,
+    ProjectGroupDTO,
     RenderOutputDTO,
     SavedProductTemplateDTO,
     SEOPackageDTO,
@@ -571,6 +572,15 @@ class SQLiteRepository:
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS project_groups (
+            group_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            color_tag TEXT DEFAULT '#0ea5e9',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
         with self._connect() as conn:
             conn.executescript(schema_sql)
@@ -579,6 +589,25 @@ class SQLiteRepository:
                 conn.execute(
                     "ALTER TABLE projects ADD COLUMN request_payload_json TEXT DEFAULT '{}'"
                 )
+            if "parent_group_id" not in proj_cols:
+                conn.execute(
+                    "ALTER TABLE projects ADD COLUMN parent_group_id TEXT DEFAULT NULL"
+                )
+            # Recover any stale in-flight projects from an abruptly closed previous server session
+            conn.execute(
+                """
+                UPDATE projects
+                SET state = 'PAUSED',
+                    error_message = CASE
+                        WHEN error_message = '' THEN 'Phiên trước đã tạm đóng — bấm Tiếp tục để chạy tiếp dự án.'
+                        ELSE error_message
+                    END
+                WHERE state IN (
+                    'QUEUED', 'INGESTING', 'TRANSCRIBING_GPU', 'AI_ANALYZING',
+                    'GENERATING_ASSETS', 'RENDERING_NVENC', 'PACKAGING_SEO'
+                )
+                """
+            )
             vp_cols = [
                 r["name"] for r in conn.execute("PRAGMA table_info(voice_profiles)").fetchall()
             ]
@@ -730,15 +759,17 @@ class SQLiteRepository:
         target_min_sec: int = 65,
         target_max_sec: int = 120,
         request_payload_json: str = "{}",
+        parent_group_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Insert a new project record in DRAFT state."""
+        """Insert a new project record in DRAFT state (optionally linked to a parent project group)."""
         now = _utc_now_iso()
+        clean_group = (parent_group_id or "").strip() or None
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO projects
-                (id, name, mode, state, target_min_sec, target_max_sec, request_payload_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, name, mode, state, target_min_sec, target_max_sec, request_payload_json, parent_group_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -748,11 +779,99 @@ class SQLiteRepository:
                     target_min_sec,
                     target_max_sec,
                     request_payload_json,
+                    clean_group,
                     now,
                     now,
                 ),
             )
         return self.get_project(project_id) or {}
+
+    def list_project_groups(self) -> List[ProjectGroupDTO]:
+        """List all parent project containers with live child counts."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT g.*,
+                       COUNT(p.id) AS project_count,
+                       SUM(CASE WHEN p.state = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_count
+                FROM project_groups g
+                LEFT JOIN projects p ON p.parent_group_id = g.group_id
+                GROUP BY g.group_id
+                ORDER BY g.updated_at DESC
+                """
+            ).fetchall()
+        return [
+            ProjectGroupDTO(
+                group_id=r["group_id"],
+                name=r["name"],
+                description=r["description"] or "",
+                color_tag=r["color_tag"] or "#0ea5e9",
+                created_at=r["created_at"] or "",
+                updated_at=r["updated_at"] or "",
+                project_count=int(r["project_count"] or 0),
+                completed_count=int(r["completed_count"] or 0),
+            )
+            for r in rows
+        ]
+
+    def upsert_project_group(
+        self,
+        group_id: str,
+        name: str,
+        description: str = "",
+        color_tag: str = "#0ea5e9",
+    ) -> ProjectGroupDTO:
+        """Create or update a parent project folder."""
+        now = _utc_now_iso()
+        clean_color = (color_tag or "#0ea5e9").strip()[:24]
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO project_groups (group_id, name, description, color_tag, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_id) DO UPDATE SET
+                    name=excluded.name,
+                    description=excluded.description,
+                    color_tag=excluded.color_tag,
+                    updated_at=excluded.updated_at
+                """,
+                (group_id, name.strip(), description.strip(), clean_color, now, now),
+            )
+        for g in self.list_project_groups():
+            if g.group_id == group_id:
+                return g
+        return ProjectGroupDTO(
+            group_id=group_id,
+            name=name.strip(),
+            description=description.strip(),
+            color_tag=clean_color,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def delete_project_group(self, group_id: str) -> None:
+        """Delete parent project group while keeping all child projects intact (unassigned)."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE projects SET parent_group_id = NULL WHERE parent_group_id = ?",
+                (group_id,),
+            )
+            conn.execute("DELETE FROM project_groups WHERE group_id = ?", (group_id,))
+
+    def assign_project_to_group(self, project_id: str, group_id: Optional[str]) -> None:
+        """Move a child project into a parent project group (or detach when group_id is None/empty)."""
+        clean_gid = (group_id or "").strip() or None
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE projects SET parent_group_id = ?, updated_at = ? WHERE id = ?",
+                (clean_gid, now, project_id),
+            )
+            if clean_gid:
+                conn.execute(
+                    "UPDATE project_groups SET updated_at = ? WHERE group_id = ?",
+                    (now, clean_gid),
+                )
 
     def update_project_state(
         self, project_id: str, state: JobState, error_message: str = ""

@@ -824,6 +824,41 @@ def test_m07_uc15_nvenc_trimmer_cover_snapshot_lanqr_and_backup(tmp_path: Path) 
         tpl_ids = {t["template_id"] for t in client.get("/api/product/templates").json()}
         assert "tpl_custom_s2s" in tpl_ids
 
+        # 5. AI Short Brief Analyzer & Expander (`POST /api/brain/expand-brief`)
+        exp_topic = client.post(
+            "/api/brain/expand-brief",
+            json={
+                "mode": "TOPIC_VIDEO",
+                "raw_title": "4 cấp độ chơi đàn Guitar",
+                "short_brief": "Làm sao biết mình đang ở trình độ nào từ mới tập bấm hợp âm tới solo",
+                "target_duration_sec": 75,
+                "part_count": 1,
+            },
+        )
+        assert exp_topic.status_code == 200
+        exp_data = exp_topic.json()
+        assert len(exp_data["refined_title"]) >= 8
+        assert len(exp_data["expanded_description"]) >= 40
+        assert exp_data["recommended_voice_id"] != ""
+        assert exp_data["recommended_bgm_id"] != ""
+
+        # 6. Parent Project Groups (`Dự án cha -> Dự án con`)
+        grp_res = client.post(
+            "/api/project-groups",
+            json={
+                "name": "Series Giải Mã Lịch Sử Cổ Đại",
+                "description": "Chuỗi video ngắn 60-90s cho kênh YouTube Shorts",
+                "color_tag": "#10b981",
+            },
+        )
+        assert grp_res.status_code == 200
+        gid = grp_res.json()["group_id"]
+        groups_list = client.get("/api/project-groups").json()
+        assert any(g["group_id"] == gid for g in groups_list)
+        client.delete(f"/api/project-groups/{gid}")
+
+
+
 
 
 

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.m00_core_contracts import (
+    BriefExpandRequestDTO,
     CopywritingTone,
     CutConfigDTO,
     CutStrategy,
@@ -209,6 +210,42 @@ async def test_m03_uc13_natural_copywriting_tones_strip_colons_and_jargon(tmp_pa
             assert "(Solid Wood)" not in ln.vi_text
             assert "(Ebony)" not in ln.vi_text
             assert ln.callout_label == ""
+
+
+@pytest.mark.asyncio
+async def test_m03_expand_short_brief_topic_and_product_contracts() -> None:
+    """Verify short title/brief expands into full structured Topic & Product briefs matching DTO contracts."""
+    brain = GeminiContentBrainService(api_key="", allow_offline_fallback=True)
+
+    topic_res = await brain.expand_short_brief(
+        BriefExpandRequestDTO(
+            mode=ProjectMode.TOPIC_VIDEO,
+            raw_title="Tin nhắn lúc 2 giờ sáng",
+            short_brief="Nhận được tin nhắn từ tương lai dặn đừng mở cửa phòng",
+            target_duration_sec=80,
+            part_count=1,
+        )
+    )
+    assert len(topic_res.refined_title) >= 10
+    assert len(topic_res.expanded_description.splitlines()) >= 5
+    assert topic_res.recommended_voice_id == "edge_bong_dem_horror"
+    assert topic_res.recommended_bgm_id == "bgm_drama_tension"
+    assert topic_res.visual_direction != ""
+
+    prod_res = await brain.expand_short_brief(
+        BriefExpandRequestDTO(
+            mode=ProjectMode.PRODUCT_SHOWCASE,
+            raw_title="Violin Avaro S2",
+            short_brief="Đàn gỗ thịt tự nhiên cho người mới tập, âm ấm",
+            product_category=ProductCategory.MUSICAL_INSTRUMENT,
+            target_duration_sec=55,
+        )
+    )
+    assert len(prod_res.refined_title) >= 10
+    assert "Avaro S2" in prod_res.expanded_description
+    assert prod_res.recommended_sales_angle == SalesScriptAngle.EXPERT_SPEC_REVIEW
+    assert prod_res.recommended_cta != ""
+
 
 
 

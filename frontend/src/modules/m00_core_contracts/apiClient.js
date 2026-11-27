@@ -103,6 +103,12 @@ export const studioApi = {
   startTopicProject: (payload) =>
     requestJSON('/api/topic/start', { method: 'POST', body: JSON.stringify(payload) }),
 
+  expandShortBrief: (payload) =>
+    requestJSON('/api/brain/expand-brief', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   startMovieProject: (payload) =>
     requestJSON('/api/movie/start', { method: 'POST', body: JSON.stringify(payload) }),
 

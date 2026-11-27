@@ -7,6 +7,8 @@ from typing import Callable, List, Optional
 from .dtos import (
     AudioChunkDTO,
     AudioSubConfigDTO,
+    BriefExpandRequestDTO,
+    BriefExpandResultDTO,
     ClipSpecDTO,
     CutConfigDTO,
     CutPlanDTO,
@@ -58,6 +60,10 @@ class ITranscriber(ABC):
 
 class ILLMService(ABC):
     """Interface for Module M03: Scriptwriting, context-aware drama translation, cutting & SEO."""
+
+    @abstractmethod
+    async def expand_short_brief(self, req: BriefExpandRequestDTO) -> BriefExpandResultDTO:
+        """Analyze a short title + rough idea via API Key and expand into a full structured brief."""
 
     @abstractmethod
     async def build_topic_clips(self, req: TopicPromptDTO) -> CutPlanDTO:

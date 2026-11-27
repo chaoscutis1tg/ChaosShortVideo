@@ -362,6 +362,7 @@ class JobExecutionManager:
             self.settings.work_dir, exclude_files={"studio.db", "studio.db-wal", "studio.db-shm"}
         )
         protected_pids: set[str] = set(self._runtimes.keys()) | {q[0] for q in self._queue}
+        protected_upload_files: set[Path] = set()
         for p in self.repo.list_projects():
             if p["state"] in (
                 JobState.QUEUED.value,
@@ -375,21 +376,40 @@ class JobExecutionManager:
                 JobState.PAUSED.value,
             ):
                 protected_pids.add(p["id"])
+            # Preserve any uploaded product photos, demo clips, or custom BGM referenced by existing projects
+            try:
+                import json
+
+                req_obj = json.loads(p.get("request_payload_json") or "{}")
+                for key in ("image_paths", "feedback_image_paths"):
+                    for fp in req_obj.get(key) or []:
+                        if fp:
+                            protected_upload_files.add(Path(fp).resolve())
+                for single_key in ("demo_clip_path", "custom_bgm_path", "external_srt_path"):
+                    if req_obj.get(single_key):
+                        protected_upload_files.add(Path(req_obj[single_key]).resolve())
+            except Exception:
+                pass
 
         removed_folders = 0
         if self.settings.work_dir.exists():
             for child in self.settings.work_dir.iterdir():
                 if not child.is_dir():
                     continue
-                if child.name == "_voice_previews":
+                if child.name in ("_voice_previews", "_frame_previews"):
                     shutil.rmtree(child, ignore_errors=True)
                     removed_folders += 1
                     continue
                 if child.name == "_uploads":
-                    # Keep _uploads if any project is awaiting review / queued / paused
+                    # Only remove orphaned files in _uploads that are NOT referenced by any saved project
                     if not protected_pids:
-                        shutil.rmtree(child, ignore_errors=True)
-                        removed_folders += 1
+                        for up_item in list(child.rglob("*")):
+                            if up_item.is_file():
+                                try:
+                                    if up_item.resolve() not in protected_upload_files:
+                                        up_item.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
                     continue
                 if child.name not in protected_pids:
                     shutil.rmtree(child, ignore_errors=True)

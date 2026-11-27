@@ -406,6 +406,8 @@ export default function App() {
               onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
+              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+              onOpenApiSettings={() => setShowSettings(true)}
             />
           )}
 
@@ -416,6 +418,8 @@ export default function App() {
               layoutConfig={layoutConfig}
               onProjectStarted={handleProjectStarted}
               notify={notify}
+              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+              onOpenApiSettings={() => setShowSettings(true)}
             />
           )}
 

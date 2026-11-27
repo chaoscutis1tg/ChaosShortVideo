@@ -1,6 +1,7 @@
 """FFmpeg & Sub-Pixel OpenCV CapCut-Grade Compositor implementing `IVideoCompositor` (M06)."""
 
 import asyncio
+import json
 import math
 from pathlib import Path
 import re
@@ -194,6 +195,128 @@ def _draw_acoustic_soundwave_bgr(frame_bgr: np.ndarray, bar_heights: np.ndarray)
             lineType=cv2.LINE_AA,
         )
     return out
+
+
+def _probe_true_video_fps(video_path: Path, cap: cv2.VideoCapture) -> float:
+    """Resolve accurate real-world playback FPS of an uploaded/downloaded video (CFR & VFR safe)."""
+    cv_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    try:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=avg_frame_rate,r_frame_rate,nb_frames,duration",
+            "-of",
+            "json",
+            str(video_path),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
+        if proc.returncode == 0 and proc.stdout:
+            streams = (json.loads(proc.stdout) or {}).get("streams") or []
+            if streams:
+                st = streams[0]
+                nb_f = float(st.get("nb_frames") or 0)
+                dur_s = float(st.get("duration") or 0)
+                if nb_f > 5 and dur_s > 0.2:
+                    computed = nb_f / dur_s
+                    if 5.0 <= computed <= 240.0:
+                        return computed
+                for key in ("avg_frame_rate", "r_frame_rate"):
+                    raw_rate = str(st.get(key) or "")
+                    if "/" in raw_rate:
+                        num_s, den_s = raw_rate.split("/", 1)
+                        num_v, den_v = float(num_s or 0), float(den_s or 0)
+                        if den_v > 0 and 5.0 <= (num_v / den_v) <= 240.0:
+                            return num_v / den_v
+    except Exception:
+        pass
+    if 5.0 <= cv_fps <= 240.0:
+        return cv_fps
+    return float(TARGET_FPS)
+
+
+class _RealtimeVideoStepper:
+    """Real-time `1.0x` wall-clock video frame sampler preventing slow-motion on 60fps/120fps videos
+    and fast-forward on 24fps/25fps videos. Uses `cap.grab()` to skip non-displayed frames without
+    wasting BGR decode/resize CPU cycles, and loops seamlessly on EOF.
+    """
+
+    def __init__(self, video_path: Path, target_fps: float = float(TARGET_FPS)) -> None:
+        self.cap = cv2.VideoCapture(str(video_path))
+        self.target_fps = max(1.0, float(target_fps))
+        self.out_dt_ms = 1000.0 / self.target_fps
+        self.src_fps = _probe_true_video_fps(video_path, self.cap)
+        self.src_dt_ms = 1000.0 / max(5.0, self.src_fps)
+        self.half_src_dt_ms = 0.48 * self.src_dt_ms
+        self.max_grabs_per_step = max(8, int(math.ceil(self.src_fps / self.target_fps)) + 4)
+
+        self._started = False
+        self._pts_reliable: Optional[bool] = None
+        self._loop_target_ms = 0.0
+        self._cur_frame_ms = 0.0
+        self._src_idx_in_loop = 0
+        self._last_raw_bgr: Optional[np.ndarray] = None
+
+    def _rewind_and_read_first(self) -> Optional[np.ndarray]:
+        if self._started:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        ok = self.cap.grab()
+        if not ok:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok = self.cap.grab()
+        if not ok:
+            return self._last_raw_bgr
+        ok_ret, frm = self.cap.retrieve()
+        if ok_ret and frm is not None:
+            self._last_raw_bgr = frm
+        self._started = True
+        self._loop_target_ms = 0.0
+        self._cur_frame_ms = 0.0
+        self._src_idx_in_loop = 0
+        return self._last_raw_bgr
+
+    def next_raw_frame(self) -> tuple[Optional[np.ndarray], bool]:
+        """Advance by `1 / target_fps` real-time seconds and return `(bgr_frame, is_new_decode)`."""
+        if not self._started:
+            first = self._rewind_and_read_first()
+            return first, True
+
+        self._loop_target_ms += self.out_dt_ms
+        threshold_ms = self._loop_target_ms - self.half_src_dt_ms
+
+        # Hold current frame when source FPS < target FPS (e.g. 24fps / 25fps -> 30fps)
+        if self._cur_frame_ms >= threshold_ms and self._last_raw_bgr is not None:
+            return self._last_raw_bgr, False
+
+        grabs = 0
+        while self._cur_frame_ms < threshold_ms and grabs < self.max_grabs_per_step:
+            ok = self.cap.grab()
+            if not ok:
+                # Reached EOF -> loop seamlessly back to frame 0 at real-time pace
+                first = self._rewind_and_read_first()
+                return first, True
+            grabs += 1
+            self._src_idx_in_loop += 1
+            pos_ms = float(self.cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
+            if self._pts_reliable is None and self._src_idx_in_loop == 1:
+                self._pts_reliable = 1.0 < pos_ms < 500.0
+            if self._pts_reliable and pos_ms > self._cur_frame_ms:
+                self._cur_frame_ms = pos_ms
+            else:
+                self._cur_frame_ms += self.src_dt_ms
+
+        if grabs > 0:
+            ok_ret, frm = self.cap.retrieve()
+            if ok_ret and frm is not None:
+                self._last_raw_bgr = frm
+                return self._last_raw_bgr, True
+        return self._last_raw_bgr, False
+
+    def release(self) -> None:
+        self.cap.release()
 
 
 class FFmpegNVENCCompositor(IVideoCompositor):
@@ -535,15 +658,12 @@ class FFmpegNVENCCompositor(IVideoCompositor):
 
                 return _sample_img, lambda: None
 
-            cap = cv2.VideoCapture(str(it.asset_path))
+            stepper = _RealtimeVideoStepper(it.asset_path, target_fps=float(TARGET_FPS))
             last_valid = [np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)]
 
             def _sample_vid(f_idx: int) -> np.ndarray:
-                ok, frm = cap.read()
-                if not ok or frm is None:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ok, frm = cap.read()
-                if ok and frm is not None:
+                frm, is_new = stepper.next_raw_frame()
+                if is_new and frm is not None:
                     if frm.shape[1] != canvas_w or frm.shape[0] != canvas_h:
                         frm = cv2.resize(frm, (canvas_w, canvas_h), interpolation=cv2.INTER_LINEAR)
                     last_valid[0] = frm
@@ -554,7 +674,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     )
                 return out_f
 
-            return _sample_vid, cap.release
+            return _sample_vid, stepper.release
 
         counts = [max(18, int(round((it.duration_ms / 1000.0) * TARGET_FPS))) for it in items]
         n_items = len(items)
@@ -662,17 +782,14 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stdin is not None
 
-        cap = cv2.VideoCapture(str(bg_video_path))
+        stepper = _RealtimeVideoStepper(bg_video_path, target_fps=float(TARGET_FPS))
         last_bg = np.full((canvas_h, canvas_w, 3), (18, 22, 30), dtype=np.uint8)
         bright_keep = max(0.22, min(1.0, 1.0 - float(bg_dim)))
 
         def _next_bg_frame() -> np.ndarray:
             nonlocal last_bg
-            ok, frm = cap.read()
-            if not ok or frm is None:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ok, frm = cap.read()
-            if ok and frm is not None:
+            frm, is_new = stepper.next_raw_frame()
+            if is_new and frm is not None:
                 fh, fw = frm.shape[:2]
                 sc = max(canvas_w / float(max(fw, 1)), canvas_h / float(max(fh, 1)))
                 nw, nh = max(canvas_w, int(round(fw * sc))), max(canvas_h, int(round(fh * sc)))
@@ -772,7 +889,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 for _ in range(outro_frames):
                     proc.stdin.write(memoryview(np.ascontiguousarray(outro_bgr)))
         finally:
-            cap.release()
+            stepper.release()
             proc.stdin.close()
 
         stderr_bytes = proc.stderr.read() if proc.stderr else b""

@@ -723,11 +723,11 @@ class ProductPhotoShowcaseProvider:
         fg_w = int(canvas_w * 0.92)
         fg_h = int(canvas_h * 0.76)
         vf = (
-            f"[0:v]split=2[bg0][fg0];"
+            f"[0:v]fps={TARGET_FPS},split=2[bg0][fg0];"
             f"[bg0]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,"
             f"crop={canvas_w}:{canvas_h},gblur=sigma=24,eq=brightness=-0.14[bg];"
             f"[fg0]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
-            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps={TARGET_FPS}[v]"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2[v]"
         )
         cmd = [
             "ffmpeg",

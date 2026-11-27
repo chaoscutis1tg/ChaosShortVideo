@@ -11,6 +11,7 @@ from app.m00_core_contracts import (
     CANVAS_WIDTH,
     LayoutType,
     RenderJobSpecDTO,
+    TARGET_FPS,
 )
 
 
@@ -124,7 +125,7 @@ class SplitRetentionLayout(BaseLayoutStrategy):
         return (
             f"[{input_video_label}]scale={CANVAS_WIDTH}:{self.TOP_H}:"
             f"force_original_aspect_ratio=increase,crop={CANVAS_WIDTH}:{self.TOP_H}[v_top];"
-            f"[{ret_label}]scale={CANVAS_WIDTH}:{self.BOT_H}:"
+            f"[{ret_label}]fps={TARGET_FPS},scale={CANVAS_WIDTH}:{self.BOT_H}:"
             f"force_original_aspect_ratio=increase,crop={CANVAS_WIDTH}:{self.BOT_H}[v_bot];"
             f"[v_top][v_bot]vstack=inputs=2[v_framed]"
         )

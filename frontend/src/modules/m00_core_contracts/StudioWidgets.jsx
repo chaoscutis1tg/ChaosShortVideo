@@ -2,12 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   FolderPlus,
   FolderTree,
+  Globe,
   Loader2,
   Music,
+  Play,
   Plus,
   RotateCcw,
+  Search,
   Square,
   UploadCloud,
   Volume2,
@@ -735,8 +739,16 @@ export function InlineVoiceSelector({
   );
 }
 
+const ONLINE_LOFI_QUICK_TAGS = [
+  'lofi chill',
+  'lofi piano',
+  'lofi guitar',
+  'chillhop',
+  'lofi jazz',
+];
+
 /**
- * Full-width readable Background Music Card with built-in tracks, custom MP3 upload & volume slider.
+ * Full-width readable Background Music Card with 10+ CC0 Online Lofi tracks, live Online CC0 Search, custom MP3 upload & volume slider.
  */
 export function InlineBgmSelector({
   bgmPresets = [],
@@ -752,9 +764,23 @@ export function InlineBgmSelector({
   const [playing, setPlaying] = useState(false);
   const [uploadingBgm, setUploadingBgm] = useState(false);
   const [customBgmMeta, setCustomBgmMeta] = useState(null);
+  const [extraPresets, setExtraPresets] = useState([]);
+  const [showOnlineFinder, setShowOnlineFinder] = useState(false);
+  const [onlineQuery, setOnlineQuery] = useState('lofi chill');
+  const [searchingOnline, setSearchingOnline] = useState(false);
+  const [onlineResults, setOnlineResults] = useState([]);
+  const [previewOnlineUrl, setPreviewOnlineUrl] = useState('');
+  const [importingUrl, setImportingUrl] = useState('');
   const audioRef = useRef(null);
 
-  const selectedObj = bgmPresets.find((b) => b.preset_id === bgmPresetId);
+  const mergedPresets = [
+    ...extraPresets.filter((ep) => !bgmPresets.some((bp) => bp.preset_id === ep.preset_id)),
+    ...bgmPresets,
+  ];
+  const lofiGroup = mergedPresets.filter((b) => b.mood_category === 'LOFI');
+  const acousticGroup = mergedPresets.filter((b) => b.mood_category !== 'LOFI');
+
+  const selectedObj = mergedPresets.find((b) => b.preset_id === bgmPresetId);
   const effectiveCustomPath = customBgmPath ?? customBgmMeta?.local_path ?? null;
   const activeAudioUrl = effectiveCustomPath
     ? customBgmMeta?.media_url || ''
@@ -766,21 +792,78 @@ export function InlineBgmSelector({
       audioRef.current.pause();
       setPlaying(false);
     }
+    setPreviewOnlineUrl('');
   };
 
   const togglePlayBgm = async () => {
-    if (playing && audioRef.current) {
+    if (playing && !previewOnlineUrl && audioRef.current) {
       stopPlayer();
       return;
     }
     if (!activeAudioUrl) return;
     stopPlayer();
     const player = new Audio(activeAudioUrl);
-    player.volume = Math.min(1.0, Math.max(0.15, bgmVolume * 4));
+    player.volume = Math.min(1.0, Math.max(0.2, bgmVolume * 4.5));
     audioRef.current = player;
     player.onended = () => setPlaying(false);
     await player.play().catch(() => {});
     setPlaying(true);
+  };
+
+  const handleToggleOnlinePreview = async (url) => {
+    if (previewOnlineUrl === url && audioRef.current) {
+      stopPlayer();
+      return;
+    }
+    stopPlayer();
+    const player = new Audio(url);
+    player.volume = 0.55;
+    audioRef.current = player;
+    player.onended = () => setPreviewOnlineUrl('');
+    player.onerror = () => setPreviewOnlineUrl('');
+    await player.play().catch(() => {});
+    setPreviewOnlineUrl(url);
+  };
+
+  const handleSearchOnlineLofi = async (qOverride = null) => {
+    const effQ = (qOverride ?? onlineQuery).trim() || 'lofi chill';
+    if (qOverride !== null) setOnlineQuery(effQ);
+    setSearchingOnline(true);
+    try {
+      const list = await studioApi.searchOnlineBgm(effQ);
+      setOnlineResults(list || []);
+      if ((!list || list.length === 0) && notify) {
+        notify('Không tìm thấy bản nhạc phù hợp — hãy thử từ khóa khác như lofi piano, chillhop...');
+      }
+    } catch (err) {
+      if (notify) notify(`Lỗi tìm nhạc Lofi online: ${err.message}`);
+    } finally {
+      setSearchingOnline(false);
+    }
+  };
+
+  const handleImportOnlineTrack = async (track) => {
+    stopPlayer();
+    setImportingUrl(track.audio_url);
+    try {
+      const saved = await studioApi.importOnlineBgm({
+        title: track.title,
+        audio_url: track.audio_url,
+        creator: track.creator || '',
+      });
+      setExtraPresets((prev) => [saved, ...prev]);
+      setCustomBgmMeta(null);
+      if (onCustomBgmChange) onCustomBgmChange(null);
+      if (onSelectPreset) onSelectPreset(saved.preset_id);
+      setShowOnlineFinder(false);
+      if (notify) {
+        notify(`Đã tải & thêm "${saved.display_name}" vào Kho Nhạc Nền không bản quyền!`);
+      }
+    } catch (err) {
+      if (notify) notify(`Lỗi tải nhạc Lofi về kho: ${err.message}`);
+    } finally {
+      setImportingUrl('');
+    }
   };
 
   const handleUploadCustomBgm = async (e) => {
@@ -822,32 +905,47 @@ export function InlineBgmSelector({
           {label}
         </label>
 
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           {activeAudioUrl && (
             <button
               type="button"
-              className={`btn btn-sm ${playing ? 'btn-primary' : 'btn-secondary'}`}
+              className={`btn btn-sm ${playing && !previewOnlineUrl ? 'btn-primary' : 'btn-secondary'}`}
               onClick={togglePlayBgm}
-              title="Nghe thử nhạc nền"
+              title="Nghe thử bản nhạc nền đang chọn"
             >
-              {playing ? (
+              {playing && !previewOnlineUrl ? (
                 <>
                   <Square size={13} /> Dừng
                 </>
               ) : (
                 <>
-                  <Music size={14} /> Nghe nhạc
+                  <Music size={14} /> Nghe thử
                 </>
               )}
             </button>
           )}
+
+          <button
+            type="button"
+            className={`btn btn-sm ${showOnlineFinder ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              const nextOpen = !showOnlineFinder;
+              setShowOnlineFinder(nextOpen);
+              if (nextOpen && onlineResults.length === 0 && !searchingOnline) {
+                handleSearchOnlineLofi('lofi chill');
+              }
+            }}
+            title="Tìm & tải thêm nhạc Lofi CC0 1.0 hoàn toàn miễn bản quyền từ trên mạng"
+          >
+            <Globe size={13} /> + Kho Lofi Online (CC0)
+          </button>
 
           <label
             className="btn btn-secondary btn-sm"
             style={{ cursor: 'pointer' }}
             title="Tải tệp nhạc nền .mp3 / .wav riêng từ máy tính hoặc điện thoại"
           >
-            {uploadingBgm ? <Loader2 size={13} /> : <UploadCloud size={13} />} Tải nhạc riêng
+            {uploadingBgm ? <Loader2 size={13} className="spin" /> : <UploadCloud size={13} />} Tải tệp
             <input
               type="file"
               accept="audio/*,.mp3,.wav,.m4a,.flac"
@@ -877,12 +975,190 @@ export function InlineBgmSelector({
             Nhạc riêng: {customBgmMeta?.original_name || 'Tệp nhạc đã tải lên'}
           </option>
         )}
-        {bgmPresets.map((b) => (
-          <option key={b.preset_id} value={b.preset_id}>
-            {stripLeadingEmoji(b.display_name)}
-          </option>
-        ))}
+        {lofiGroup.length > 0 && (
+          <optgroup label={`Nhạc Lofi & Chillhop Không Bản Quyền (${lofiGroup.length} bản CC0)`}>
+            {lofiGroup.map((b) => (
+              <option key={b.preset_id} value={b.preset_id}>
+                {stripLeadingEmoji(b.display_name)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {acousticGroup.length > 0 && (
+          <optgroup label="Hòa Tấu Đàn Acoustic, Violin & Điện Ảnh">
+            {acousticGroup.map((b) => (
+              <option key={b.preset_id} value={b.preset_id}>
+                {stripLeadingEmoji(b.display_name)}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
+
+      {selectedObj && !effectiveCustomPath && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span className="text-muted" style={{ fontSize: 11.6, lineHeight: 1.35, flex: 1 }}>
+            {selectedObj.description}
+          </span>
+          {selectedObj.mood_category === 'LOFI' && (
+            <span className="badge badge-ok" style={{ fontSize: 10.2, padding: '1px 7px' }}>
+              CC0 Sạch Bản Quyền
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* INLINE ONLINE CC0 LOFI FINDER & 1-CLICK IMPORTER */}
+      {showOnlineFinder && (
+        <div
+          className="surface-box fade-slide-in"
+          style={{
+            padding: '10px 11px',
+            borderColor: 'var(--brand)',
+            background: 'var(--bg-step)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 6,
+              marginBottom: 7,
+            }}
+          >
+            <strong style={{ fontSize: 12.4, color: 'var(--brand-text)' }}>
+              Kho Nhạc Lofi Trực Tuyến Chuẩn CC0 1.0 (Đăng TikTok / YouTube Shorts 100% không dính bản quyền)
+            </strong>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '2px 7px', minHeight: 24 }}
+              onClick={() => {
+                stopPlayer();
+                setShowOnlineFinder(false);
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+            {ONLINE_LOFI_QUICK_TAGS.map((tg) => (
+              <button
+                key={tg}
+                type="button"
+                className={`btn btn-sm ${onlineQuery === tg ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '2px 8px', minHeight: 25, fontSize: 11.2 }}
+                disabled={searchingOnline}
+                onClick={() => handleSearchOnlineLofi(tg)}
+              >
+                {tg}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input
+              className="input"
+              style={{ flex: 1, minHeight: 33, padding: '4px 9px', fontSize: 12.4 }}
+              placeholder="Tìm thêm chủ đề nhạc CC0 (VD: lofi night, chill beat, piano...)"
+              value={onlineQuery}
+              onChange={(e) => setOnlineQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearchOnlineLofi();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              style={{ minHeight: 33 }}
+              disabled={searchingOnline}
+              onClick={() => handleSearchOnlineLofi()}
+            >
+              {searchingOnline ? <Loader2 size={13} className="spin" /> : <Search size={13} />} Tìm
+            </button>
+          </div>
+
+          {searchingOnline ? (
+            <div className="text-sub" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 2px' }}>
+              <Loader2 size={14} className="spin" /> Đang tìm các bản Lofi CC0 miễn bản quyền trên mạng...
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 6, maxHeight: 195, overflowY: 'auto', paddingRight: 2 }}>
+              {onlineResults.map((tr, idx) => {
+                const isPrev = previewOnlineUrl === tr.preview_url;
+                const isImp = importingUrl === tr.audio_url;
+                return (
+                  <div
+                    key={`${tr.audio_url}_${idx}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      borderRadius: 7,
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 12.3,
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={tr.title}
+                      >
+                        {tr.title}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: 11 }}>
+                        {tr.creator} • {tr.duration_sec}s • CC0 Public Domain
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${isPrev ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '2px 8px', minHeight: 27, fontSize: 11.2 }}
+                        onClick={() => handleToggleOnlinePreview(tr.preview_url)}
+                      >
+                        {isPrev ? <Square size={11} /> : <Play size={11} />}{' '}
+                        {isPrev ? 'Dừng' : 'Nghe'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        style={{ padding: '2px 8px', minHeight: 27, fontSize: 11.2 }}
+                        disabled={Boolean(importingUrl)}
+                        onClick={() => handleImportOnlineTrack(tr)}
+                      >
+                        {isImp ? <Loader2 size={11} className="spin" /> : <Download size={11} />}{' '}
+                        {isImp ? 'Đang lưu...' : 'Lưu & Chọn'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {hasActiveBgm && onVolumeChange && (
         <div style={{ paddingTop: 4, borderTop: '1px solid var(--border)' }}>

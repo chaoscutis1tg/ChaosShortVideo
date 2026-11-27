@@ -242,7 +242,7 @@ export default function ThreadsStudioForm({
   // Audio & Visual Presentation
   const [enablePopSfx, setEnablePopSfx] = useState(savedDraft.enablePopSfx !== false);
   const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'NONE');
-  const [bgmPresetId, setBgmPresetId] = useState('bgm_lofi_story');
+  const [bgmPresetId, setBgmPresetId] = useState(savedDraft.bgmPresetId || 'lofi_vanilla_chill');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.06);
   const [submitting, setSubmitting] = useState(false);
@@ -345,6 +345,7 @@ export default function ThreadsStudioForm({
           selectedBgPreviewUrl,
           enablePopSfx,
           subtitleStyle,
+          bgmPresetId,
         })
       );
     } catch {
@@ -369,6 +370,7 @@ export default function ThreadsStudioForm({
     selectedBgPreviewUrl,
     enablePopSfx,
     subtitleStyle,
+    bgmPresetId,
   ]);
 
   const updateThreadsLayout = (patch) => {

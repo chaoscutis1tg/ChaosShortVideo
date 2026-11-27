@@ -29,6 +29,9 @@ assets/bin/
 assets/tts_models/*.onnx
 assets/tts_models/*.json
 assets/bgm/*.wav
+assets/bgm/*.mp3
+assets/bgm/*.ogg
+assets/bgm/*.json
 assets/bg_videos/*
 assets/voice_samples/*
 assets/logos/*

@@ -106,7 +106,7 @@ export default function TopicStudioForm({
   );
   const [voiceSpeed, setVoiceSpeed] = useState(1.12);
   const [voicePitch, setVoicePitch] = useState(0.0);
-  const [bgmPresetId, setBgmPresetId] = useState('bgm_lofi_story');
+  const [bgmPresetId, setBgmPresetId] = useState('lofi_vanilla_chill');
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.08);
   const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'KARAOKE_CAPCUT');

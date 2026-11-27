@@ -54,6 +54,13 @@ export const studioApi = {
   },
 
   listBgmPresets: () => requestJSON('/api/bgm'),
+  searchOnlineBgm: (q = 'lofi chill') =>
+    requestJSON(`/api/bgm/search-online?q=${encodeURIComponent(q || 'lofi chill')}`),
+  importOnlineBgm: (payload) =>
+    requestJSON('/api/bgm/import-online', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listVoices: () => requestJSON('/api/voices'),
   previewVoice: (profile_id, sample_text, speed_rate = null, pitch_hz = null) =>
     requestJSON('/api/voices/preview', {

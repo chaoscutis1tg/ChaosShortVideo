@@ -381,6 +381,12 @@ class BgVideoFromUrlRequest(BaseModel):
     category_tag: str = Field(default="Chill / Đời sống", max_length=80)
 
 
+class OnlineBgmImportRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=140)
+    audio_url: str = Field(min_length=8, max_length=1200)
+    creator: str = Field(default="", max_length=80)
+
+
 class ThreadsStartRequest(BaseModel):
     bundle: ScrapedThreadBundleDTO
     bg_source_type: SourceType = SourceType.LOCAL_FILE
@@ -610,8 +616,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
     @app.get("/api/bgm")
     async def list_bgm_presets() -> List[Dict[str, Any]]:
-        """List built-in copyright-free studio BGM tracks with preview URLs."""
-        presets = StudioBGMLibrary.ensure_builtin_tracks(bgm_dir)
+        """List built-in CC0 Lofi & Acoustic studio BGM tracks with preview URLs."""
+        presets = await asyncio.to_thread(StudioBGMLibrary.ensure_builtin_tracks, bgm_dir)
         out: List[Dict[str, Any]] = []
         for p in presets:
             d = p.model_dump()
@@ -619,6 +625,34 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             d["audio_url"] = _to_media_url(str(p.wav_path))
             out.append(d)
         return out
+
+    @app.get("/api/bgm/search-online")
+    async def search_online_cc0_bgm(q: str = "lofi chill") -> List[Dict[str, Any]]:
+        """Search CC0 1.0 Public Domain no-copyright Lofi tracks online."""
+        try:
+            return await asyncio.to_thread(StudioBGMLibrary.search_online_cc0_lofi, q, 12)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Không thể tìm kho nhạc Lofi trực tuyến: {exc}"
+            ) from exc
+
+    @app.post("/api/bgm/import-online")
+    async def import_online_cc0_bgm(req: OnlineBgmImportRequest) -> Dict[str, Any]:
+        """Download & permanently add a CC0 Lofi track into Studio BGM Library."""
+        try:
+            saved = await asyncio.to_thread(
+                StudioBGMLibrary.import_online_cc0_track,
+                bgm_dir,
+                req.title,
+                req.audio_url,
+                req.creator,
+            )
+            d = saved.model_dump()
+            d["wav_path"] = str(saved.wav_path)
+            d["audio_url"] = _to_media_url(str(saved.wav_path))
+            return d
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def _serialize_voice_profile(v: VoiceProfileDTO) -> Dict[str, Any]:
         d = v.model_dump()

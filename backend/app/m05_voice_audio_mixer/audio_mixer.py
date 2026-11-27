@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 import subprocess
-from typing import List, Optional
+from typing import Dict, List, Optional
 import wave
 import numpy as np
 
@@ -54,6 +54,23 @@ def _write_wav_float32_stereo(dst_wav: Path, audio: np.ndarray) -> int:
     return max(1, int(round((audio.shape[0] / float(MASTER_AUDIO_SAMPLE_RATE)) * 1000.0)))
 
 
+def _build_ui_pop_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a crisp 62ms Threads/iOS-style bubble pop sound effect in pure NumPy."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.062
+    n_samples = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_samples, endpoint=False, dtype=np.float32)
+    # Rapid pitch sweep 520Hz -> 880Hz with smooth exponential decay & 4ms attack
+    freq_inst = 520.0 + (880.0 - 520.0) * (t / dur_sec) ** 0.65
+    phase = 2.0 * np.pi * np.cumsum(freq_inst) / float(MASTER_AUDIO_SAMPLE_RATE)
+    env = np.exp(-t * 48.0) * np.minimum(1.0, t / 0.004)
+    sig = (np.sin(phase) * env * 0.19).astype(np.float32)
+    stereo = np.column_stack((sig, sig))
+    _write_wav_float32_stereo(dst_wav, stereo)
+    return dst_wav
+
+
 class MovieAudioAndSubMixer(IVoiceAudioMixer):
     """Synthesizes 3-tier Vietnamese narration, time-syncs lines, ducks original movie audio,
     mixes optional anti-copyright BGM, and builds `.ass` subtitles.
@@ -73,6 +90,7 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         demo_audio_wav: Optional[Path] = None,
         canvas_w: int = 1080,
         canvas_h: int = 1920,
+        voice_registry: Optional[Dict[str, VoiceProfileDTO]] = None,
     ) -> MasterAudioAndSubDTO:
         """Produce synchronized MasterAudioAndSubDTO (`master_audio.wav` + `subs.ass`)."""
         clip_dir = out_dir / clip.clip_id / "audio"
@@ -80,9 +98,15 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         chunks_dir = clip_dir / "tts_lines"
         chunks_dir.mkdir(parents=True, exist_ok=True)
 
-        provider = self._tts_factory.get_provider(profile.tier)
+        default_provider = self._tts_factory.get_provider(profile.tier)
+        pop_sfx_wav: Optional[Path] = (
+            _build_ui_pop_sfx_wav(chunks_dir / "_ui_card_pop.wav")
+            if getattr(audio_config, "enable_card_pop_sfx", False)
+            else None
+        )
         timed_events: List[TimedSubtitleEvent] = []
         placed_chunks: List[tuple[int, Path]] = []
+        pop_sfx_starts_ms: List[int] = []
         real_demo_windows_ms: List[tuple[int, int]] = []
         cursor_shift_ms = 0
 
@@ -120,35 +144,61 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
 
             if audio_config.enable_narration:
                 raw_wav = chunks_dir / f"line_{idx:04d}.wav"
+                base_prof = (
+                    voice_registry[line.voice_profile_override]
+                    if (
+                        voice_registry
+                        and line.voice_profile_override
+                        and line.voice_profile_override in voice_registry
+                    )
+                    else profile
+                )
+                line_provider = (
+                    self._tts_factory.get_provider(base_prof.tier)
+                    if base_prof.profile_id != profile.profile_id
+                    else default_provider
+                )
+                used_custom_voice = base_prof.profile_id != profile.profile_id
                 eff_speed = (
                     line.voice_speed_override
                     if line.voice_speed_override is not None
                     else (
-                        audio_config.voice_speed_global
-                        if audio_config.voice_speed_global is not None
-                        else profile.speed_rate
+                        base_prof.speed_rate
+                        if used_custom_voice
+                        else (
+                            audio_config.voice_speed_global
+                            if audio_config.voice_speed_global is not None
+                            else base_prof.speed_rate
+                        )
                     )
                 )
                 eff_pitch = (
                     line.voice_pitch_override
                     if line.voice_pitch_override is not None
                     else (
-                        audio_config.voice_pitch_global
-                        if audio_config.voice_pitch_global is not None
-                        else profile.pitch_hz
+                        base_prof.pitch_hz
+                        if used_custom_voice
+                        else (
+                            audio_config.voice_pitch_global
+                            if audio_config.voice_pitch_global is not None
+                            else base_prof.pitch_hz
+                        )
                     )
                 )
-                eff_profile = profile.model_copy(
+                eff_profile = base_prof.model_copy(
                     update={"speed_rate": eff_speed, "pitch_hz": eff_pitch}
                 )
-                chunk = await provider.synthesize(line.vi_text, eff_profile, raw_wav)
+                speech_offset_ms = 85 if pop_sfx_wav is not None else 0
+                if pop_sfx_wav is not None:
+                    pop_sfx_starts_ms.append(eff_start_ms)
+
+                chunk = await line_provider.synthesize(line.vi_text, eff_profile, raw_wav)
                 chunk = await asyncio.to_thread(self._fit_chunk_to_slot, chunk, slot_ms)
-                placed_chunks.append((eff_start_ms, chunk.audio_path))
-                ev_end = eff_start_ms + chunk.duration_ms
+                placed_chunks.append((eff_start_ms + speech_offset_ms, chunk.audio_path))
+                ev_end = eff_start_ms + speech_offset_ms + chunk.duration_ms
                 ev_words = chunk.word_timestamps
-                # If spoken product description is still slightly longer than estimated scene, shift subsequent lines cleanly
                 if ev_end > next_start_ms and not audio_config.keep_original_audio:
-                    cursor_shift_ms += (ev_end - next_start_ms) + 80
+                    cursor_shift_ms += (ev_end - next_start_ms) + 110
             else:
                 ev_end = eff_start_ms + orig_line_dur
                 ev_words = line.words
@@ -182,6 +232,8 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             orig_stereo_wav=orig_stereo_wav,
             master_wav=master_wav,
             real_demo_windows_ms=real_demo_windows_ms,
+            pop_sfx_wav=pop_sfx_wav,
+            pop_sfx_starts_ms=pop_sfx_starts_ms,
         )
 
         ass_path = await asyncio.to_thread(
@@ -280,11 +332,13 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         orig_stereo_wav: Optional[Path],
         master_wav: Path,
         real_demo_windows_ms: Optional[List[tuple[int, int]]] = None,
+        pop_sfx_wav: Optional[Path] = None,
+        pop_sfx_starts_ms: Optional[List[int]] = None,
     ) -> int:
         total_samples = max(1, int(round((total_target_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE)))
         mix = np.zeros((total_samples, 2), dtype=np.float32)
 
-        # 1. Load & slice original movie audio if enabled
+        # 1. Load & slice original movie / looped background video audio if enabled
         if audio_config.keep_original_audio and orig_stereo_wav and orig_stereo_wav.exists():
             sliced_wav = master_wav.with_name("orig_slice.tmp.wav")
             try:
@@ -292,7 +346,8 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                     orig_stereo_wav,
                     sliced_wav,
                     clip.source_start_ms,
-                    clip.duration_ms,
+                    max(clip.duration_ms, total_target_ms),
+                    loop_if_short=(clip.source_start_ms == 0),
                 )
                 bg = _read_wav_float32_stereo(sliced_wav)
                 copy_len = min(total_samples, bg.shape[0])
@@ -371,6 +426,16 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             for s_idx, arr in loaded_narration:
                 mix[s_idx : s_idx + arr.shape[0]] += arr * 1.08
 
+        # 2B. Overlay crisp Threads Card Pop SFX at comment transitions
+        if pop_sfx_wav and pop_sfx_wav.exists() and pop_sfx_starts_ms:
+            pop_arr = _read_wav_float32_stereo(pop_sfx_wav)
+            for p_ms in pop_sfx_starts_ms:
+                p_idx = min(
+                    total_samples - 1, max(0, int((p_ms / 1000.0) * MASTER_AUDIO_SAMPLE_RATE))
+                )
+                p_end = min(total_samples, p_idx + pop_arr.shape[0])
+                mix[p_idx:p_end] += pop_arr[: p_end - p_idx]
+
         # 3. Mix optional BGM / subtle anti-copyright background bed
         if audio_config.bgm_path and audio_config.bgm_path.exists() and audio_config.bgm_volume > 0:
             bgm_tmp = master_wav.with_name("bgm_norm.tmp.wav")
@@ -421,15 +486,20 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         return _write_wav_float32_stereo(master_wav, mix)
 
     @staticmethod
-    def _slice_wav(src_wav: Path, dst_wav: Path, start_ms: int, dur_ms: int) -> None:
+    def _slice_wav(
+        src_wav: Path,
+        dst_wav: Path,
+        start_ms: int,
+        dur_ms: int,
+        loop_if_short: bool = False,
+    ) -> None:
         cmd = [
             "ffmpeg",
             "-y",
             "-hide_banner",
             "-loglevel",
             "error",
-            "-ss",
-            f"{start_ms / 1000.0:.3f}",
+            *(["-stream_loop", "-1"] if loop_if_short else ["-ss", f"{start_ms / 1000.0:.3f}"]),
             "-t",
             f"{dur_ms / 1000.0:.3f}",
             "-i",

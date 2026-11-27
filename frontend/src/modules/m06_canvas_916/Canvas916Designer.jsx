@@ -29,6 +29,7 @@ const MODE_BADGE_MAP = {
   product: 'Video Bán Hàng',
   movie: 'Cắt & Dịch Video',
   topic: 'Video Chủ Đề',
+  threads: 'Threads & Bình Luận',
   workspace: 'Dự Án Đang Chọn',
   voices: 'Phòng Giọng Đọc',
 };
@@ -219,13 +220,17 @@ export default function Canvas916Designer({
         banner_title:
           layoutConfig.cover_headline ||
           layoutConfig.outro_brand_title ||
-          (modeForSnap === 'topic'
+          (modeForSnap === 'threads'
+            ? 'Thảo Luận Nổi Bật Trên Threads'
+            : modeForSnap === 'topic'
             ? 'Chủ Đề Câu Chuyện Hấp Dẫn'
             : modeForSnap === 'movie'
             ? 'Tiêu Đề Tập Phim | Phần 1'
             : 'Đàn Violin Avaro Gỗ Thịt Tự Nhiên'),
         sample_subtitle:
-          modeForSnap === 'topic'
+          modeForSnap === 'threads'
+            ? 'Hai mươi sáu tuổi mới bắt đầu học chơi đàn Guitar thì có quá muộn không mọi người ơi?'
+            : modeForSnap === 'topic'
             ? 'Hình ảnh minh họa chuyển cảnh mượt mà theo đúng từng câu dẫn chuyện.'
             : modeForSnap === 'movie'
             ? 'Nhưng khi mọi chuyện sáng tỏ thì tất cả đã hoàn toàn thay đổi.'
@@ -244,7 +249,8 @@ export default function Canvas916Designer({
   const rect = layoutConfig.hardsub_rect;
   const effMode = contextMode || activeTab;
   const isMovieMode = effMode === 'movie';
-  const isTopicMode = effMode === 'topic';
+  const isThreadsMode = effMode === 'threads';
+  const isTopicMode = effMode === 'topic' || isThreadsMode;
   const isProductMode = !isMovieMode && !isTopicMode;
 
   const aspectKey = layoutConfig.aspect_ratio || '9:16';
@@ -481,6 +487,82 @@ export default function Canvas916Designer({
                     </span>
                   </div>
                 ))}
+              </div>
+            ) : isThreadsMode ? (
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 12,
+                  background: `rgba(0, 0, 0, ${layoutConfig.threads_bg_dim ?? 0.28})`,
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    padding: '10px 11px',
+                    borderRadius: 12,
+                    background:
+                      layoutConfig.threads_card_theme === 'LIGHT_THREADS'
+                        ? 'rgba(255,255,255,0.96)'
+                        : layoutConfig.threads_card_theme === 'FROSTED_GLASS'
+                        ? 'rgba(17,24,39,0.76)'
+                        : 'rgba(18,20,25,0.95)',
+                    color:
+                      layoutConfig.threads_card_theme === 'LIGHT_THREADS'
+                        ? '#0f172a'
+                        : '#f8fafc',
+                    border:
+                      layoutConfig.threads_card_theme === 'FROSTED_GLASS'
+                        ? '1px solid rgba(125,211,252,0.65)'
+                        : '1px solid rgba(148,163,184,0.35)',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                    <span
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 99,
+                        background: '#0ea5e9',
+                        color: '#fff',
+                        fontSize: 8,
+                        fontWeight: 800,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      TH
+                    </span>
+                    <strong style={{ fontSize: 9.5 }}>
+                      {layoutConfig.threads_anonymize_handles
+                        ? '@nguoila_01'
+                        : '@minhanh.threads'}
+                    </strong>
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        fontSize: 7.5,
+                        padding: '1px 5px',
+                        borderRadius: 99,
+                        background: 'rgba(14,165,233,0.18)',
+                        color: '#38bdf8',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Bình luận #1
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 9.2, lineHeight: 1.38, marginBottom: 5 }}>
+                    Thẻ bình luận nổi tự động nảy lên khớp từng giọng đọc trên video nền lặp vòng!
+                  </div>
+                  <div style={{ fontSize: 8, opacity: 0.72 }}>♥ 1,4K • Trả lời • Đăng lại</div>
+                </div>
               </div>
             ) : !previewFrameUrl ? (
               <div

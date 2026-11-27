@@ -858,6 +858,150 @@ def test_m07_uc15_nvenc_trimmer_cover_snapshot_lanqr_and_backup(tmp_path: Path) 
         client.delete(f"/api/project-groups/{gid}")
 
 
+def test_m07_uc16_threads_extract_bg_library_multivoice_and_floating_cards(tmp_path: Path) -> None:
+    """Verify UC-16 Threads & Comment Studio: teen-code expansion, BG Video Library, multi-voice Pop SFX & looped 9:16 card render."""
+    bg_mp4 = tmp_path / "chill_bg_2s.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=720x1280:rate=30:duration=2.0",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=320:sample_rate=44100:duration=2.0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(bg_mp4),
+        ],
+        check=True,
+    )
+
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_threads.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+
+    with TestClient(studio_app) as client:
+        # 1. Extract & Curate pasted Threads post + teen-code expansion + multi-voice cast
+        ext_res = client.post(
+            "/api/threads/extract",
+            json={
+                "post_url": "",
+                "raw_pasted_text": (
+                    "@minhanh: Mn ơi 26 tuổi mới tập đàn Guitar thì có muộn ko ạ?\n\n"
+                    "@tuankiet: Ko hề muộn nha b, tập 20 phút mỗi tối là chơi đc ngay!\n\n"
+                    "@linhchi: Đi làm cty về tập đàn cực kỳ xả stress luôn."
+                ),
+                "max_comments": 2,
+                "filter_vibe": "FUNNY_VIRAL",
+                "expand_slang_and_translate": True,
+                "anonymize_handles": False,
+                "multi_voice_cast": True,
+                "host_voice_id": "local_vais_studio",
+            },
+        )
+        assert ext_res.status_code == 200
+        bundle = ext_res.json()
+        assert "mọi người" in bundle["op_spoken_vi_text"].lower()
+        assert "không" in bundle["op_spoken_vi_text"].lower()
+        assert len(bundle["comments"]) == 2
+        assert "được" in bundle["comments"][0]["spoken_vi_text"].lower()
+        assert "công ty" in bundle["comments"][1]["spoken_vi_text"].lower()
+
+        # Assert multi-voice casting assigned distinct voices, then switch to pre-bundled local_vais_studio for offline speed
+        assert bundle["comments"][0]["voice_profile_id"] != bundle["op_voice_profile_id"]
+        bundle["op_voice_profile_id"] = "local_vais_studio"
+        bundle["comments"][0]["voice_profile_id"] = "local_vais_studio"
+        bundle["comments"][1]["voice_profile_id"] = "local_vais_studio"
+
+        # 2. Upload Background Video to persistent Kho Video Nền
+        with open(bg_mp4, "rb") as f_bg:
+            up_bg = client.post(
+                "/api/threads/bg-videos/upload",
+                data={"title": "Lái xe đêm mưa chill", "category_tag": "Chill"},
+                files={"file": ("chill_bg_2s.mp4", f_bg, "video/mp4")},
+            )
+        assert up_bg.status_code == 200
+        saved_bg = up_bg.json()
+        assert saved_bg["bg_id"].startswith("bg_")
+        lib_list = client.get("/api/threads/bg-videos").json()
+        assert len(lib_list) == 1
+
+        # 3. True 1080p Threads Card Snapshot preview
+        snap_th = client.post(
+            "/api/preview/render-frame",
+            json={
+                "active_tab": "threads",
+                "banner_title": "Thảo luận Threads",
+                "sample_subtitle": "Học đàn Guitar tuổi 26 hoàn toàn không muộn!",
+                "layout_config": {"threads_card_theme": "FROSTED_GLASS", "threads_bg_dim": 0.32},
+            },
+        )
+        assert snap_th.status_code == 200
+        assert snap_th.json()["width"] == 1080
+
+        # 4. Run full end-to-end THREADS_TOPIC render (2s BG video auto-loops across OP + 2 comments!)
+        start_th = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": bundle,
+                "bg_source_type": "LOCAL_FILE",
+                "bg_path_or_url": saved_bg["local_path"],
+                "keep_bg_audio": True,
+                "bg_audio_volume": 0.10,
+                "append_cta_comment": "",
+                "enable_card_pop_sfx": True,
+                "voice_profile_id": "local_vais_studio",
+                "bgm_preset_id": "bgm_lofi_story",
+                "bgm_volume": 0.05,
+                "subtitle_style": "NONE",
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "show_top_banner": False,
+                    "threads_card_theme": "DARK_THREADS",
+                    "threads_anonymize_handles": False,
+                    "threads_bg_dim": 0.30,
+                },
+                "auto_one_click": True,
+            },
+        )
+        assert start_th.status_code == 200
+        thr_pid = start_th.json()["project_id"]
+
+        thr_detail = {}
+        for _ in range(140):
+            thr_detail = client.get(f"/api/projects/{thr_pid}").json()
+            if thr_detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.3)
+
+        assert thr_detail["state"] == "COMPLETED", thr_detail.get("error_message")
+        assert thr_detail["mode"] == "THREADS_TOPIC"
+        thr_clip = thr_detail["clips"][0]
+        out_mp4 = Path(thr_clip["output_mp4_path"])
+        assert out_mp4.exists() and out_mp4.stat().st_size > 4096
+        assert Path(thr_clip["cover_jpg_path"]).exists()
+        assert thr_clip["seo"] is not None
+
+
+
 
 
 

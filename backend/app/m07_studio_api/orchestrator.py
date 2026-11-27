@@ -29,6 +29,7 @@ from app.m00_core_contracts import (
     ProjectMode,
     RenderJobSpecDTO,
     RenderOutputDTO,
+    ScrapedThreadBundleDTO,
     SEOPackageDTO,
     SQLiteRepository,
     StudioBaseError,
@@ -145,6 +146,68 @@ class PipelineOrchestrator:
     def _resolve_voice(self, profile_id: str) -> VoiceProfileDTO:
         found = self.repo.get_voice_profile(profile_id)
         return found if found is not None else DEFAULT_VOICE_PROFILES[0]
+
+    def _build_voice_registry(self) -> Dict[str, VoiceProfileDTO]:
+        return {vp.profile_id: vp for vp in self.repo.list_voice_profiles()}
+
+    async def execute_threads_pipeline(
+        self,
+        ingest_req: IngestRequestDTO,
+        bundle: ScrapedThreadBundleDTO,
+        append_cta_comment: str,
+        voice_profile_id: str,
+        audio_config: AudioSubConfigDTO,
+        layout_config: LayoutAndAntiCopyConfigDTO,
+        auto_one_click: bool = True,
+    ) -> CutPlanDTO:
+        """Run Mode 4 (Threads & Comments): Ingest BG video -> Build CutPlan -> Render Floating Cards."""
+        pid = ingest_req.project_id
+        cb = self._cb(pid)
+        try:
+            self.repo.update_project_state(pid, JobState.INGESTING)
+            cb("INGESTING", 25.0, "Đang chuẩn bị video nền lặp vòng 9:16...")
+            media = await self.ingestor.ingest(
+                ingest_req, work_dir=self.settings.work_dir, on_progress=cb
+            )
+            self.repo.save_source_media(media, source_type=ingest_req.source_type.value)
+            self._pending_media[pid] = media
+
+            self.repo.update_project_state(pid, JobState.AI_ANALYZING)
+            cb("AI_ANALYZING", 60.0, "Đang dàn trang kịch bản bài đăng gốc & các bình luận tiêu biểu...")
+            cut_plan = await self.brain.build_threads_clips(
+                bundle=bundle,
+                project_id=pid,
+                append_cta_comment=append_cta_comment,
+                anonymize_handles=layout_config.threads_anonymize_handles,
+            )
+            self.repo.save_cut_plan(cut_plan)
+            self._pending_plans[pid] = cut_plan
+
+            if not auto_one_click:
+                self.repo.update_project_state(pid, JobState.AWAITING_REVIEW)
+                cb(
+                    "AWAITING_REVIEW",
+                    100.0,
+                    "Đã sẵn sàng kịch bản Threads & bình luận! Mời bạn kiểm tra trước khi xuất video.",
+                )
+                return cut_plan
+
+            await self.render_approved_plan(
+                project_id=pid,
+                cut_plan=cut_plan,
+                voice_profile_id=voice_profile_id,
+                audio_config=audio_config,
+                layout_config=layout_config,
+                media_override=media,
+            )
+            return cut_plan
+        except JobCancelledException:
+            raise
+        except Exception as exc:
+            err_txt = exc.message if isinstance(exc, StudioBaseError) else str(exc)
+            self.repo.update_project_state(pid, JobState.FAILED, error_message=err_txt)
+            cb("FAILED", 0.0, f"Lỗi xử lý video Threads: {err_txt}")
+            raise
 
     async def execute_topic_pipeline(
         self,
@@ -331,6 +394,7 @@ class PipelineOrchestrator:
         project_work_dir = self.settings.work_dir / project_id
 
         voice_profile = self._resolve_voice(voice_profile_id)
+        voice_registry = self._build_voice_registry()
         media = media_override or self._pending_media.get(project_id)
         if media is None and proj_info.get("source_media"):
             sm = proj_info["source_media"]
@@ -430,6 +494,7 @@ class PipelineOrchestrator:
                     demo_audio_wav=demo_wav,
                     canvas_w=canvas_w,
                     canvas_h=canvas_h,
+                    voice_registry=voice_registry,
                 )
 
                 # 2. Align every product photo & demo video scene to exact spoken timestamps
@@ -471,6 +536,47 @@ class PipelineOrchestrator:
                 effective_layout = layout_config.model_copy(
                     update={"hardsub_mask_enabled": False, "anti_copyright_enabled": False}
                 )
+            elif cut_plan.mode == ProjectMode.THREADS_TOPIC:
+                if media is None:
+                    raise RuntimeError("Không tìm thấy tệp video nền cho dự án Threads.")
+                src_video = media.video_path
+                orig_stereo = (
+                    media.original_stereo_wav_path if synced_audio_cfg.keep_original_audio else None
+                )
+                audio_sub = await self.audio_mixer.process(
+                    clip=clip,
+                    profile=voice_profile,
+                    audio_config=synced_audio_cfg,
+                    out_dir=project_work_dir,
+                    orig_stereo_wav=orig_stereo,
+                    on_progress=cb,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    voice_registry=voice_registry,
+                )
+                speech_dur_ms = max(1000, audio_sub.total_audio_duration_ms - outro_ms)
+                if len(audio_sub.line_spans_ms) == len(clip.lines):
+                    synced_lines = [
+                        ln.model_copy(update={"rel_start_ms": s_ms, "rel_end_ms": e_ms})
+                        for ln, (s_ms, e_ms) in zip(clip.lines, audio_sub.line_spans_ms)
+                    ]
+                    effective_clip = clip.model_copy(
+                        update={
+                            "lines": synced_lines,
+                            "source_end_ms": max(clip.duration_ms, speech_dur_ms),
+                        }
+                    )
+                visual_assets = await self.visual_producer.produce_threads_cards(
+                    clip=effective_clip,
+                    out_dir=project_work_dir,
+                    card_theme=layout_config.threads_card_theme,
+                    anonymize_handles=layout_config.threads_anonymize_handles,
+                    aspect_ratio=layout_config.aspect_ratio,
+                    on_progress=cb,
+                )
+                effective_layout = layout_config.model_copy(
+                    update={"hardsub_mask_enabled": False, "anti_copyright_enabled": False}
+                )
             elif cut_plan.mode == ProjectMode.TOPIC_VIDEO:
                 eff_vis_mode = self._pending_visual_modes.get(project_id, visual_mode)
                 audio_sub = await self.audio_mixer.process(
@@ -482,6 +588,7 @@ class PipelineOrchestrator:
                     on_progress=cb,
                     canvas_w=canvas_w,
                     canvas_h=canvas_h,
+                    voice_registry=voice_registry,
                 )
                 if len(audio_sub.line_spans_ms) == len(clip.lines):
                     synced_lines = [
@@ -516,6 +623,7 @@ class PipelineOrchestrator:
                     on_progress=cb,
                     canvas_w=canvas_w,
                     canvas_h=canvas_h,
+                    voice_registry=voice_registry,
                 )
 
             self.repo.update_project_state(project_id, JobState.RENDERING_NVENC)

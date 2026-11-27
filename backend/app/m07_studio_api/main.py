@@ -49,12 +49,17 @@ from app.m00_core_contracts import (
     ProductReviewPromptDTO,
     ProjectMode,
     SalesScriptAngle,
+    SavedBgVideoDTO,
     SavedProductTemplateDTO,
+    ScrapedThreadBundleDTO,
     SourceType,
     SQLiteRepository,
     SUPPORTED_VIDEO_EXTENSIONS,
     StudioSettings,
     SubtitleStyle,
+    ThreadFilterVibe,
+    ThreadsCardTheme,
+    ThreadsExtractRequestDTO,
     TopicPromptDTO,
     TransitionStyle,
     VisualMode,
@@ -67,7 +72,9 @@ from app.m00_core_contracts import (
 from app.m01_media_ingest import (
     FFmpegMediaIngestor,
     FFmpegMediaTrimmer,
+    FFprobeInspector,
     ProductWebScraper,
+    ThreadsScraperService,
     YtDlpDownloader,
     normalize_video_url,
 )
@@ -77,7 +84,11 @@ from app.m03_ai_content_brain import (
     GeminiContentBrainService,
     TikTokShopComplianceChecker,
 )
-from app.m04_visual_producer import ProductPhotoShowcaseProvider, VisualProducerFacade
+from app.m04_visual_producer import (
+    ProductPhotoShowcaseProvider,
+    ThreadsCardVisualRenderer,
+    VisualProducerFacade,
+)
 from app.m05_voice_audio_mixer import (
     F5VoiceCloneGPUProvider,
     MovieAudioAndSubMixer,
@@ -213,6 +224,11 @@ class ApprovedClipLinePatch(BaseModel):
     matched_image_index: Optional[int] = None
     is_real_demo_slot: bool = False
     callout_label: str = ""
+    voice_profile_override: Optional[str] = None
+    speaker_handle: str = ""
+    display_card_text: str = ""
+    likes_display: str = ""
+    is_op_post: bool = False
     voice_speed_override: Optional[float] = None
     voice_pitch_override: Optional[float] = None
 
@@ -331,6 +347,45 @@ class ProductBatchUrlsRequest(BaseModel):
     bgm_preset_id: Optional[str] = "bgm_luxury_acoustic"
     custom_bgm_path: Optional[str] = None
     bgm_volume: float = 0.06
+    layout_config: LayoutAndAntiCopyConfigDTO = Field(
+        default_factory=LayoutAndAntiCopyConfigDTO
+    )
+    parent_group_id: Optional[str] = None
+    auto_one_click: bool = True
+
+
+class ThreadsExtractAPIRequest(BaseModel):
+    post_url: str = Field(default="", max_length=1000)
+    raw_pasted_text: str = Field(default="", max_length=12000)
+    max_comments: int = Field(default=6, ge=1, le=20)
+    filter_vibe: ThreadFilterVibe = ThreadFilterVibe.FUNNY_VIRAL
+    expand_slang_and_translate: bool = True
+    anonymize_handles: bool = False
+    multi_voice_cast: bool = True
+    host_voice_id: str = "edge_hoai_my_fast"
+
+
+class BgVideoFromUrlRequest(BaseModel):
+    video_url: str = Field(min_length=6, max_length=1000)
+    title: str = Field(default="", max_length=160)
+    category_tag: str = Field(default="Chill / Đời sống", max_length=80)
+
+
+class ThreadsStartRequest(BaseModel):
+    bundle: ScrapedThreadBundleDTO
+    bg_source_type: SourceType = SourceType.LOCAL_FILE
+    bg_path_or_url: str = Field(min_length=2)
+    save_bg_to_library: bool = False
+    bg_library_title: str = Field(default="", max_length=160)
+    keep_bg_audio: bool = False
+    bg_audio_volume: float = Field(default=0.14, ge=0.0, le=0.6)
+    append_cta_comment: str = Field(default="", max_length=600)
+    enable_card_pop_sfx: bool = True
+    voice_profile_id: str = "edge_hoai_my_fast"
+    bgm_preset_id: Optional[str] = "bgm_lofi_story"
+    custom_bgm_path: Optional[str] = None
+    bgm_volume: float = 0.06
+    subtitle_style: SubtitleStyle = SubtitleStyle.NONE
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
@@ -987,7 +1042,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                         fg_m = rgb_m.resize((fw, fh), Image.Resampling.LANCZOS).convert("RGBA")
                         base_c.alpha_composite(fg_m, ((canvas_w - fw) // 2, (canvas_h - fh) // 2))
                         base_c.save(plate_png, format="PNG")
-                elif req.active_tab == "topic":
+                elif req.active_tab in ("topic", "threads"):
                     with Image.open(src_media) as im_top:
                         rgb_t = im_top.convert("RGB")
                         sc_t = max(canvas_w / max(rgb_t.width, 1), canvas_h / max(rgb_t.height, 1))
@@ -996,9 +1051,15 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                         resized_t = rgb_t.resize((tw, th), Image.Resampling.LANCZOS)
                         ox = (tw - canvas_w) // 2
                         oy = (th - canvas_h) // 2
-                        resized_t.crop((ox, oy, ox + canvas_w, oy + canvas_h)).convert("RGBA").save(
-                            plate_png, format="PNG"
-                        )
+                        cropped_t = resized_t.crop((ox, oy, ox + canvas_w, oy + canvas_h)).convert("RGBA")
+                        if req.active_tab == "threads":
+                            dark_t = Image.new(
+                                "RGBA",
+                                (canvas_w, canvas_h),
+                                (0, 0, 0, int(255 * cfg.threads_bg_dim)),
+                            )
+                            cropped_t = Image.alpha_composite(cropped_t, dark_t)
+                        cropped_t.save(plate_png, format="PNG")
                 else:
                     ProductPhotoShowcaseProvider.compose_uncropped_plate(
                         src_img=src_media,
@@ -1056,6 +1117,30 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
             with Image.open(plate_png) as bp, Image.open(ovr_png) as ov:
                 composed = Image.alpha_composite(bp.convert("RGBA"), ov.convert("RGBA"))
+
+            if req.active_tab == "threads" and not req.preview_as_cover:
+                card_snap = snap_dir / f"th_card_{uid}.png"
+                sample_ln = NarrationLineDTO(
+                    seq_index=0,
+                    rel_start_ms=0,
+                    rel_end_ms=4000,
+                    vi_text=req.sample_subtitle,
+                    display_card_text=req.sample_subtitle,
+                    speaker_handle="@minhanh.threads",
+                    likes_display="2,4K",
+                    is_op_post=True,
+                )
+                ThreadsCardVisualRenderer.render_single_card_png(
+                    line=sample_ln,
+                    out_png=card_snap,
+                    card_theme=cfg.threads_card_theme,
+                    anonymize_handles=cfg.threads_anonymize_handles,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                )
+                with Image.open(card_snap) as tc_im:
+                    composed = Image.alpha_composite(composed, tc_im.convert("RGBA"))
+                card_snap.unlink(missing_ok=True)
 
             if req.preview_as_cover:
                 eff_head = cfg.cover_headline.strip() or req.banner_title
@@ -1435,6 +1520,220 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         )
         return {"project_id": project_id, "state": initial_state}
 
+    def _serialize_bg_video(bg: SavedBgVideoDTO) -> Dict[str, Any]:
+        d = bg.model_dump()
+        d["local_path"] = str(bg.local_path)
+        d["media_url"] = _to_media_url(str(bg.local_path))
+        return d
+
+    @app.post("/api/threads/extract")
+    async def extract_and_curate_threads_post(req: ThreadsExtractAPIRequest) -> Dict[str, Any]:
+        """Scrape Threads / Reddit / Web post + replies, curate top N via AI, expand slang & cast voices."""
+        try:
+            dto_req = ThreadsExtractRequestDTO(
+                post_url=req.post_url,
+                raw_pasted_text=req.raw_pasted_text,
+                max_comments=req.max_comments,
+                filter_vibe=req.filter_vibe,
+                expand_slang_and_translate=req.expand_slang_and_translate,
+                anonymize_handles=req.anonymize_handles,
+                multi_voice_cast=req.multi_voice_cast,
+                host_voice_id=req.host_voice_id,
+            )
+            raw_bundle = await ThreadsScraperService.scrape_post_and_comments(
+                post_url=dto_req.post_url,
+                raw_pasted_text=dto_req.raw_pasted_text,
+            )
+            avail_voices = [vp.profile_id for vp in repo.list_voice_profiles()]
+            curated = await orchestrator.brain.curate_threads_bundle(
+                raw_bundle=raw_bundle,
+                req=dto_req,
+                available_voice_ids=avail_voices,
+            )
+            return curated.model_dump()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/threads/bg-videos")
+    async def list_saved_background_videos() -> List[Dict[str, Any]]:
+        """List reusable background videos stored in the Studio Background Library."""
+        return [_serialize_bg_video(bg) for bg in repo.list_bg_videos()]
+
+    @app.post("/api/threads/bg-videos/upload")
+    async def upload_background_video_to_library(
+        title: str = Form(default=""),
+        category_tag: str = Form(default="Chill / Đời sống"),
+        file: UploadFile = File(...),
+    ) -> Dict[str, Any]:
+        """Upload a local video file directly into the persistent Studio Background Video Library."""
+        bg_dir = settings.assets_dir / "bg_videos"
+        bg_dir.mkdir(parents=True, exist_ok=True)
+        orig_name = Path(file.filename or "bg_video.mp4").name
+        ext = Path(orig_name).suffix.lower() or ".mp4"
+        bg_id = f"bg_{uuid.uuid4().hex[:8]}"
+        dest = bg_dir / f"{bg_id}{ext}"
+        with open(dest, "wb") as f_out:
+            shutil.copyfileobj(file.file, f_out)
+        try:
+            info = await asyncio.to_thread(FFprobeInspector.inspect, dest)
+            dur_ms, w, h = info.duration_ms, info.width, info.height
+        except Exception:
+            dur_ms = await asyncio.to_thread(FFmpegMediaTrimmer.probe_duration_ms, dest)
+            w, h = 1080, 1920
+        clean_title = (title or "").strip() or Path(orig_name).stem[:100]
+        saved = repo.upsert_bg_video(
+            SavedBgVideoDTO(
+                bg_id=bg_id,
+                title=clean_title,
+                category_tag=category_tag.strip() or "Chill / Đời sống",
+                local_path=dest,
+                duration_ms=dur_ms,
+                width=w,
+                height=h,
+            )
+        )
+        return _serialize_bg_video(saved)
+
+    @app.post("/api/threads/bg-videos/from-url")
+    async def save_background_video_from_url(req: BgVideoFromUrlRequest) -> Dict[str, Any]:
+        """Download a YouTube/TikTok/Web background video into the Studio Background Video Library."""
+        bg_dir = settings.assets_dir / "bg_videos"
+        bg_dir.mkdir(parents=True, exist_ok=True)
+        bg_id = f"bg_{uuid.uuid4().hex[:8]}"
+        tmp_dl = settings.work_dir / "_uploads" / bg_id
+        tmp_dl.mkdir(parents=True, exist_ok=True)
+        try:
+            dl = await YtDlpDownloader().download(normalize_video_url(req.video_url), tmp_dl)
+            ext = dl.video_path.suffix.lower() or ".mp4"
+            dest = bg_dir / f"{bg_id}{ext}"
+            shutil.move(str(dl.video_path), str(dest))
+            info = await asyncio.to_thread(FFprobeInspector.inspect, dest)
+            clean_title = req.title.strip() or (dl.title_hint or "Video nền tải từ link")[:120]
+            saved = repo.upsert_bg_video(
+                SavedBgVideoDTO(
+                    bg_id=bg_id,
+                    title=clean_title,
+                    category_tag=req.category_tag.strip() or "Chill / Đời sống",
+                    local_path=dest,
+                    duration_ms=info.duration_ms,
+                    width=info.width,
+                    height=info.height,
+                )
+            )
+            return _serialize_bg_video(saved)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Lỗi tải video nền: {exc}") from exc
+        finally:
+            shutil.rmtree(tmp_dl, ignore_errors=True)
+
+    @app.delete("/api/threads/bg-videos/{bg_id}")
+    async def remove_saved_background_video(bg_id: str) -> Dict[str, Any]:
+        """Delete a saved background video from the Studio Library."""
+        removed_path = repo.delete_bg_video(bg_id)
+        bg_root = (settings.assets_dir / "bg_videos").resolve()
+        if removed_path and removed_path.exists():
+            try:
+                if bg_root in removed_path.resolve().parents:
+                    removed_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return {"deleted_bg_id": bg_id}
+
+    @app.post("/api/threads/start")
+    async def start_threads_comment_project(req: ThreadsStartRequest) -> Dict[str, Any]:
+        """Start Mode 4: Floating Threads Post & Comment Cards over Looped Background Video."""
+        active_cmts = [c for c in req.bundle.comments if c.selected]
+        if not active_cmts and not req.bundle.op_display_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Vui lòng giữ lại bài đăng gốc hoặc ít nhất 1 bình luận để dựng video.",
+            )
+
+        raw_bg = req.bg_path_or_url.strip()
+        is_remote_bg = raw_bg.lower().startswith(("http://", "https://"))
+        eff_bg_type = SourceType.VIDEO_URL if is_remote_bg else SourceType.LOCAL_FILE
+        eff_bg_target = normalize_video_url(raw_bg) if is_remote_bg else raw_bg
+
+        if eff_bg_type == SourceType.LOCAL_FILE:
+            resolved_local = _resolve_media_ref(raw_bg)
+            if resolved_local is None or not resolved_local.exists():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Vui lòng chọn hoặc tải lên 1 video nền hợp lệ trước khi xuất video.",
+                )
+            eff_bg_target = str(resolved_local)
+
+            # Optionally copy into persistent Kho Video Nền so user can reuse with 1 click next time!
+            if req.save_bg_to_library:
+                bg_dir = settings.assets_dir / "bg_videos"
+                bg_dir.mkdir(parents=True, exist_ok=True)
+                if bg_dir.resolve() not in resolved_local.resolve().parents:
+                    bg_id = f"bg_{uuid.uuid4().hex[:8]}"
+                    perm_dst = bg_dir / f"{bg_id}{resolved_local.suffix.lower() or '.mp4'}"
+                    shutil.copy2(resolved_local, perm_dst)
+                    eff_bg_target = str(perm_dst)
+                    dur_ms = await asyncio.to_thread(FFmpegMediaTrimmer.probe_duration_ms, perm_dst)
+                    repo.upsert_bg_video(
+                        SavedBgVideoDTO(
+                            bg_id=bg_id,
+                            title=req.bg_library_title.strip() or resolved_local.stem[:90],
+                            category_tag="Video nền đã lưu",
+                            local_path=perm_dst,
+                            duration_ms=dur_ms,
+                        )
+                    )
+
+        project_id = f"thr_{uuid.uuid4().hex[:8]}"
+        normalized_req = req.model_copy(
+            update={"bg_source_type": eff_bg_type, "bg_path_or_url": eff_bg_target}
+        )
+        est_sec = max(25, min(180, (1 + len(active_cmts)) * 8))
+        repo.create_project(
+            project_id=project_id,
+            name=req.bundle.topic_title[:160] or "Thảo luận Threads nổi bật",
+            mode=ProjectMode.THREADS_TOPIC,
+            target_min_sec=max(15, est_sec - 10),
+            target_max_sec=min(180, est_sec + 25),
+            request_payload_json=normalized_req.model_dump_json(),
+            parent_group_id=req.parent_group_id,
+        )
+
+        ingest_dto = IngestRequestDTO(
+            project_id=project_id,
+            source_type=eff_bg_type,
+            path_or_url=eff_bg_target,
+        )
+        audio_cfg = _resolve_bgm_into_audio_cfg(
+            AudioSubConfigDTO(
+                enable_narration=True,
+                keep_original_audio=bool(req.keep_bg_audio),
+                ducking_ratio=float(req.bg_audio_volume) if req.keep_bg_audio else 0.0,
+                dynamic_cinema_ducking=False,
+                bgm_volume=req.bgm_volume,
+                subtitle_style=req.subtitle_style,
+                subtitle_pos_y=req.layout_config.subtitle_pos_y,
+                subtitle_font_size=req.layout_config.subtitle_font_size,
+                enable_card_pop_sfx=bool(req.enable_card_pop_sfx),
+            ),
+            req.bgm_preset_id,
+            req.custom_bgm_path,
+        )
+        initial_state = job_mgr.enqueue_job(
+            project_id=project_id,
+            mode=ProjectMode.THREADS_TOPIC,
+            is_render_only=False,
+            coro_factory=lambda: orchestrator.execute_threads_pipeline(
+                ingest_req=ingest_dto,
+                bundle=req.bundle,
+                append_cta_comment=req.append_cta_comment,
+                voice_profile_id=req.voice_profile_id,
+                audio_config=audio_cfg,
+                layout_config=req.layout_config,
+                auto_one_click=req.auto_one_click,
+            ),
+        )
+        return {"project_id": project_id, "state": initial_state}
+
     @app.post("/api/topic/start")
     async def start_topic_project(req: TopicStartRequest) -> Dict[str, Any]:
         project_id = f"top_{uuid.uuid4().hex[:8]}"
@@ -1642,6 +1941,11 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                                 matched_image_index=ln.matched_image_index,
                                 is_real_demo_slot=ln.is_real_demo_slot,
                                 callout_label=ln.callout_label,
+                                voice_profile_override=ln.voice_profile_override,
+                                speaker_handle=ln.speaker_handle,
+                                display_card_text=ln.display_card_text,
+                                likes_display=ln.likes_display,
+                                is_op_post=ln.is_op_post,
                                 voice_speed_override=ln.voice_speed_override,
                                 voice_pitch_override=ln.voice_pitch_override,
                             )
@@ -1678,6 +1982,11 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                             ),
                             is_real_demo_slot=bool(s.get("is_real_demo_slot")),
                             callout_label=s.get("callout_label") or "",
+                            voice_profile_override=s.get("voice_profile_override") or None,
+                            speaker_handle=s.get("speaker_handle") or "",
+                            display_card_text=s.get("display_card_text") or "",
+                            likes_display=s.get("likes_display") or "",
+                            is_op_post=bool(s.get("is_op_post")),
                             voice_speed_override=(
                                 float(s["voice_speed_override"])
                                 if s.get("voice_speed_override") is not None
@@ -1938,6 +2247,50 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     parsed_req.layout_config if parsed_req else LayoutAndAntiCopyConfigDTO(),
                     parsed_req.source_language if parsed_req else "auto",
                     parsed_req.auto_one_click if parsed_req else True,
+                ),
+            )
+            return {"project_id": project_id, "state": st}
+
+        if mode == ProjectMode.THREADS_TOPIC:
+            try:
+                thr_req = ThreadsStartRequest(**json.loads(saved_json))
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"Không thể khôi phục cấu hình Threads: {exc}"
+                ) from exc
+            ingest_dto = IngestRequestDTO(
+                project_id=project_id,
+                source_type=thr_req.bg_source_type,
+                path_or_url=thr_req.bg_path_or_url,
+            )
+            repo.update_project_state(project_id, JobState.INGESTING, error_message="")
+            audio_cfg = _resolve_bgm_into_audio_cfg(
+                AudioSubConfigDTO(
+                    enable_narration=True,
+                    keep_original_audio=bool(thr_req.keep_bg_audio),
+                    ducking_ratio=float(thr_req.bg_audio_volume) if thr_req.keep_bg_audio else 0.0,
+                    dynamic_cinema_ducking=False,
+                    bgm_volume=thr_req.bgm_volume,
+                    subtitle_style=thr_req.subtitle_style,
+                    subtitle_pos_y=thr_req.layout_config.subtitle_pos_y,
+                    subtitle_font_size=thr_req.layout_config.subtitle_font_size,
+                    enable_card_pop_sfx=bool(thr_req.enable_card_pop_sfx),
+                ),
+                thr_req.bgm_preset_id,
+                thr_req.custom_bgm_path,
+            )
+            st = job_mgr.enqueue_job(
+                project_id=project_id,
+                mode=ProjectMode.THREADS_TOPIC,
+                is_render_only=False,
+                coro_factory=lambda: orchestrator.execute_threads_pipeline(
+                    ingest_req=ingest_dto,
+                    bundle=thr_req.bundle,
+                    append_cta_comment=thr_req.append_cta_comment,
+                    voice_profile_id=thr_req.voice_profile_id,
+                    audio_config=audio_cfg,
+                    layout_config=thr_req.layout_config,
+                    auto_one_click=thr_req.auto_one_click,
                 ),
             )
             return {"project_id": project_id, "state": st}

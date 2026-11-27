@@ -246,8 +246,45 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         )
         outro_extra_ms = int(cfg_l.outro_duration_ms) if has_luxury_outro else 0
 
-        is_topic_mode = spec.source_video_path is None and spec.visual_assets is not None
-        if is_topic_mode and spec.visual_assets is not None:
+        is_threads_overlay_mode = (
+            spec.source_video_path is not None and spec.visual_assets is not None
+        )
+        is_topic_mode = (
+            is_threads_overlay_mode
+            or (spec.source_video_path is None and spec.visual_assets is not None)
+        )
+        if is_threads_overlay_mode and spec.visual_assets is not None and spec.source_video_path is not None:
+            base_video = self._assemble_threads_bg_and_cards(
+                bg_video_path=spec.source_video_path,
+                card_items=list(spec.visual_assets.items),
+                outro_png=(
+                    StudioOverlayArtist.create_luxury_outro_plate(
+                        out_png=work_dir / "luxury_outro.png",
+                        brand_title=cfg_l.outro_brand_title or spec.clip.hook_banner_title,
+                        subtitle=cfg_l.outro_subtitle,
+                        contact_line=cfg_l.outro_contact_line or cfg_l.sales_contact_info,
+                        logo_path=cfg_l.logo_path,
+                        qr_code_content=cfg_l.qr_code_content,
+                        qr_code_label=cfg_l.qr_code_label,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                    )
+                    if has_luxury_outro
+                    else None
+                ),
+                outro_extra_ms=outro_extra_ms,
+                bg_dim=float(cfg_l.threads_bg_dim),
+                work_dir=work_dir,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+                use_nvenc=use_nvenc,
+            )
+            clip_start_sec = 0.0
+            raw_dur_ms = max(
+                sum(it.duration_ms for it in spec.visual_assets.items) + outro_extra_ms,
+                spec.audio_sub.total_audio_duration_ms,
+            )
+        elif is_topic_mode and spec.visual_assets is not None:
             eff_items = list(spec.visual_assets.items)
             if has_luxury_outro:
                 outro_png = StudioOverlayArtist.create_luxury_outro_plate(
@@ -377,7 +414,12 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             eff_cover_head = spec.clip.hook_banner_title
 
         poster_done = False
-        if is_topic_mode and spec.visual_assets is not None and spec.visual_assets.items:
+        if (
+            is_topic_mode
+            and not is_threads_overlay_mode
+            and spec.visual_assets is not None
+            and spec.visual_assets.items
+        ):
             img_items = [
                 it for it in spec.visual_assets.items if it.asset_type == AssetType.IMAGE
             ]
@@ -570,6 +612,202 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 )
             raise VideoCompositorError(
                 f"Ghép chuyển cảnh CapCut thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"
+            )
+        return assembled
+
+    @classmethod
+    def _assemble_threads_bg_and_cards(
+        cls,
+        bg_video_path: Path,
+        card_items: List[SceneVisualItemDTO],
+        outro_png: Optional[Path],
+        outro_extra_ms: int,
+        bg_dim: float,
+        work_dir: Path,
+        canvas_w: int,
+        canvas_h: int,
+        use_nvenc: bool,
+    ) -> Path:
+        """Loop background video seamlessly while popping floating RGBA Threads cards per comment."""
+        assembled = work_dir / "assembled_threads.mp4"
+        v_enc = (
+            ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET, "-cq", str(NVENC_CQ)]
+            if use_nvenc
+            else ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "17"]
+        )
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            f"{canvas_w}x{canvas_h}",
+            "-r",
+            str(TARGET_FPS),
+            "-i",
+            "-",
+            *v_enc,
+            "-pix_fmt",
+            "yuv420p",
+            str(assembled),
+        ]
+
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert proc.stdin is not None
+
+        cap = cv2.VideoCapture(str(bg_video_path))
+        last_bg = np.full((canvas_h, canvas_w, 3), (18, 22, 30), dtype=np.uint8)
+        bright_keep = max(0.22, min(1.0, 1.0 - float(bg_dim)))
+        cached_loop_frames: List[np.ndarray] = []
+        using_cached_loop = False
+        cache_cursor = 0
+
+        def _next_bg_frame() -> np.ndarray:
+            nonlocal last_bg, using_cached_loop, cache_cursor
+            if using_cached_loop and cached_loop_frames:
+                frm_out = cached_loop_frames[cache_cursor % len(cached_loop_frames)]
+                cache_cursor += 1
+                return frm_out
+
+            ok, frm = cap.read()
+            if not ok or frm is None:
+                if cached_loop_frames:
+                    using_cached_loop = True
+                    cache_cursor = 1
+                    return cached_loop_frames[0]
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frm = cap.read()
+            if ok and frm is not None:
+                fh, fw = frm.shape[:2]
+                sc = max(canvas_w / float(max(fw, 1)), canvas_h / float(max(fh, 1)))
+                nw, nh = max(canvas_w, int(round(fw * sc))), max(canvas_h, int(round(fh * sc)))
+                resized = cv2.resize(frm, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                x0 = (nw - canvas_w) // 2
+                y0 = (nh - canvas_h) // 2
+                cropped = resized[y0 : y0 + canvas_h, x0 : x0 + canvas_w]
+                if bright_keep < 0.99:
+                    cropped = cv2.convertScaleAbs(cropped, alpha=bright_keep, beta=0.0)
+                last_bg = cropped
+                if len(cached_loop_frames) < 180:
+                    cached_loop_frames.append(cropped)
+                else:
+                    cached_loop_frames.clear()
+            return last_bg
+
+        def _load_card_roi(path: Path):
+            """Load RGBA card and precompute non-zero alpha bounding box + uint16 premultiplied planes (100x faster)."""
+            raw_b = np.fromfile(str(path), dtype=np.uint8)
+            bgra = cv2.imdecode(raw_b, cv2.IMREAD_UNCHANGED)
+            if bgra is None:
+                raise VideoCompositorError(f"Không thể đọc thẻ bình luận: {path.name}")
+            if bgra.shape[1] != canvas_w or bgra.shape[0] != canvas_h:
+                bgra = cv2.resize(bgra, (canvas_w, canvas_h), interpolation=cv2.INTER_AREA)
+            if bgra.shape[2] == 3:
+                alpha = np.full((canvas_h, canvas_w, 1), 255, dtype=np.uint8)
+                bgra = np.concatenate((bgra, alpha), axis=2)
+
+            nz_y, nz_x = np.where(bgra[:, :, 3] > 1)
+            if nz_y.size == 0:
+                return None
+            y0, y1 = max(0, int(nz_y.min()) - 4), min(canvas_h, int(nz_y.max()) + 5)
+            x0, x1 = max(0, int(nz_x.min()) - 4), min(canvas_w, int(nz_x.max()) + 5)
+            roi_bgra = bgra[y0:y1, x0:x1]
+            a_u16 = roi_bgra[:, :, 3:4].astype(np.uint16)
+            inv_a_u16 = 255 - a_u16
+            premult_fg_u16 = roi_bgra[:, :, :3].astype(np.uint16) * a_u16
+            return (x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16)
+
+        def _blend_card_fast(
+            bg_bgr: np.ndarray, card_info, pop_scale: float, opacity: float
+        ) -> np.ndarray:
+            if card_info is None:
+                return bg_bgr
+            x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16 = card_info
+            out = bg_bgr.copy()
+
+            if abs(pop_scale - 1.0) <= 1e-3 and opacity >= 0.995:
+                bg_roi = out[y0:y1, x0:x1].astype(np.uint16)
+                out[y0:y1, x0:x1] = ((bg_roi * inv_a_u16 + premult_fg_u16 + 127) // 255).astype(
+                    np.uint8
+                )
+                return out
+
+            rw, rh = x1 - x0, y1 - y0
+            cx, cy = rw * 0.5, rh * 0.5
+            mat = np.array(
+                [
+                    [pop_scale, 0.0, cx * (1.0 - pop_scale)],
+                    [0.0, pop_scale, cy * (1.0 - pop_scale)],
+                ],
+                dtype=np.float32,
+            )
+            warped_roi = cv2.warpAffine(
+                roi_bgra,
+                mat,
+                (rw, rh),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0, 0),
+            )
+            op_u16 = max(0, min(255, int(round(opacity * 255.0))))
+            a_dyn = (warped_roi[:, :, 3:4].astype(np.uint16) * op_u16) // 255
+            inv_dyn = 255 - a_dyn
+            fg_dyn = warped_roi[:, :, :3].astype(np.uint16) * a_dyn
+            bg_roi = out[y0:y1, x0:x1].astype(np.uint16)
+            out[y0:y1, x0:x1] = ((bg_roi * inv_dyn + fg_dyn + 127) // 255).astype(np.uint8)
+            return out
+
+        pop_frames = 7  # ~0.23s crisp spring pop-in animation per comment card
+        try:
+            for it in card_items:
+                n_frames = max(18, int(round((it.duration_ms / 1000.0) * TARGET_FPS)))
+                card_info = _load_card_roi(it.asset_path)
+                for f_i in range(n_frames):
+                    bg_f = _next_bg_frame()
+                    if f_i < pop_frames:
+                        p = (f_i + 1) / float(pop_frames)
+                        ease = 1.0 - (1.0 - p) ** 3
+                        scale = 0.90 + 0.10 * ease
+                        opac = min(1.0, p * 1.25)
+                    else:
+                        scale = 1.0
+                        opac = 1.0
+                    composed = _blend_card_fast(bg_f, card_info, scale, opac)
+                    proc.stdin.write(memoryview(np.ascontiguousarray(composed)))
+
+            if outro_png is not None and outro_extra_ms > 0:
+                outro_bgr = _load_unicode_image_bgr(outro_png, canvas_w, canvas_h)
+                outro_frames = max(15, int(round((outro_extra_ms / 1000.0) * TARGET_FPS)))
+                for _ in range(outro_frames):
+                    proc.stdin.write(memoryview(np.ascontiguousarray(outro_bgr)))
+        finally:
+            cap.release()
+            proc.stdin.close()
+
+        stderr_bytes = proc.stderr.read() if proc.stderr else b""
+        proc.wait()
+        if proc.returncode != 0 or not assembled.exists():
+            if use_nvenc:
+                return cls._assemble_threads_bg_and_cards(
+                    bg_video_path=bg_video_path,
+                    card_items=card_items,
+                    outro_png=outro_png,
+                    outro_extra_ms=outro_extra_ms,
+                    bg_dim=bg_dim,
+                    work_dir=work_dir,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    use_nvenc=False,
+                )
+            raise VideoCompositorError(
+                f"Ghép thẻ bình luận Threads thất bại: {stderr_bytes.decode('utf-8', errors='replace')[-300:]}"
             )
         return assembled
 

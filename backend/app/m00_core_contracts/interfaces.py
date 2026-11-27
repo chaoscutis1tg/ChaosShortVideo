@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .dtos import (
     AudioChunkDTO,
@@ -20,13 +20,15 @@ from .dtos import (
     RenderJobSpecDTO,
     RenderOutputDTO,
     SceneVisualItemDTO,
+    ScrapedThreadBundleDTO,
     SEOPackageDTO,
+    ThreadsExtractRequestDTO,
     TopicPromptDTO,
     TranscriptResultDTO,
     VisualAssetListDTO,
     VoiceProfileDTO,
 )
-from .enums import ExportAspectRatio, ProductFramingStyle, VisualMode
+from .enums import ExportAspectRatio, ProductFramingStyle, ThreadsCardTheme, VisualMode
 
 # Callback signature: (stage_name, progress_percent_0_to_100, status_message)
 ProgressCallback = Callable[[str, float, str], None]
@@ -89,6 +91,25 @@ class ILLMService(ABC):
     async def build_seo(self, clip: ClipSpecDTO, mode_label: str = "") -> SEOPackageDTO:
         """Generate YouTube Shorts & TikTok titles, descriptions, and hashtags."""
 
+    @abstractmethod
+    async def curate_threads_bundle(
+        self,
+        raw_bundle: ScrapedThreadBundleDTO,
+        req: ThreadsExtractRequestDTO,
+        available_voice_ids: List[str],
+    ) -> ScrapedThreadBundleDTO:
+        """Curate top replies by vibe, expand Vietnamese teen-code for TTS, and assign multi-voice cast."""
+
+    @abstractmethod
+    async def build_threads_clips(
+        self,
+        bundle: ScrapedThreadBundleDTO,
+        project_id: str,
+        append_cta_comment: str = "",
+        anonymize_handles: bool = False,
+    ) -> CutPlanDTO:
+        """Convert approved OP post + selected replies into a timed CutPlanDTO."""
+
 
 class IVisualProvider(ABC):
     """Strategy interface for pluggable visual sources inside Module M04."""
@@ -137,6 +158,18 @@ class IVisualProducer(ABC):
     ) -> VisualAssetListDTO:
         """Produce uncropped product photo/video plates, optional cutout, A/B split, feedback & soundwave."""
 
+    @abstractmethod
+    async def produce_threads_cards(
+        self,
+        clip: ClipSpecDTO,
+        out_dir: Path,
+        card_theme: ThreadsCardTheme = ThreadsCardTheme.DARK_THREADS,
+        anonymize_handles: bool = False,
+        aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> VisualAssetListDTO:
+        """Render transparent RGBA PNG floating Threads post & comment cards synced to clip lines."""
+
 
 class ITTSProvider(ABC):
     """Strategy interface for 3-tier TTS synthesis (Edge-TTS, Local F5 Clone, Cloud API)."""
@@ -164,6 +197,9 @@ class IVoiceAudioMixer(ABC):
         orig_stereo_wav: Optional[Path] = None,
         on_progress: Optional[ProgressCallback] = None,
         demo_audio_wav: Optional[Path] = None,
+        canvas_w: int = 1080,
+        canvas_h: int = 1920,
+        voice_registry: Optional[Dict[str, VoiceProfileDTO]] = None,
     ) -> MasterAudioAndSubDTO:
         """Synthesize narration, duck original movie audio, and generate .ass subtitles."""
 

@@ -34,6 +34,8 @@ from .enums import (
     SalesScriptAngle,
     SourceType,
     SubtitleStyle,
+    ThreadFilterVibe,
+    ThreadsCardTheme,
     TransitionStyle,
     VisualMode,
     VoiceTier,
@@ -246,6 +248,11 @@ class NarrationLineDTO(BaseContractDTO):
     matched_image_index: Optional[int] = Field(default=None, ge=0)
     is_real_demo_slot: bool = False
     callout_label: str = Field(default="", max_length=90)
+    voice_profile_override: Optional[str] = None
+    speaker_handle: str = Field(default="", max_length=90)
+    display_card_text: str = ""
+    likes_display: str = Field(default="", max_length=32)
+    is_op_post: bool = False
     voice_speed_override: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_override: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
     words: List[WordTimestampDTO] = Field(default_factory=list)
@@ -373,6 +380,7 @@ class AudioSubConfigDTO(BaseContractDTO):
     subtitle_font_size: int = Field(default=52, ge=28, le=88)
     voice_speed_global: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_global: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
+    enable_card_pop_sfx: bool = False
     outro_tail_ms: int = Field(default=0, ge=0, le=6000)
 
 
@@ -459,6 +467,11 @@ class LayoutAndAntiCopyConfigDTO(BaseContractDTO):
     cover_headline: str = Field(default="", max_length=90)
     cover_badge_text: str = Field(default="", max_length=50)
     cover_photo_index: int = Field(default=0, ge=0, le=50)
+
+    # UC-16: Floating Threads / Social Post & Comment Card Overlay settings
+    threads_card_theme: ThreadsCardTheme = ThreadsCardTheme.DARK_THREADS
+    threads_anonymize_handles: bool = False
+    threads_bg_dim: float = Field(default=0.28, ge=0.0, le=0.75)
 
     @field_validator("top_banner_template")
     @classmethod
@@ -619,5 +632,73 @@ class ProjectGroupDTO(BaseContractDTO):
     updated_at: str = ""
     project_count: int = Field(default=0, ge=0)
     completed_count: int = Field(default=0, ge=0)
+
+
+class ThreadCommentItemDTO(BaseContractDTO):
+    """Single social/Threads reply item curated for floating comment card & multi-voice narration."""
+
+    comment_id: str = Field(min_length=1)
+    author_handle: str = Field(default="@nguoidung", max_length=90)
+    display_name: str = Field(default="", max_length=90)
+    raw_text: str = Field(min_length=1, max_length=2500)
+    display_text: str = Field(default="", max_length=2500)
+    spoken_vi_text: str = Field(default="", max_length=2500)
+    likes_count: int = Field(default=0, ge=0)
+    likes_display: str = Field(default="", max_length=32)
+    is_verified: bool = False
+    is_ai_suggested: bool = False
+    voice_profile_id: str = ""
+    selected: bool = True
+
+
+class ScrapedThreadBundleDTO(BaseContractDTO):
+    """Complete extracted & AI-curated Threads/Reddit post + featured replies bundle."""
+
+    source_url: str = ""
+    platform: str = "threads"
+    topic_title: str = Field(min_length=2, max_length=200)
+    op_author_handle: str = Field(default="@chuthot", max_length=90)
+    op_display_text: str = Field(min_length=2, max_length=3000)
+    op_spoken_vi_text: str = Field(default="", max_length=3000)
+    op_likes_display: str = Field(default="1,2K", max_length=32)
+    op_replies_display: str = Field(default="86", max_length=32)
+    op_is_verified: bool = False
+    op_voice_profile_id: str = "edge_hoai_my_fast"
+    comments: List[ThreadCommentItemDTO] = Field(default_factory=list)
+    used_api_key: bool = False
+    extraction_note: str = ""
+
+
+class ThreadsExtractRequestDTO(BaseContractDTO):
+    """Input contract for scraping & AI-curating a Threads/Reddit post and top replies."""
+
+    post_url: str = Field(default="", max_length=1000)
+    raw_pasted_text: str = Field(default="", max_length=12000)
+    max_comments: int = Field(default=6, ge=1, le=20)
+    filter_vibe: ThreadFilterVibe = ThreadFilterVibe.FUNNY_VIRAL
+    expand_slang_and_translate: bool = True
+    anonymize_handles: bool = False
+    multi_voice_cast: bool = True
+    host_voice_id: str = "edge_hoai_my_fast"
+
+    @model_validator(mode="after")
+    def _ensure_url_or_text(self) -> "ThreadsExtractRequestDTO":
+        if len(self.post_url.strip()) + len(self.raw_pasted_text.strip()) < 4:
+            raise ValueError("Vui lòng dán đường dẫn Threads/Reddit hoặc nội dung văn bản bài viết.")
+        return self
+
+
+class SavedBgVideoDTO(BaseContractDTO):
+    """Reusable background video clip stored in the Studio Background Video Library."""
+
+    bg_id: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=160)
+    category_tag: str = Field(default="Chill / Đời sống", max_length=80)
+    local_path: Path
+    duration_ms: int = Field(default=0, ge=0)
+    width: int = Field(default=1080, ge=0)
+    height: int = Field(default=1920, ge=0)
+    created_at: str = ""
+
 
 

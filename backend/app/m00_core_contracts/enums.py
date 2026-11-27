@@ -9,6 +9,24 @@ class ProjectMode(str, Enum):
     TOPIC_VIDEO = "TOPIC_VIDEO"
     MOVIE_CLIPPER = "MOVIE_CLIPPER"
     PRODUCT_SHOWCASE = "PRODUCT_SHOWCASE"
+    THREADS_TOPIC = "THREADS_TOPIC"
+
+
+class ThreadFilterVibe(str, Enum):
+    """AI curation & ranking criteria for selecting featured social/Threads replies."""
+
+    FUNNY_VIRAL = "FUNNY_VIRAL"
+    EMPATHY_STORY = "EMPATHY_STORY"
+    DEBATE_SPICY = "DEBATE_SPICY"
+    TOP_LIKED = "TOP_LIKED"
+
+
+class ThreadsCardTheme(str, Enum):
+    """Visual overlay card styles for floating Threads / Reddit posts & comments."""
+
+    DARK_THREADS = "DARK_THREADS"
+    LIGHT_THREADS = "LIGHT_THREADS"
+    FROSTED_GLASS = "FROSTED_GLASS"
 
 
 class ProductCategory(str, Enum):

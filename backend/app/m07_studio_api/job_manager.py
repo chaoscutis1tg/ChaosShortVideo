@@ -385,10 +385,21 @@ class JobExecutionManager:
                     for fp in req_obj.get(key) or []:
                         if fp:
                             protected_upload_files.add(Path(fp).resolve())
-                for single_key in ("demo_clip_path", "custom_bgm_path", "external_srt_path"):
-                    if req_obj.get(single_key):
-                        protected_upload_files.add(Path(req_obj[single_key]).resolve())
+                for single_key in (
+                    "demo_clip_path",
+                    "custom_bgm_path",
+                    "external_srt_path",
+                    "bg_path_or_url",
+                ):
+                    val_s = req_obj.get(single_key)
+                    if val_s and not str(val_s).startswith(("http://", "https://")):
+                        protected_upload_files.add(Path(val_s).resolve())
             except Exception:
+                pass
+        for bg_item in self.repo.list_bg_videos():
+            try:
+                protected_upload_files.add(bg_item.local_path.resolve())
+            except OSError:
                 pass
 
         removed_folders = 0

@@ -18,6 +18,7 @@ import {
   ImagePlus,
   Languages,
   Loader2,
+  MessageSquareText,
   Pause,
   Play,
   Plus,
@@ -59,11 +60,13 @@ const MODE_LABELS = {
   PRODUCT_SHOWCASE: 'Video Bán Hàng',
   TOPIC_VIDEO: 'Tạo Từ Chủ Đề',
   TOPIC_TO_SHORTS: 'Tạo Từ Chủ Đề',
+  THREADS_TOPIC: 'Threads & Bình Luận',
 };
 
 function ModeIcon({ mode }) {
   if (mode === 'MOVIE_CLIPPER') return <Film size={15} strokeWidth={1.9} />;
   if (mode === 'PRODUCT_SHOWCASE') return <ShoppingBag size={15} strokeWidth={1.9} />;
+  if (mode === 'THREADS_TOPIC') return <MessageSquareText size={15} strokeWidth={1.9} />;
   return <FileText size={15} strokeWidth={1.9} />;
 }
 
@@ -165,6 +168,11 @@ export default function ProjectWorkspaceView({
             ln.matched_image_index !== undefined ? ln.matched_image_index : null,
           is_real_demo_slot: Boolean(ln.is_real_demo_slot),
           callout_label: ln.callout_label || '',
+          voice_profile_override: ln.voice_profile_override || null,
+          speaker_handle: ln.speaker_handle || '',
+          display_card_text: ln.display_card_text || '',
+          likes_display: ln.likes_display || '',
+          is_op_post: Boolean(ln.is_op_post),
           voice_speed_override:
             ln.voice_speed_override !== undefined && ln.voice_speed_override !== null
               ? Number(ln.voice_speed_override)
@@ -569,6 +577,8 @@ export default function ProjectWorkspaceView({
     const effSubStyle =
       reviewAudioSubMode === 'VIET_DUB_NO_SUB' || reviewAudioSubMode === 'RAW_ORIGINAL'
         ? 'NONE'
+        : detail.mode === 'THREADS_TOPIC'
+        ? detail.saved_request?.subtitle_style || 'NONE'
         : isMovie || detail.mode === 'PRODUCT_SHOWCASE'
         ? 'CINEMA'
         : 'KARAOKE_CAPCUT';
@@ -582,8 +592,13 @@ export default function ProjectWorkspaceView({
         custom_bgm_path: customBgmPath,
         audio_config: {
           enable_narration: isDubbed,
-          keep_original_audio: isMovie,
-          ducking_ratio: 0.18,
+          keep_original_audio:
+            isMovie ||
+            (detail.mode === 'THREADS_TOPIC' && Boolean(detail.saved_request?.keep_bg_audio)),
+          ducking_ratio:
+            detail.mode === 'THREADS_TOPIC'
+              ? Number(detail.saved_request?.bg_audio_volume ?? 0.14)
+              : 0.18,
           bgm_path: null,
           bgm_volume: bgmVolume,
           subtitle_style: effSubStyle,
@@ -591,6 +606,10 @@ export default function ProjectWorkspaceView({
           subtitle_font_size: layoutConfig.subtitle_font_size ?? 52,
           voice_speed_global: Number(globalVoiceSpeed),
           voice_pitch_global: Number(globalVoicePitch),
+          enable_card_pop_sfx:
+            detail.mode === 'THREADS_TOPIC'
+              ? detail.saved_request?.enable_card_pop_sfx !== false
+              : false,
         },
         layout_config: layoutConfig,
         clips: editableClips,
@@ -1707,6 +1726,36 @@ export default function ProjectWorkspaceView({
                                         </select>
                                       )
                                     ))}
+
+                                  {detail.mode === 'THREADS_TOPIC' && (
+                                    <>
+                                      <span className="badge badge-info" style={{ fontSize: 11 }}>
+                                        {ln.is_op_post ? 'OP' : ln.speaker_handle || `#${lIdx}`}
+                                      </span>
+                                      <select
+                                        className="select"
+                                        style={{
+                                          width: 145,
+                                          minHeight: 34,
+                                          padding: '4px 7px',
+                                          fontSize: 12,
+                                        }}
+                                        value={ln.voice_profile_override || selectedVoice}
+                                        onChange={(e) =>
+                                          handleLinePatch(cIdx, lIdx, {
+                                            voice_profile_override: e.target.value,
+                                          })
+                                        }
+                                        title="Giọng đọc riêng của bình luận này"
+                                      >
+                                        {voices.map((v) => (
+                                          <option key={v.profile_id} value={v.profile_id}>
+                                            {v.display_name.split('—')[0].trim()}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </>
+                                  )}
 
                                   {detail.mode === 'TOPIC_VIDEO' &&
                                     (ln.image_prompt?.startsWith('LOCAL_IMAGE:') ? (

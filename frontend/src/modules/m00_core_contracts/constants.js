@@ -48,6 +48,9 @@ export const DEFAULT_LAYOUT_CONFIG = {
   cover_headline: '',
   cover_badge_text: '',
   cover_photo_index: 0,
+  threads_card_theme: 'DARK_THREADS',
+  threads_anonymize_handles: false,
+  threads_bg_dim: 0.28,
 };
 
 export const DEFAULT_AUDIO_CONFIG = {

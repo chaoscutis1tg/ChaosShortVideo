@@ -12,6 +12,7 @@ from app.m00_core_contracts import (
     ProductFramingStyle,
     ProgressCallback,
     SceneVisualItemDTO,
+    ThreadsCardTheme,
     VisualAssetListDTO,
     VisualMode,
     VisualProducerError,
@@ -20,6 +21,7 @@ from app.m00_core_contracts import (
 from .ai_image_provider import AIImageKenBurnsProvider
 from .product_visual_provider import ProductPhotoShowcaseProvider
 from .stock_video_provider import StockVideoProvider
+from .threads_card_renderer import ThreadsCardVisualRenderer
 
 SCENE_CONCURRENCY_LIMIT = 3
 
@@ -122,6 +124,25 @@ class VisualProducerFacade(IVisualProducer):
             feedback_image_paths=feedback_image_paths,
             demo_audio_wav=demo_audio_wav,
             soundwave_enabled=soundwave_enabled,
+        )
+
+    async def produce_threads_cards(
+        self,
+        clip: ClipSpecDTO,
+        out_dir: Path,
+        card_theme: ThreadsCardTheme = ThreadsCardTheme.DARK_THREADS,
+        anonymize_handles: bool = False,
+        aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> VisualAssetListDTO:
+        """Render transparent RGBA PNG floating Threads post & comment cards synced to clip lines."""
+        return await ThreadsCardVisualRenderer.build_clip_cards(
+            clip=clip,
+            out_dir=out_dir,
+            card_theme=card_theme,
+            anonymize_handles=anonymize_handles,
+            aspect_ratio=aspect_ratio,
+            on_progress=on_progress,
         )
 
     def _select_provider(self, mode: VisualMode, scene_idx: int) -> IVisualProvider:

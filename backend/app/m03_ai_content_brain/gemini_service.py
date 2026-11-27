@@ -24,7 +24,11 @@ from app.m00_core_contracts import (
     ProjectMode,
     RawTranscriptSegmentDTO,
     SalesScriptAngle,
+    ScrapedThreadBundleDTO,
     SEOPackageDTO,
+    ThreadCommentItemDTO,
+    ThreadFilterVibe,
+    ThreadsExtractRequestDTO,
     TopicPromptDTO,
     TranscriptResultDTO,
     VisualMode,
@@ -811,4 +815,383 @@ class GeminiContentBrainService(ILLMService):
             tiktok_caption=f"{clip.hook_banner_title} — Không ngờ tình tiết lại căng thẳng thế này! {next_cta}",
             tiktok_hashtags=["#xuhuong", "#phimngan", "#thuyetminhphim", "#viral", "#fyp"],
         )
+
+    @staticmethod
+    def _expand_slang_vi(text: str) -> str:
+        """Clean emojis/URLs and expand Vietnamese Threads teen-code for clear TTS pronunciation."""
+        slang = {
+            "ko": "không",
+            "k": "không",
+            "khum": "không",
+            "đc": "được",
+            "dc": "được",
+            "chx": "chưa",
+            "bt": "bình thường",
+            "bth": "bình thường",
+            "mn": "mọi người",
+            "ny": "người yêu",
+            "nyc": "người yêu cũ",
+            "nv": "nhân viên",
+            "cty": "công ty",
+            "gđ": "gia đình",
+            "tr": "trời",
+            "đhs": "chẳng hiểu sao",
+            "ntn": "như thế nào",
+            "vs": "với",
+            "j": "gì",
+            "cx": "cũng",
+            "mik": "mình",
+            "mk": "mình",
+            "bh": "bây giờ",
+            "trc": "trước",
+            "ngta": "người ta",
+            "cmt": "bình luận",
+            "rep": "trả lời",
+            "ib": "nhắn tin",
+        }
+        cleaned = re.sub(r"https?://\S+", "", text or "").strip()
+        if not cleaned:
+            return ""
+        pat = r"\b(" + "|".join(re.escape(k) for k in slang.keys()) + r")\b"
+        out = re.sub(
+            pat,
+            lambda m: (
+                slang[m.group(0).lower()].capitalize()
+                if m.group(0)[0].isupper()
+                else slang[m.group(0).lower()]
+            ),
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        return re.sub(r"\s{2,}", " ", out).strip()
+
+    @staticmethod
+    def _assign_comment_voices(
+        comments: List[ThreadCommentItemDTO],
+        host_voice_id: str,
+        available_voice_ids: List[str],
+        multi_voice_cast: bool,
+    ) -> List[ThreadCommentItemDTO]:
+        """Assign contrasting male/female dialogue voices across comments so consecutive speakers differ."""
+        if not multi_voice_cast:
+            return [c.model_copy(update={"voice_profile_id": host_voice_id}) for c in comments]
+
+        preferred_cast = [
+            "edge_tuan_kiet_tiktok",
+            "gemini_tiktok_zephyr",
+            "edge_gia_bao_consult",
+            "edge_minh_chau_lifestyle",
+            "gemini_tiktok_achird",
+            "edge_lan_anh_story",
+            "edge_nam_uslt_saigon",
+            "edge_phuong_anh_fashion",
+            "local_vivos_tiktok_fast",
+            "local_vais_studio",
+        ]
+        valid_pool = [
+            vid for vid in preferred_cast if vid in available_voice_ids and vid != host_voice_id
+        ]
+        if not valid_pool:
+            valid_pool = [vid for vid in available_voice_ids if vid != host_voice_id] or [
+                host_voice_id
+            ]
+
+        updated: List[ThreadCommentItemDTO] = []
+        for idx, c in enumerate(comments):
+            chosen = (
+                c.voice_profile_id
+                if (c.voice_profile_id and c.voice_profile_id in available_voice_ids)
+                else valid_pool[idx % len(valid_pool)]
+            )
+            updated.append(c.model_copy(update={"voice_profile_id": chosen}))
+        return updated
+
+    async def curate_threads_bundle(
+        self,
+        raw_bundle: ScrapedThreadBundleDTO,
+        req: ThreadsExtractRequestDTO,
+        available_voice_ids: List[str],
+    ) -> ScrapedThreadBundleDTO:
+        """Curate top N replies by vibe, expand teen-code / translate to Vietnamese & cast voices."""
+        vibe_desc_map = {
+            ThreadFilterVibe.FUNNY_VIRAL: "Hài hước, mặn mòi, duyên dáng, bất ngờ chuẩn viral TikTok",
+            ThreadFilterVibe.EMPATHY_STORY: "Đồng cảm, tâm sự chân thật, sâu sắc, chạm cảm xúc người nghe",
+            ThreadFilterVibe.DEBATE_SPICY: "Tranh luận đa chiều, phản biện sắc sảo, nhiều góc nhìn trái ngược",
+            ThreadFilterVibe.TOP_LIKED: "Tương tác cao nhất, súc tích, đại diện đúng tâm lý số đông",
+        }
+        vibe_desc = vibe_desc_map.get(req.filter_vibe, "Cuốn hút, tự nhiên")
+        target_n = max(1, min(20, int(req.max_comments)))
+
+        if self.api_key:
+            raw_cmts_dump = [
+                {
+                    "author": c.author_handle,
+                    "text": c.raw_text[:500],
+                    "likes": c.likes_display or str(c.likes_count),
+                }
+                for c in raw_bundle.comments[:24]
+            ]
+            prompt = (
+                "Bạn là đạo diễn sản xuất video ngắn 'Chủ đề Threads & Bình luận cộng đồng' triệu view trên TikTok/Shorts.\n"
+                f"Bài đăng gốc ({raw_bundle.op_author_handle}): {raw_bundle.op_display_text}\n"
+                f"Danh sách bình luận thô thu thập được ({len(raw_cmts_dump)} mục): {json.dumps(raw_cmts_dump, ensure_ascii=False)}\n"
+                f"Số lượng bình luận tiêu biểu cần lấy: ĐÚNG {target_n} bình luận.\n"
+                f"Gu chọn lọc mong muốn: {vibe_desc}.\n"
+                f"Bung viết tắt teen-code & dịch sang tiếng Việt tự nhiên: {'CÓ' if req.expand_slang_and_translate else 'KHÔNG'}.\n\n"
+                "Yêu cầu bắt buộc:\n"
+                "1. Nếu bài gốc hoặc bình luận bằng tiếng nước ngoài (Anh/Trung...), hãy dịch mượt sang tiếng Việt đời thường chuẩn văn phong Threads.\n"
+                f"2. Nếu danh sách bình luận thô có sẵn >= {target_n} câu chất lượng, hãy lọc ra ĐÚNG {target_n} bình luận đắt giá nhất khớp gu '{vibe_desc}' (đặt is_ai_suggested=false). "
+                f"Nếu danh sách thô bị thiếu (do Threads ẩn bình luận khi chưa đăng nhập), hãy giữ các bình luận thật có sẵn và viết bổ sung các bình luận cộng đồng siêu tự nhiên, đa dạng giọng điệu như người dùng thật trên Threads Việt Nam cho đủ ĐÚNG {target_n} bình luận (đặt is_ai_suggested=true cho câu bổ sung).\n"
+                "3. Với cả bài gốc và mỗi bình luận, trả về 2 phiên bản:\n"
+                "   - display_text: Văn bản hiển thị đẹp trên Thẻ Bình Luận (ngắn gọn, súc tích, tự nhiên).\n"
+                "   - spoken_vi_text: Lời đọc cho diễn viên lồng tiếng AI — TUYỆT ĐỐI bung hết viết tắt (ko->không, đc->được, ny->người yêu, cty->công ty, mn->mọi người...), bỏ icon/emoji rác để giọng đọc trôi chảy 100%.\n"
+                "Trả về JSON hợp lệ:\n"
+                "{\n"
+                '  "topic_title": "Tiêu đề ngắn gọn giật tít <= 85 ký tự",\n'
+                '  "op_author_handle": "@ten_chu_thot",\n'
+                '  "op_display_text": "Nội dung bài đăng gốc hiển thị trên thẻ",\n'
+                '  "op_spoken_vi_text": "Lời đọc bài đăng gốc tròn vành rõ chữ",\n'
+                '  "comments": [\n'
+                "    {\n"
+                '      "author_handle": "@nickname_tu_nhien",\n'
+                '      "display_text": "Nội dung bình luận trên thẻ",\n'
+                '      "spoken_vi_text": "Lời đọc bình luận đã bung hết từ viết tắt",\n'
+                '      "likes_display": "1,4K",\n'
+                '      "is_ai_suggested": false\n'
+                "    }\n"
+                "  ]\n"
+                "}"
+            )
+            try:
+                data = await self._call_gemini_json(prompt)
+                ai_cmts_raw = data.get("comments") or []
+                curated_list: List[ThreadCommentItemDTO] = []
+                for idx, item in enumerate(ai_cmts_raw[:target_n], start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    disp = str(item.get("display_text") or "").strip()
+                    spoken = str(item.get("spoken_vi_text") or disp).strip()
+                    if not disp:
+                        continue
+                    h_raw = str(item.get("author_handle") or f"@thanhvien_{idx:02d}").strip()
+                    if not h_raw.startswith("@"):
+                        h_raw = f"@{h_raw}"
+                    if req.anonymize_handles:
+                        h_raw = f"@nguoila_{idx:02d}"
+                    curated_list.append(
+                        ThreadCommentItemDTO(
+                            comment_id=f"cur_{idx:02d}",
+                            author_handle=h_raw[:60],
+                            raw_text=disp[:1500],
+                            display_text=disp[:1500],
+                            spoken_vi_text=self._expand_slang_vi(spoken)[:1500]
+                            if req.expand_slang_and_translate
+                            else spoken[:1500],
+                            likes_display=str(item.get("likes_display") or f"{max(24, 680 - idx * 53)}")[:24],
+                            is_ai_suggested=bool(item.get("is_ai_suggested")),
+                            selected=True,
+                        )
+                    )
+
+                if curated_list:
+                    voiced_cmts = self._assign_comment_voices(
+                        curated_list, req.host_voice_id, available_voice_ids, req.multi_voice_cast
+                    )
+                    op_disp = str(data.get("op_display_text") or raw_bundle.op_display_text).strip()
+                    op_sp = str(data.get("op_spoken_vi_text") or op_disp).strip()
+                    if req.expand_slang_and_translate:
+                        op_sp = self._expand_slang_vi(op_sp)
+                    op_h = (
+                        "@chuthot_threads"
+                        if req.anonymize_handles
+                        else str(data.get("op_author_handle") or raw_bundle.op_author_handle).strip()
+                    )
+                    if not op_h.startswith("@"):
+                        op_h = f"@{op_h}"
+                    return ScrapedThreadBundleDTO(
+                        source_url=raw_bundle.source_url,
+                        platform=raw_bundle.platform,
+                        topic_title=str(data.get("topic_title") or raw_bundle.topic_title)[:180],
+                        op_author_handle=op_h[:60],
+                        op_display_text=op_disp[:2200],
+                        op_spoken_vi_text=op_sp[:2200],
+                        op_likes_display=raw_bundle.op_likes_display or "2,3K",
+                        op_replies_display=raw_bundle.op_replies_display or str(len(voiced_cmts) * 14),
+                        op_is_verified=raw_bundle.op_is_verified,
+                        op_voice_profile_id=req.host_voice_id,
+                        comments=voiced_cmts,
+                        used_api_key=True,
+                        extraction_note=f"AI đã chọn lọc & chuẩn hóa {len(voiced_cmts)} bình luận tiêu biểu theo gu '{vibe_desc}'.",
+                    )
+            except Exception:
+                if not self.allow_offline_fallback:
+                    raise
+
+        # Deterministic offline fallback curation
+        base_cmts = list(raw_bundle.comments[:target_n])
+        fallback_templates = [
+            ("@minhkhoi.98", "Đọc xong thấy đúng tâm lý số đông thật sự, ai trải qua rồi mới hiểu cảm giác này.", "842"),
+            ("@linhchi.daily", "Mình từng rơi vào đúng hoàn cảnh y hệt chủ thớt luôn, mất gần nửa năm mới rút ra bài học.", "519"),
+            ("@hoangnam.official", "Thực ra nhìn ở góc độ ngược lại thì chuyện này cũng có hai mặt, quan trọng là cách mình ứng xử thôi.", "376"),
+            ("@thao.vy.genz", "lướt Threads lúc nửa đêm mà gặp đúng bài chạm trúng tim đen thế này sao ngủ nổi trời.", "264"),
+            ("@anhduc.work", "Chuẩn không cần chỉnh! Lưu lại ngay để thỉnh thoảng mở ra tự nhắc bản thân.", "195"),
+            ("@ngocanh.story", "Bình luận trên Threads lúc nào cũng mặn mà thực tế hơn hẳn, đọc cuốn thật.", "148"),
+        ]
+        while len(base_cmts) < target_n:
+            idx = len(base_cmts)
+            h_f, txt_f, lk_f = fallback_templates[idx % len(fallback_templates)]
+            base_cmts.append(
+                ThreadCommentItemDTO(
+                    comment_id=f"fb_{idx + 1:02d}",
+                    author_handle=f"@nguoila_{idx + 1:02d}" if req.anonymize_handles else h_f,
+                    raw_text=txt_f,
+                    display_text=txt_f,
+                    spoken_vi_text=self._expand_slang_vi(txt_f),
+                    likes_display=lk_f,
+                    is_ai_suggested=True,
+                    selected=True,
+                )
+            )
+
+        normalized_cmts: List[ThreadCommentItemDTO] = []
+        for idx, c in enumerate(base_cmts[:target_n], start=1):
+            disp = (c.display_text or c.raw_text).strip()
+            sp = self._expand_slang_vi(c.spoken_vi_text or disp) if req.expand_slang_and_translate else (c.spoken_vi_text or disp)
+            h_eff = f"@nguoila_{idx:02d}" if req.anonymize_handles else c.author_handle
+            normalized_cmts.append(
+                c.model_copy(
+                    update={
+                        "author_handle": h_eff,
+                        "display_text": disp,
+                        "spoken_vi_text": sp or disp,
+                        "likes_display": c.likes_display or str(max(18, 350 - idx * 25)),
+                    }
+                )
+            )
+
+        voiced_cmts = self._assign_comment_voices(
+            normalized_cmts, req.host_voice_id, available_voice_ids, req.multi_voice_cast
+        )
+        op_sp = (
+            self._expand_slang_vi(raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
+            if req.expand_slang_and_translate
+            else (raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
+        )
+        return raw_bundle.model_copy(
+            update={
+                "op_author_handle": "@chuthot_threads" if req.anonymize_handles else raw_bundle.op_author_handle,
+                "op_spoken_vi_text": op_sp,
+                "op_voice_profile_id": req.host_voice_id,
+                "comments": voiced_cmts,
+                "used_api_key": False,
+            }
+        )
+
+    async def build_threads_clips(
+        self,
+        bundle: ScrapedThreadBundleDTO,
+        project_id: str,
+        append_cta_comment: str = "",
+        anonymize_handles: bool = False,
+    ) -> CutPlanDTO:
+        """Build timed CutPlanDTO from approved Threads OP post and selected replies."""
+        lines: List[NarrationLineDTO] = []
+        cursor_ms = 0
+
+        def _estimate_dur_ms(txt: str) -> int:
+            words = max(1, len((txt or "").split()))
+            return max(2600, int(round((words / 2.75) * 1000.0)) + 450)
+
+        # 1. Opening OP Post Card (seq_index = 0)
+        op_disp = bundle.op_display_text.strip()
+        op_spoken = (bundle.op_spoken_vi_text or self._expand_slang_vi(op_disp) or op_disp).strip()
+        op_dur = _estimate_dur_ms(op_spoken)
+        op_handle = "@chuthot_threads" if anonymize_handles else (bundle.op_author_handle or "@chuthot")
+        lines.append(
+            NarrationLineDTO(
+                seq_index=0,
+                rel_start_ms=cursor_ms,
+                rel_end_ms=cursor_ms + op_dur,
+                original_text=op_disp,
+                vi_text=op_spoken,
+                callout_label="Chủ thớt • Threads",
+                voice_profile_override=bundle.op_voice_profile_id or None,
+                speaker_handle=op_handle,
+                display_card_text=op_disp,
+                likes_display=bundle.op_likes_display or "1,8K",
+                is_op_post=True,
+                words=_distribute_words(op_spoken, cursor_ms, cursor_ms + op_dur),
+            )
+        )
+        cursor_ms += op_dur + 220
+
+        # 2. Selected Comment Cards (seq_index = 1..N)
+        active_comments = [c for c in bundle.comments if c.selected]
+        for idx, c in enumerate(active_comments, start=1):
+            c_disp = (c.display_text or c.raw_text).strip()
+            c_spoken = (c.spoken_vi_text or self._expand_slang_vi(c_disp) or c_disp).strip()
+            if not c_spoken:
+                continue
+            c_dur = _estimate_dur_ms(c_spoken)
+            c_handle = f"@nguoila_{idx:02d}" if anonymize_handles else (c.author_handle or f"@thanhvien_{idx:02d}")
+            seq = len(lines)
+            lines.append(
+                NarrationLineDTO(
+                    seq_index=seq,
+                    rel_start_ms=cursor_ms,
+                    rel_end_ms=cursor_ms + c_dur,
+                    original_text=c_disp,
+                    vi_text=c_spoken,
+                    callout_label=f"Bình luận #{idx}",
+                    voice_profile_override=c.voice_profile_id or None,
+                    speaker_handle=c_handle,
+                    display_card_text=c_disp,
+                    likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
+                    is_op_post=False,
+                    words=_distribute_words(c_spoken, cursor_ms, cursor_ms + c_dur),
+                )
+            )
+            cursor_ms += c_dur + 220
+
+        # 3. Optional Engagement Hook CTA Card at the end
+        clean_cta = append_cta_comment.strip()
+        if clean_cta:
+            cta_spoken = self._expand_slang_vi(clean_cta)
+            cta_dur = _estimate_dur_ms(cta_spoken)
+            seq = len(lines)
+            lines.append(
+                NarrationLineDTO(
+                    seq_index=seq,
+                    rel_start_ms=cursor_ms,
+                    rel_end_ms=cursor_ms + cta_dur,
+                    original_text=clean_cta,
+                    vi_text=cta_spoken,
+                    callout_label="Câu hỏi cùng bàn luận",
+                    voice_profile_override=bundle.op_voice_profile_id or None,
+                    speaker_handle=op_handle,
+                    display_card_text=clean_cta,
+                    likes_display="Ghim",
+                    is_op_post=True,
+                    words=_distribute_words(cta_spoken, cursor_ms, cursor_ms + cta_dur),
+                )
+            )
+            cursor_ms += cta_dur + 200
+
+        clip = ClipSpecDTO(
+            clip_id=f"{project_id}_part_01",
+            project_id=project_id,
+            part_number=1,
+            source_start_ms=0,
+            source_end_ms=max(3000, cursor_ms),
+            hook_banner_title=bundle.topic_title[:120] or "Thảo luận nổi bật trên Threads",
+            highlight_score=92.0,
+            lines=lines,
+            append_cta_outro=False,
+        )
+        return CutPlanDTO(
+            project_id=project_id,
+            mode=ProjectMode.THREADS_TOPIC,
+            clips=[clip],
+        )
+
 

@@ -6,6 +6,7 @@ import {
   FileText,
   Film,
   FolderKanban,
+  MessageSquareText,
   Mic,
   Moon,
   PanelRightClose,
@@ -34,6 +35,7 @@ import Canvas916Designer from './modules/m06_canvas_916/Canvas916Designer';
 import ProjectWorkspaceView from './modules/m07_review_and_seo/ProjectWorkspaceView';
 import SettingsModal from './modules/m07_review_and_seo/SettingsModal';
 import ProductStudioForm from './modules/m08_product_studio/ProductStudioForm';
+import ThreadsStudioForm from './modules/m09_threads_studio/ThreadsStudioForm';
 
 const ACTIVE_STATES = [
   'QUEUED',
@@ -88,6 +90,7 @@ export default function App() {
     movie: '',
     product: '',
     topic: '',
+    threads: '',
     workspace: '',
   });
   const [showSettings, setShowSettings] = useState(false);
@@ -258,6 +261,7 @@ export default function App() {
     activeTab === 'product' ||
     activeTab === 'movie' ||
     activeTab === 'topic' ||
+    activeTab === 'threads' ||
     (activeTab === 'workspace' && Boolean(workspaceEditingMode));
   const showDesktopInspector =
     inspectorManualOverride !== null ? inspectorManualOverride : autoShowInspector;
@@ -268,9 +272,13 @@ export default function App() {
         ? 'movie'
         : workspaceEditingMode === 'PRODUCT_SHOWCASE'
         ? 'product'
+        : workspaceEditingMode === 'THREADS_TOPIC'
+        ? 'threads'
         : 'topic'
       : activeTab === 'movie'
       ? 'movie'
+      : activeTab === 'threads'
+      ? 'threads'
       : activeTab === 'topic'
       ? 'topic'
       : 'product';
@@ -292,6 +300,12 @@ export default function App() {
 
   const navItems = [
     { id: 'topic', label: 'Tạo Từ Chủ Đề', shortLabel: 'Chủ Đề', icon: FileText },
+    {
+      id: 'threads',
+      label: 'Threads & Bình Luận',
+      shortLabel: 'Threads',
+      icon: MessageSquareText,
+    },
     { id: 'product', label: 'Video Bán Hàng', shortLabel: 'Bán Hàng', icon: ShoppingBag },
     { id: 'movie', label: 'Cắt & Dịch Video', shortLabel: 'Cắt Video', icon: Film },
     {
@@ -392,7 +406,7 @@ export default function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <nav className="nav-rail">
               <div className="nav-section-label">Công cụ sản xuất</div>
-              {navItems.slice(0, 3).map((item) => {
+              {navItems.slice(0, 4).map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -411,7 +425,7 @@ export default function App() {
               <div className="nav-section-label" style={{ marginTop: 8 }}>
                 Quản lý &amp; Thư viện
               </div>
-              {navItems.slice(3).map((item) => {
+              {navItems.slice(4).map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -583,6 +597,22 @@ export default function App() {
               layoutConfig={layoutConfig}
               projectGroups={projectGroups}
               onGroupsChanged={refreshGroupsAndProjects}
+              onProjectStarted={handleProjectStarted}
+              notify={notify}
+              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+              onOpenApiSettings={() => setShowSettings(true)}
+            />
+          </div>
+
+          <div style={{ display: activeTab === 'threads' ? 'block' : 'none' }}>
+            <ThreadsStudioForm
+              voices={voices}
+              bgmPresets={bgmPresets}
+              layoutConfig={layoutConfig}
+              setLayoutConfig={setLayoutConfig}
+              projectGroups={projectGroups}
+              onGroupsChanged={refreshGroupsAndProjects}
+              onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
               onProjectStarted={handleProjectStarted}
               notify={notify}
               apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}

@@ -14,6 +14,7 @@ from .dtos import (
     MediaAssetDTO,
     ProjectGroupDTO,
     RenderOutputDTO,
+    SavedBgVideoDTO,
     SavedProductTemplateDTO,
     SEOPackageDTO,
     VoiceProfileDTO,
@@ -581,6 +582,17 @@ class SQLiteRepository:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS bg_videos (
+            bg_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            category_tag TEXT DEFAULT 'Chill / Đời sống',
+            local_path TEXT NOT NULL,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 1080,
+            height INTEGER NOT NULL DEFAULT 1920,
+            created_at TEXT NOT NULL
+        );
         """
         with self._connect() as conn:
             conn.executescript(schema_sql)
@@ -649,6 +661,26 @@ class SQLiteRepository:
             if "voice_pitch_override" not in seg_cols:
                 conn.execute(
                     "ALTER TABLE subtitle_segments ADD COLUMN voice_pitch_override REAL DEFAULT NULL"
+                )
+            if "voice_profile_override" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN voice_profile_override TEXT DEFAULT NULL"
+                )
+            if "speaker_handle" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN speaker_handle TEXT DEFAULT ''"
+                )
+            if "display_card_text" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN display_card_text TEXT DEFAULT ''"
+                )
+            if "likes_display" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN likes_display TEXT DEFAULT ''"
+                )
+            if "is_op_post" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN is_op_post INTEGER DEFAULT 0"
                 )
             seo_cols = [
                 r["name"] for r in conn.execute("PRAGMA table_info(seo_metadata)").fetchall()
@@ -938,8 +970,9 @@ class SQLiteRepository:
                         INSERT INTO subtitle_segments
                         (segment_id, clip_id, seq_index, rel_start_ms, rel_end_ms, original_text,
                          vi_narration_text, image_prompt, stock_keywords_json, matched_image_index,
-                         is_real_demo_slot, callout_label, voice_speed_override, voice_pitch_override)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         is_real_demo_slot, callout_label, voice_speed_override, voice_pitch_override,
+                         voice_profile_override, speaker_handle, display_card_text, likes_display, is_op_post)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             seg_id,
@@ -956,6 +989,11 @@ class SQLiteRepository:
                             line.callout_label,
                             line.voice_speed_override,
                             line.voice_pitch_override,
+                            line.voice_profile_override,
+                            line.speaker_handle,
+                            line.display_card_text,
+                            line.likes_display,
+                            1 if line.is_op_post else 0,
                         ),
                     )
 
@@ -1283,4 +1321,68 @@ class SQLiteRepository:
             "voices_restored": voice_count,
             "brand_kit_restored": bk_restored,
         }
+
+    def list_bg_videos(self) -> List[SavedBgVideoDTO]:
+        """Return saved reusable background videos whose files still exist on disk."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM bg_videos ORDER BY created_at DESC"
+            ).fetchall()
+        items: List[SavedBgVideoDTO] = []
+        for r in rows:
+            p = Path(r["local_path"])
+            if not p.exists():
+                continue
+            items.append(
+                SavedBgVideoDTO(
+                    bg_id=r["bg_id"],
+                    title=r["title"],
+                    category_tag=r["category_tag"] or "Chill / Đời sống",
+                    local_path=p,
+                    duration_ms=int(r["duration_ms"] or 0),
+                    width=int(r["width"] or 1080),
+                    height=int(r["height"] or 1920),
+                    created_at=r["created_at"] or "",
+                )
+            )
+        return items
+
+    def upsert_bg_video(self, bg: SavedBgVideoDTO) -> SavedBgVideoDTO:
+        """Save or update a reusable background video in the Studio Background Library."""
+        now = bg.created_at or _utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO bg_videos (bg_id, title, category_tag, local_path, duration_ms, width, height, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(bg_id) DO UPDATE SET
+                    title=excluded.title,
+                    category_tag=excluded.category_tag,
+                    local_path=excluded.local_path,
+                    duration_ms=excluded.duration_ms,
+                    width=excluded.width,
+                    height=excluded.height
+                """,
+                (
+                    bg.bg_id,
+                    bg.title.strip(),
+                    bg.category_tag.strip(),
+                    str(bg.local_path),
+                    bg.duration_ms,
+                    bg.width,
+                    bg.height,
+                    now,
+                ),
+            )
+        return bg.model_copy(update={"created_at": now})
+
+    def delete_bg_video(self, bg_id: str) -> Optional[Path]:
+        """Remove a background video entry from SQLite and return its path."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT local_path FROM bg_videos WHERE bg_id = ?", (bg_id,)
+            ).fetchone()
+            conn.execute("DELETE FROM bg_videos WHERE bg_id = ?", (bg_id,))
+        return Path(row["local_path"]) if row and row["local_path"] else None
+
 

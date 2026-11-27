@@ -109,6 +109,42 @@ export const studioApi = {
       body: JSON.stringify(payload),
     }),
 
+  extractThreadsPost: (payload) =>
+    requestJSON('/api/threads/extract', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  listBgVideos: () => requestJSON('/api/threads/bg-videos'),
+
+  async uploadBgVideo(file, title = '', category_tag = 'Chill / Đời sống') {
+    const fd = new FormData();
+    fd.append('title', title);
+    fd.append('category_tag', category_tag);
+    fd.append('file', file);
+    const res = await fetch('/api/threads/bg-videos/upload', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Tải video nền thất bại');
+    }
+    return res.json();
+  },
+
+  saveBgVideoFromUrl: (payload) =>
+    requestJSON('/api/threads/bg-videos/from-url', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteBgVideo: (bgId) =>
+    requestJSON(`/api/threads/bg-videos/${bgId}`, { method: 'DELETE' }),
+
+  startThreadsProject: (payload) =>
+    requestJSON('/api/threads/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   startMovieProject: (payload) =>
     requestJSON('/api/movie/start', { method: 'POST', body: JSON.stringify(payload) }),
 

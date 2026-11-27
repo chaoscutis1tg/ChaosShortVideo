@@ -158,31 +158,22 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                     if base_prof.profile_id != profile.profile_id
                     else default_provider
                 )
-                used_custom_voice = base_prof.profile_id != profile.profile_id
                 eff_speed = (
                     line.voice_speed_override
                     if line.voice_speed_override is not None
                     else (
-                        base_prof.speed_rate
-                        if used_custom_voice
-                        else (
-                            audio_config.voice_speed_global
-                            if audio_config.voice_speed_global is not None
-                            else base_prof.speed_rate
-                        )
+                        audio_config.voice_speed_global
+                        if audio_config.voice_speed_global is not None
+                        else base_prof.speed_rate
                     )
                 )
                 eff_pitch = (
                     line.voice_pitch_override
                     if line.voice_pitch_override is not None
                     else (
-                        base_prof.pitch_hz
-                        if used_custom_voice
-                        else (
-                            audio_config.voice_pitch_global
-                            if audio_config.voice_pitch_global is not None
-                            else base_prof.pitch_hz
-                        )
+                        audio_config.voice_pitch_global
+                        if audio_config.voice_pitch_global is not None
+                        else base_prof.pitch_hz
                     )
                 )
                 eff_profile = base_prof.model_copy(

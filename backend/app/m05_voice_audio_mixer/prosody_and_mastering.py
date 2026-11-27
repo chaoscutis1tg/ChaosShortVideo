@@ -196,10 +196,17 @@ class StudioVoiceMasteringDSP:
             "acompressor=threshold=-17dB:ratio=3.2:attack=10:release=165:makeup=2.3"
         ),
         "tiktok_punchy_bright": (
-            "highpass=f=95,"
-            "equalizer=f=210:width_type=o:width=1.1:g=2.0,"
-            "equalizer=f=4200:width_type=o:width=1.4:g=3.5,"
-            "acompressor=threshold=-16dB:ratio=3.4:attack=6:release=125:makeup=2.5"
+            "highpass=f=90,"
+            "equalizer=f=205:width_type=o:width=1.1:g=2.4,"
+            "equalizer=f=4100:width_type=o:width=1.4:g=3.2,"
+            "acompressor=threshold=-16dB:ratio=3.2:attack=7:release=130:makeup=2.4"
+        ),
+        "tiktok_male_crisp": (
+            "highpass=f=76,"
+            "equalizer=f=145:width_type=o:width=1.15:g=3.1,"
+            "equalizer=f=340:width_type=o:width=1.0:g=-1.3,"
+            "equalizer=f=3600:width_type=o:width=1.4:g=2.9,"
+            "acompressor=threshold=-16.5dB:ratio=3.2:attack=8:release=140:makeup=2.4"
         ),
         "yt_documentary_warm": (
             "highpass=f=72,"

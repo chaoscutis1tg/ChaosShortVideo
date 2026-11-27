@@ -228,6 +228,7 @@ class ApprovedClipLinePatch(BaseModel):
     speaker_handle: str = ""
     display_card_text: str = ""
     likes_display: str = ""
+    card_image_path: str = ""
     is_op_post: bool = False
     voice_speed_override: Optional[float] = None
     voice_pitch_override: Optional[float] = None
@@ -364,7 +365,9 @@ class ThreadsExtractAPIRequest(BaseModel):
     expand_slang_and_translate: bool = True
     anonymize_handles: bool = False
     multi_voice_cast: bool = True
-    host_voice_id: str = "edge_hoai_my_fast"
+    host_voice_id: str = "threads_nu_chinh"
+    male_voice_id: str = "threads_nam_chinh"
+    female_voice_id: str = "threads_nu_chinh"
 
 
 class BgVideoFromUrlRequest(BaseModel):
@@ -383,7 +386,9 @@ class ThreadsStartRequest(BaseModel):
     bg_audio_volume: float = Field(default=0.14, ge=0.0, le=0.6)
     append_cta_comment: str = Field(default="", max_length=600)
     enable_card_pop_sfx: bool = True
-    voice_profile_id: str = "edge_hoai_my_fast"
+    voice_profile_id: str = "threads_nu_chinh"
+    voice_speed_global: Optional[float] = Field(default=1.25, ge=0.80, le=1.50)
+    voice_pitch_global: Optional[float] = Field(default=0.0, ge=-8.0, le=8.0)
     bgm_preset_id: Optional[str] = "bgm_lofi_story"
     custom_bgm_path: Optional[str] = None
     bgm_volume: float = 0.06
@@ -1535,7 +1540,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
     @app.post("/api/threads/extract")
     async def extract_and_curate_threads_post(req: ThreadsExtractAPIRequest) -> Dict[str, Any]:
-        """Scrape Threads / Reddit / Web post + replies, curate top N via AI, expand slang & cast voices."""
+        """Scrape Threads / Reddit / Web post + replies + attached images, curate top N & cast 2 main voices."""
         try:
             dto_req = ThreadsExtractRequestDTO(
                 post_url=req.post_url,
@@ -1546,6 +1551,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 anonymize_handles=req.anonymize_handles,
                 multi_voice_cast=req.multi_voice_cast,
                 host_voice_id=req.host_voice_id,
+                male_voice_id=req.male_voice_id,
+                female_voice_id=req.female_voice_id,
             )
             raw_bundle = await ThreadsScraperService.scrape_post_and_comments(
                 post_url=dto_req.post_url,
@@ -1557,7 +1564,17 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 req=dto_req,
                 available_voice_ids=avail_voices,
             )
-            return curated.model_dump()
+            media_cache_dir = settings.work_dir / "_uploads" / "threads_media"
+            curated = await ThreadsScraperService.download_bundle_images(curated, media_cache_dir)
+
+            out = curated.model_dump()
+            out["op_image_media_url"] = _to_media_url(curated.op_image_path) if curated.op_image_path else ""
+            for idx, c_dto in enumerate(curated.comments):
+                if idx < len(out["comments"]):
+                    out["comments"][idx]["attached_image_media_url"] = (
+                        _to_media_url(c_dto.attached_image_path) if c_dto.attached_image_path else ""
+                    )
+            return out
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1690,14 +1707,23 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                         )
                     )
 
+        media_cache_dir = settings.work_dir / "_uploads" / "threads_media"
+        hydrated_bundle = await ThreadsScraperService.download_bundle_images(
+            req.bundle, media_cache_dir
+        )
+
         project_id = f"thr_{uuid.uuid4().hex[:8]}"
         normalized_req = req.model_copy(
-            update={"bg_source_type": eff_bg_type, "bg_path_or_url": eff_bg_target}
+            update={
+                "bundle": hydrated_bundle,
+                "bg_source_type": eff_bg_type,
+                "bg_path_or_url": eff_bg_target,
+            }
         )
-        est_sec = max(25, min(180, (1 + len(active_cmts)) * 8))
+        est_sec = max(20, min(180, (1 + len(active_cmts)) * 6))
         repo.create_project(
             project_id=project_id,
-            name=req.bundle.topic_title[:160] or "Thảo luận Threads nổi bật",
+            name=hydrated_bundle.topic_title[:160] or "Thảo luận Threads nổi bật",
             mode=ProjectMode.THREADS_TOPIC,
             target_min_sec=max(15, est_sec - 10),
             target_max_sec=min(180, est_sec + 25),
@@ -1720,6 +1746,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 subtitle_style=req.subtitle_style,
                 subtitle_pos_y=req.layout_config.subtitle_pos_y,
                 subtitle_font_size=req.layout_config.subtitle_font_size,
+                voice_speed_global=req.voice_speed_global,
+                voice_pitch_global=req.voice_pitch_global,
                 enable_card_pop_sfx=bool(req.enable_card_pop_sfx),
             ),
             req.bgm_preset_id,
@@ -1731,7 +1759,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             is_render_only=False,
             coro_factory=lambda: orchestrator.execute_threads_pipeline(
                 ingest_req=ingest_dto,
-                bundle=req.bundle,
+                bundle=hydrated_bundle,
                 append_cta_comment=req.append_cta_comment,
                 voice_profile_id=req.voice_profile_id,
                 audio_config=audio_cfg,
@@ -1952,6 +1980,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                                 speaker_handle=ln.speaker_handle,
                                 display_card_text=ln.display_card_text,
                                 likes_display=ln.likes_display,
+                                card_image_path=ln.card_image_path,
                                 is_op_post=ln.is_op_post,
                                 voice_speed_override=ln.voice_speed_override,
                                 voice_pitch_override=ln.voice_pitch_override,
@@ -1993,6 +2022,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                             speaker_handle=s.get("speaker_handle") or "",
                             display_card_text=s.get("display_card_text") or "",
                             likes_display=s.get("likes_display") or "",
+                            card_image_path=s.get("card_image_path") or "",
                             is_op_post=bool(s.get("is_op_post")),
                             voice_speed_override=(
                                 float(s["voice_speed_override"])
@@ -2281,6 +2311,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     subtitle_style=thr_req.subtitle_style,
                     subtitle_pos_y=thr_req.layout_config.subtitle_pos_y,
                     subtitle_font_size=thr_req.layout_config.subtitle_font_size,
+                    voice_speed_global=thr_req.voice_speed_global,
+                    voice_pitch_global=thr_req.voice_pitch_global,
                     enable_card_pop_sfx=bool(thr_req.enable_card_pop_sfx),
                 ),
                 thr_req.bgm_preset_id,

@@ -541,21 +541,17 @@ export default function Canvas916Designer({
                     </span>
                     <strong style={{ fontSize: 9.5 }}>
                       {layoutConfig.threads_anonymize_handles
-                        ? '@nguoila_01'
-                        : '@minhanh.threads'}
+                        ? 'nguoila_01'
+                        : 'minhanh.threads'}
                     </strong>
                     <span
                       style={{
                         marginLeft: 'auto',
-                        fontSize: 7.5,
-                        padding: '1px 5px',
-                        borderRadius: 99,
-                        background: 'rgba(14,165,233,0.18)',
-                        color: '#38bdf8',
-                        fontWeight: 700,
+                        fontSize: 8,
+                        opacity: 0.6,
                       }}
                     >
-                      Bình luận #1
+                      18 phút •••
                     </span>
                   </div>
                   <div style={{ fontSize: 9.2, lineHeight: 1.38, marginBottom: 5 }}>

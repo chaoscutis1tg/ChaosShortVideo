@@ -172,6 +172,7 @@ export default function ProjectWorkspaceView({
           speaker_handle: ln.speaker_handle || '',
           display_card_text: ln.display_card_text || '',
           likes_display: ln.likes_display || '',
+          card_image_path: ln.card_image_path || '',
           is_op_post: Boolean(ln.is_op_post),
           voice_speed_override:
             ln.voice_speed_override !== undefined && ln.voice_speed_override !== null

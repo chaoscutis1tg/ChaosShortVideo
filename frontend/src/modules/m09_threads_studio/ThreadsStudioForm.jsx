@@ -8,7 +8,9 @@ import {
   EyeOff,
   Film,
   Flame,
+  Gauge,
   Heart,
+  ImagePlus,
   KeyRound,
   Languages,
   Layers,
@@ -28,19 +30,19 @@ import {
   Users,
   Volume2,
   Wand2,
+  X,
 } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
 import { formatSecondsVi, stripLeadingEmoji } from '../m00_core_contracts/constants';
 import {
   InlineBgmSelector,
-  InlineVoiceSelector,
   MediaDropzone,
   ModeChoiceGrid,
   ParentGroupSelector,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
-const THREADS_DRAFT_KEY = 'chaos_draft_threads_v1';
+const THREADS_DRAFT_KEY = 'chaos_draft_threads_v2';
 
 function loadThreadsDraft() {
   try {
@@ -55,7 +57,7 @@ const VIBE_CHOICES = [
   {
     value: 'FUNNY_VIRAL',
     title: 'Hài hước & Mặn mòi',
-    subtitle: 'Chọn lọc bình luận duyên dáng, bất ngờ chuẩn viral TikTok',
+    subtitle: 'Chọn lọc bình luận duyên dáng, kèm ưu tiên các bình luận có ảnh thật',
     icon: Smile,
   },
   {
@@ -87,8 +89,8 @@ const CARD_THEME_CHOICES = [
   },
   {
     value: 'LIGHT_THREADS',
-    title: 'Thẻ Trắng Sáng Nổi Bật',
-    subtitle: 'Nền trắng tinh tế nổi bật trên các video nền tối / cảnh đêm',
+    title: 'Thẻ Trắng Sáng Tinh Gọn',
+    subtitle: 'Nền trắng chuẩn Threads (đã bỏ nhãn số thứ tự bình luận rườm rà)',
     icon: Sun,
   },
   {
@@ -99,9 +101,15 @@ const CARD_THEME_CHOICES = [
   },
 ];
 
+const SPEED_PRESETS = [
+  { label: '1.15x Vừa phải', val: 1.15 },
+  { label: '1.25x Nhanh bắt tai (Khuyên dùng)', val: 1.25 },
+  { label: '1.35x Siêu tốc TikTok', val: 1.35 },
+];
+
 const QUICK_THREAD_SAMPLES = [
   {
-    label: 'Mẫu 1: Học đàn Guitar tuổi 25+',
+    label: 'Mẫu 1: Nỗi khổ tập đàn Guitar',
     rawText: `@minhanh.music: Mn ơi cho mik hỏi thật, 26 tuổi đi làm bận tối mắt mới bắt đầu tập chơi đàn Guitar thì có quá muộn ko ạ? Sợ tay cứng bấm hợp âm ko đc...
 
 @tuan.acoustic: Tr ơi ko hề muộn nha b! Mik 31 tuổi mới cầm đàn lần đầu, mỗi tối tập đúng 20 phút sau 2 tháng đã tự đệm hát chill cuối tuần rồi.
@@ -148,24 +156,36 @@ export default function ThreadsStudioForm({
   const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
   const [postUrl, setPostUrl] = useState(savedDraft.postUrl || '');
   const [rawPastedText, setRawPastedText] = useState(savedDraft.rawPastedText || '');
-  const [maxComments, setMaxComments] = useState(savedDraft.maxComments || 5);
+  const [maxComments, setMaxComments] = useState(savedDraft.maxComments || 6);
   const [filterVibe, setFilterVibe] = useState(savedDraft.filterVibe || 'FUNNY_VIRAL');
   const [expandSlang, setExpandSlang] = useState(savedDraft.expandSlang !== false);
   const [multiVoiceCast, setMultiVoiceCast] = useState(savedDraft.multiVoiceCast !== false);
 
-  const [hostVoiceId, setHostVoiceId] = useState(
-    voices.find((v) => v.profile_id === 'edge_hoai_my_fast')?.profile_id ||
-      voices.find((v) => v.profile_id === 'gemini_tiktok_zephyr')?.profile_id ||
-      voices[0]?.profile_id ||
-      'edge_hoai_my_fast'
+  // Strictly 2 Main Voices: 1 Nữ chính & 1 Nam chính + Fast Reading Speed!
+  const [femaleVoiceId, setFemaleVoiceId] = useState(
+    savedDraft.femaleVoiceId || 'threads_nu_chinh'
   );
+  const [maleVoiceId, setMaleVoiceId] = useState(
+    savedDraft.maleVoiceId || 'threads_nam_chinh'
+  );
+  const [opSpeakerGender, setOpSpeakerGender] = useState(
+    savedDraft.opSpeakerGender || 'FEMALE'
+  );
+  const [voiceSpeed, setVoiceSpeed] = useState(
+    savedDraft.voiceSpeed ? Number(savedDraft.voiceSpeed) : 1.25
+  );
+
+  const hostVoiceId = opSpeakerGender === 'MALE' ? maleVoiceId : femaleVoiceId;
+
   const [extracting, setExtracting] = useState(false);
   const [bundle, setBundle] = useState(savedDraft.bundle || null);
   const [appendCtaComment, setAppendCtaComment] = useState(
-    savedDraft.appendCtaComment ||
-      'Còn góc nhìn của bạn về chủ đề này thì sao? Để lại bình luận bên dưới nhé!'
+    savedDraft.appendCtaComment !== undefined
+      ? savedDraft.appendCtaComment
+      : 'Còn góc nhìn của bạn về chủ đề này thì sao? Để lại bình luận bên dưới nhé!'
   );
   const [previewingAudioKey, setPreviewingAudioKey] = useState('');
+  const [uploadingCardImgKey, setUploadingCardImgKey] = useState('');
 
   // Background Video & Kho Video Nền state
   const [bgLibrary, setBgLibrary] = useState([]);
@@ -189,6 +209,25 @@ export default function ThreadsStudioForm({
   const [bgmVolume, setBgmVolume] = useState(0.06);
   const [submitting, setSubmitting] = useState(false);
 
+  const femaleVoiceOptions = voices.filter((v) => {
+    const label = `${v.display_name} ${v.dsp_preset || ''}`.toLowerCase();
+    return (
+      v.profile_id === 'threads_nu_chinh' ||
+      label.includes('nữ') ||
+      label.includes('female') ||
+      label.includes('hoài my')
+    );
+  });
+  const maleVoiceOptions = voices.filter((v) => {
+    const label = `${v.display_name} ${v.dsp_preset || ''}`.toLowerCase();
+    return (
+      v.profile_id === 'threads_nam_chinh' ||
+      label.includes('nam ') ||
+      label.includes('male') ||
+      label.includes('nam minh')
+    );
+  });
+
   const loadBgLibrary = async () => {
     try {
       const list = await studioApi.listBgVideos();
@@ -206,6 +245,30 @@ export default function ThreadsStudioForm({
     loadBgLibrary();
   }, []);
 
+  // Re-cast existing bundle strictly to the 2 selected Main Voices whenever user changes Nam/Nữ/OP
+  const applyTwoMainVoicesToBundle = (targetBundle, nextHost, nextMale, nextFemale, useMulti) => {
+    if (!targetBundle) return targetBundle;
+    const pair = nextHost === nextFemale ? [nextMale, nextFemale] : [nextFemale, nextMale];
+    return {
+      ...targetBundle,
+      op_voice_profile_id: nextHost,
+      male_voice_id: nextMale,
+      female_voice_id: nextFemale,
+      comments: (targetBundle.comments || []).map((c, i) => ({
+        ...c,
+        voice_profile_id: useMulti ? pair[i % 2] : nextHost,
+      })),
+    };
+  };
+
+  useEffect(() => {
+    if (bundle) {
+      setBundle((prev) =>
+        applyTwoMainVoicesToBundle(prev, hostVoiceId, maleVoiceId, femaleVoiceId, multiVoiceCast)
+      );
+    }
+  }, [femaleVoiceId, maleVoiceId, opSpeakerGender, multiVoiceCast]);
+
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -218,6 +281,10 @@ export default function ThreadsStudioForm({
           filterVibe,
           expandSlang,
           multiVoiceCast,
+          femaleVoiceId,
+          maleVoiceId,
+          opSpeakerGender,
+          voiceSpeed,
           bundle,
           appendCtaComment,
           selectedBgPath,
@@ -237,6 +304,10 @@ export default function ThreadsStudioForm({
     filterVibe,
     expandSlang,
     multiVoiceCast,
+    femaleVoiceId,
+    maleVoiceId,
+    opSpeakerGender,
+    voiceSpeed,
     bundle,
     appendCtaComment,
     selectedBgPath,
@@ -267,12 +338,17 @@ export default function ThreadsStudioForm({
         anonymize_handles: Boolean(layoutConfig.threads_anonymize_handles),
         multi_voice_cast: multiVoiceCast,
         host_voice_id: hostVoiceId,
+        male_voice_id: maleVoiceId,
+        female_voice_id: femaleVoiceId,
       });
       setBundle(res);
+      const imgCount =
+        (res.op_image_path ? 1 : 0) +
+        (res.comments || []).filter((c) => Boolean(c.attached_image_path)).length;
       notify(
-        res.used_api_key
-          ? `Đã gọi API AI chọn lọc ${res.comments?.length || 0} bình luận tiêu biểu & chuẩn hóa giọng đọc!`
-          : `Đã trích xuất bài gốc và ${res.comments?.length || 0} bình luận tiêu biểu!`
+        imgCount > 0
+          ? `Đã hút thành công bài viết + ${res.comments?.length || 0} bình luận (lấy được ${imgCount} ảnh đính kèm thực tế)!`
+          : `Đã lọc ${res.comments?.length || 0} bình luận tiêu biểu & gán đúng 2 giọng chính Nam/Nữ!`
       );
     } catch (err) {
       notify(`Lỗi hút nội dung Threads: ${err.message}`);
@@ -290,7 +366,12 @@ export default function ThreadsStudioForm({
     if (!text?.trim()) return;
     setPreviewingAudioKey(key);
     try {
-      const res = await studioApi.previewVoice(vId || hostVoiceId, text.trim());
+      const res = await studioApi.previewVoice(
+        vId || hostVoiceId,
+        text.trim(),
+        Number(voiceSpeed),
+        0.0
+      );
       if (previewPlayerRef.current) previewPlayerRef.current.pause();
       const audio = new Audio(`${res.audio_url}?t=${Date.now()}`);
       previewPlayerRef.current = audio;
@@ -300,6 +381,36 @@ export default function ThreadsStudioForm({
     } catch (err) {
       setPreviewingAudioKey('');
       notify(`Lỗi nghe thử: ${err.message}`);
+    }
+  };
+
+  const handleAttachCardImage = async (targetKey, fileObj) => {
+    if (!fileObj) return;
+    setUploadingCardImgKey(targetKey);
+    try {
+      const up = await studioApi.uploadStudioFile(fileObj, 'threads_media');
+      if (targetKey === 'OP') {
+        setBundle((prev) =>
+          prev
+            ? {
+                ...prev,
+                op_image_path: up.local_path,
+                op_image_media_url: up.media_url,
+              }
+            : prev
+        );
+      } else {
+        const idx = Number(targetKey);
+        patchComment(idx, {
+          attached_image_path: up.local_path,
+          attached_image_media_url: up.media_url,
+        });
+      }
+      notify('Đã đính kèm hình ảnh vào thẻ Threads!');
+    } catch (err) {
+      notify(`Lỗi tải ảnh thẻ: ${err.message}`);
+    } finally {
+      setUploadingCardImgKey('');
     }
   };
 
@@ -331,11 +442,10 @@ export default function ThreadsStudioForm({
   };
 
   const addCustomComment = () => {
-    const fallbackVoice =
-      voices.find((v) => v.profile_id !== hostVoiceId)?.profile_id || hostVoiceId;
     setBundle((prev) => {
       const curList = prev?.comments || [];
       const nextIdx = curList.length + 1;
+      const nextVoice = nextIdx % 2 === 1 ? maleVoiceId : femaleVoiceId;
       const newCmt = {
         comment_id: `custom_${Date.now()}`,
         author_handle: layoutConfig.threads_anonymize_handles
@@ -347,9 +457,12 @@ export default function ThreadsStudioForm({
         spoken_vi_text: 'Nhập nội dung bình luận mới tại đây.',
         likes_count: 168,
         likes_display: '168',
+        attached_image_url: '',
+        attached_image_path: '',
+        attached_image_media_url: '',
         is_verified: false,
         is_ai_suggested: false,
-        voice_profile_id: fallbackVoice,
+        voice_profile_id: nextVoice,
         selected: true,
       };
       if (!prev) {
@@ -360,10 +473,15 @@ export default function ThreadsStudioForm({
           op_author_handle: '@chuthot',
           op_display_text: 'Nhập nội dung bài đăng gốc tại đây...',
           op_spoken_vi_text: 'Nhập nội dung bài đăng gốc tại đây.',
+          op_image_url: '',
+          op_image_path: '',
+          op_image_media_url: '',
           op_likes_display: '1,5K',
           op_replies_display: '45',
           op_is_verified: true,
           op_voice_profile_id: hostVoiceId,
+          male_voice_id: maleVoiceId,
+          female_voice_id: femaleVoiceId,
           comments: [newCmt],
           used_api_key: false,
           extraction_note: '',
@@ -467,6 +585,8 @@ export default function ThreadsStudioForm({
         bundle: {
           ...bundle,
           op_voice_profile_id: bundle.op_voice_profile_id || hostVoiceId,
+          male_voice_id: maleVoiceId,
+          female_voice_id: femaleVoiceId,
         },
         bg_source_type: isRemote ? 'VIDEO_URL' : 'LOCAL_FILE',
         bg_path_or_url: effBg,
@@ -477,6 +597,8 @@ export default function ThreadsStudioForm({
         append_cta_comment: appendCtaComment.trim(),
         enable_card_pop_sfx: enablePopSfx,
         voice_profile_id: bundle.op_voice_profile_id || hostVoiceId,
+        voice_speed_global: Number(voiceSpeed),
+        voice_pitch_global: 0.0,
         bgm_preset_id: bgmPresetId,
         custom_bgm_path: customBgmPath,
         bgm_volume: Number(bgmVolume),
@@ -510,20 +632,23 @@ export default function ThreadsStudioForm({
   });
 
   const selectedCommentsCount = (bundle?.comments || []).filter((c) => c.selected).length;
+  const attachedPhotosCount =
+    (bundle?.op_image_path ? 1 : 0) +
+    (bundle?.comments || []).filter((c) => c.selected && Boolean(c.attached_image_path)).length;
   const estTotalSec = bundle
     ? Math.max(
-        12,
+        10,
         Math.round(
           ((bundle.op_spoken_vi_text || '').split(/\s+/).length +
             (bundle.comments || [])
               .filter((c) => c.selected)
               .reduce((acc, c) => acc + (c.spoken_vi_text || '').split(/\s+/).length, 0)) /
-            2.75
+            (2.85 * Math.max(1.0, Number(voiceSpeed)))
         ) +
           selectedCommentsCount +
           2
       )
-    : maxComments * 8 + 7;
+    : Math.round((maxComments * 6 + 5) / Math.max(1.0, Number(voiceSpeed)));
 
   return (
     <div ref={rootRef} className="card">
@@ -533,7 +658,7 @@ export default function ThreadsStudioForm({
             <MessageSquareText size={20} strokeWidth={2} /> Video Chủ Đề Threads &amp; Bình Luận Cộng Đồng
           </div>
           <div className="page-subtitle">
-            Dán link Threads / Reddit → AI lọc bình luận tiêu biểu &amp; bung từ viết tắt → Ghép thẻ bình luận nổi đa giọng đọc trên nền video lặp vòng 9:16
+            Hút bài viết, bình luận &amp; ảnh đính kèm trên Threads/Reddit → Đọc đối thoại 2 giọng chính Nam &amp; Nữ tốc độ cao trên nền video 9:16
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -543,7 +668,12 @@ export default function ThreadsStudioForm({
           <span className="badge badge-info">
             {bundle ? `Đã chọn ${selectedCommentsCount} bình luận` : `Lấy ${maxComments} bình luận`}
           </span>
-          <span className="badge">~{estTotalSec}s</span>
+          {attachedPhotosCount > 0 && (
+            <span className="badge badge-ok">{attachedPhotosCount} ảnh đính kèm</span>
+          )}
+          <span className="badge">
+            {Number(voiceSpeed).toFixed(2)}x • ~{estTotalSec}s
+          </span>
         </div>
       </div>
 
@@ -576,16 +706,16 @@ export default function ThreadsStudioForm({
         ))}
       </div>
 
-      {/* STEP 1: THREADS LINK + CURATION CONTROLS */}
+      {/* STEP 1: THREADS LINK + 2 MAIN VOICES + FAST READING SPEED */}
       <div className="step-box">
         <div className="step-header">
           <span className="step-num">1</span>
           <div style={{ flex: 1 }}>
             <div className="step-title">
-              Dán Link Threads / Reddit &amp; Cài đặt số lượng bình luận tiêu biểu muốn lấy
+              Dán Link Threads / Reddit, Hút Cả Ảnh Bình Luận &amp; Chỉnh 2 Giọng Chính (Nam / Nữ)
             </div>
             <div className="step-desc">
-              Hỗ trợ link công khai <code>threads.net</code>, <code>threads.com</code>, <code>reddit.com</code> hoặc dán trực tiếp đoạn hội thoại nếu bài khóa riêng tư
+              Tự động bóc tách cả ảnh người dùng đăng kèm trên bài gốc &amp; dưới bình luận, đọc bằng đúng 2 giọng Việt bản ngữ ổn định
             </div>
           </div>
           {!apiKeyConfigured && onOpenApiSettings && (
@@ -607,11 +737,11 @@ export default function ThreadsStudioForm({
         <div className="form-group">
           <label className="form-label">
             <Link2 size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-            Đường dẫn bài đăng Threads / Reddit / Diễn đàn
+            Đường dẫn bài đăng Threads / Reddit / Diễn đàn (hỗ trợ cả link rút gọn <code>/share/...</code>)
           </label>
           <input
             className="input"
-            placeholder="VD: https://www.threads.net/@ten_tai_khoan/post/... hoặc https://www.reddit.com/r/..."
+            placeholder="VD: https://www.threads.com/share/... hoặc https://www.threads.net/@ten_tai_khoan/post/..."
             value={postUrl}
             onChange={(e) => setPostUrl(e.target.value)}
           />
@@ -619,55 +749,211 @@ export default function ThreadsStudioForm({
 
         <div className="form-group">
           <label className="form-label">
-            Nội dung văn bản bài đăng &amp; bình luận (Tùy chọn — Dán vào đây nếu bài khóa riêng tư hoặc muốn gộp thêm bình luận)
+            Nội dung văn bản dự phòng (Tùy chọn — Dán thêm nếu bài riêng tư)
           </label>
           <textarea
             className="textarea"
-            style={{ minHeight: 88 }}
-            placeholder={`Có thể để trống nếu đã dán link ở trên, hoặc dán nhanh theo dạng:\n@chuthot: Nội dung câu hỏi chủ đề...\n@user1: Bình luận thứ nhất...\n@user2: Bình luận thứ hai...`}
+            style={{ minHeight: 74 }}
+            placeholder={`Có thể để trống nếu đã dán link công khai ở trên...`}
             value={rawPastedText}
             onChange={(e) => setRawPastedText(e.target.value)}
           />
         </div>
 
-        <div className="form-grid" style={{ marginBottom: 13 }}>
-          <div className="surface-box">
-            <label className="form-label" style={{ marginBottom: 4 }}>
-              Số bình luận tiêu biểu muốn lấy: <strong>{maxComments} bình luận</strong>
-            </label>
-            <input
-              type="range"
-              min="2"
-              max="15"
-              step="1"
-              style={{ width: '100%', marginTop: 4 }}
-              value={maxComments}
-              onChange={(e) => setMaxComments(Number(e.target.value))}
-            />
-            <div
-              className="text-muted"
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: 11.4,
-                marginTop: 3,
-              }}
-            >
-              <span>2 câu (Ngắn ~20s)</span>
-              <span>5–7 câu (Chuẩn ~55s)</span>
-              <span>15 câu (~120s)</span>
+        {/* STRICT 2 MAIN VOICES (NAM & NỮ) + FAST READING SPEED CONTROL */}
+        <div
+          className="surface-box"
+          style={{
+            marginBottom: 14,
+            borderColor: 'var(--brand-border)',
+            background: 'var(--bg-panel)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13.4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Users size={15} style={{ color: 'var(--brand-text)' }} />
+              Bộ Đôi 2 Giọng Đọc Chính Cố Định (1 Nữ &amp; 1 Nam Chuẩn Tiếng Việt) &amp; Tốc Độ Đọc
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${opSpeakerGender === 'FEMALE' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setOpSpeakerGender('FEMALE')}
+              >
+                Chủ thớt (OP): Giọng Nữ đọc
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${opSpeakerGender === 'MALE' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setOpSpeakerGender('MALE')}
+              >
+                Chủ thớt (OP): Giọng Nam đọc
+              </button>
             </div>
           </div>
 
-          <InlineVoiceSelector
-            voices={voices}
-            voiceId={hostVoiceId}
-            onChange={setHostVoiceId}
-            defaultCategory="TIKTOK_SHORT"
-            label="Giọng đọc Chủ bài đăng (OP)"
-            sampleText="Mọi người ơi cho mình hỏi thật, hai mươi sáu tuổi mới bắt đầu tập đàn Guitar thì có quá muộn không ạ?"
-            notify={notify}
-          />
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>
+                Giọng Nữ Chính (Đọc tự nhiên, truyền cảm)
+              </label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select
+                  className="select"
+                  style={{ flex: 1 }}
+                  value={femaleVoiceId}
+                  onChange={(e) => setFemaleVoiceId(e.target.value)}
+                >
+                  {(femaleVoiceOptions.length > 0 ? femaleVoiceOptions : voices).map((v) => (
+                    <option key={v.profile_id} value={v.profile_id}>
+                      {stripLeadingEmoji(v.display_name)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={() =>
+                    handlePreviewVoiceSnippet(
+                      'test_female',
+                      femaleVoiceId,
+                      'Mình đã hí hoáy một tiếng với cây đàn Guitar và mình sắp khóc rồi mọi người ơi!'
+                    )
+                  }
+                >
+                  {previewingAudioKey === 'test_female' ? (
+                    <Loader2 size={13} />
+                  ) : (
+                    <Volume2 size={13} />
+                  )}{' '}
+                  Nghe Nữ
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>
+                Giọng Nam Chính (Ấm rõ, dứt khoát)
+              </label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select
+                  className="select"
+                  style={{ flex: 1 }}
+                  value={maleVoiceId}
+                  onChange={(e) => setMaleVoiceId(e.target.value)}
+                >
+                  {(maleVoiceOptions.length > 0 ? maleVoiceOptions : voices).map((v) => (
+                    <option key={v.profile_id} value={v.profile_id}>
+                      {stripLeadingEmoji(v.display_name)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={() =>
+                    handlePreviewVoiceSnippet(
+                      'test_male',
+                      maleVoiceId,
+                      'Không hề muộn đâu bạn ơi, tập hai mươi phút mỗi tối là đệm hát ngon lành ngay!'
+                    )
+                  }
+                >
+                  {previewingAudioKey === 'test_male' ? (
+                    <Loader2 size={13} />
+                  ) : (
+                    <Volume2 size={13} />
+                  )}{' '}
+                  Nghe Nam
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 12.4,
+                  marginBottom: 4,
+                }}
+              >
+                <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Gauge size={14} style={{ color: 'var(--brand-text)' }} />
+                  Tốc độ đọc cuốn hút: <strong>{Number(voiceSpeed).toFixed(2)}x</strong>
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {SPEED_PRESETS.map((sp) => (
+                    <button
+                      key={sp.val}
+                      type="button"
+                      className={`btn btn-sm ${
+                        Math.abs(Number(voiceSpeed) - sp.val) < 0.02 ? 'btn-primary' : 'btn-secondary'
+                      }`}
+                      style={{ padding: '2px 7px', minHeight: 24, fontSize: 11 }}
+                      onClick={() => setVoiceSpeed(sp.val)}
+                    >
+                      {sp.val}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input
+                type="range"
+                min="1.00"
+                max="1.45"
+                step="0.05"
+                style={{ width: '100%' }}
+                value={voiceSpeed}
+                onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+              />
+              <div
+                className="text-muted"
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.2, marginTop: 2 }}
+              >
+                <span>1.00x Chậm</span>
+                <span>1.25x Nhanh bắt tai Shorts/TikTok</span>
+                <span>1.45x Cực nhanh</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label" style={{ marginBottom: 4, fontSize: 12.4 }}>
+                Số bình luận tiêu biểu muốn lấy: <strong>{maxComments} bình luận</strong>
+              </label>
+              <input
+                type="range"
+                min="2"
+                max="15"
+                step="1"
+                style={{ width: '100%', marginTop: 4 }}
+                value={maxComments}
+                onChange={(e) => setMaxComments(Number(e.target.value))}
+              />
+              <div
+                className="text-muted"
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.2, marginTop: 2 }}
+              >
+                <span>2 câu (~15s)</span>
+                <span>6–8 câu (Chuẩn ~45s)</span>
+                <span>15 câu (~95s)</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="form-group">
@@ -677,17 +963,17 @@ export default function ThreadsStudioForm({
 
         <div className="toggle-grid" style={{ marginBottom: 14 }}>
           <SwitchCard icon={Languages} checked={expandSlang} onChange={setExpandSlang}>
-            Bung viết tắt teen-code (ko→không, đc→được) &amp; dịch Việt hóa
+            Bung viết tắt teen-code (ko→không, đc→được) &amp; lọc sạch icon rác
           </SwitchCard>
           <SwitchCard icon={Users} checked={multiVoiceCast} onChange={setMultiVoiceCast}>
-            Đa giọng đọc đối thoại (Tự đổi giọng Nam/Nữ từng bình luận)
+            Đan xen đối thoại chỉ dùng 2 Giọng Chính (Nam ↔ Nữ)
           </SwitchCard>
           <SwitchCard
             icon={EyeOff}
             checked={Boolean(layoutConfig.threads_anonymize_handles)}
             onChange={(val) => updateThreadsLayout({ threads_anonymize_handles: val })}
           >
-            Che ẩn tên tài khoản (@nguoila_01)
+            Che ẩn tên tài khoản (nguoila_01)
           </SwitchCard>
         </div>
 
@@ -705,10 +991,10 @@ export default function ThreadsStudioForm({
         >
           <div style={{ minWidth: 220, flex: 1 }}>
             <div style={{ fontSize: 13.4, fontWeight: 700, color: 'var(--text-primary)' }}>
-              Bước 1A: Hút bài viết &amp; gọi AI chọn ra {maxComments} bình luận đắt giá nhất
+              Bước 1A: Hút bài viết, ảnh bình luận &amp; chọn ra {maxComments} phản hồi đắt giá nhất
             </div>
             <div className="text-sub" style={{ fontSize: 12.2, marginTop: 2 }}>
-              Bạn sẽ được xem trước, tích chọn, sửa chữ hoặc đổi giọng đọc từng bình luận ngay bên dưới trước khi ghép video
+              Tự động giữ lại ảnh chụp dưới các bình luận và hiển thị ngay bên dưới để bạn duyệt trước khi ghép video
             </div>
           </div>
           <button
@@ -721,13 +1007,13 @@ export default function ThreadsStudioForm({
             {extracting ? <Loader2 size={16} /> : <Wand2 size={16} />}
             <span>
               {extracting
-                ? 'Đang hút bài & lọc bình luận AI...'
-                : `Hút bài viết & Lọc ${maxComments} bình luận tiêu biểu`}
+                ? 'Đang hút bài, ảnh & lọc bình luận...'
+                : `Hút bài viết, Ảnh & Lọc ${maxComments} bình luận`}
             </span>
           </button>
         </div>
 
-        {/* INTERACTIVE CURATED THREAD & COMMENTS EDITOR */}
+        {/* INTERACTIVE CURATED THREAD & COMMENTS EDITOR (WITH ATTACHED PHOTOS!) */}
         {bundle && (
           <div style={{ marginTop: 15, display: 'grid', gap: 12 }}>
             <div
@@ -789,43 +1075,46 @@ export default function ThreadsStudioForm({
                     marginBottom: 8,
                   }}
                 >
-                  <span className="badge badge-info">Thẻ mở đầu • Chủ bài đăng (OP)</span>
+                  <span className="badge badge-info">Thẻ mở đầu • Bài đăng gốc (OP)</span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
                       className="input"
-                      style={{ width: 155, minHeight: 32, padding: '4px 9px', fontSize: 12.4 }}
+                      style={{ width: 150, minHeight: 31, padding: '4px 9px', fontSize: 12.3 }}
                       value={bundle.op_author_handle}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_author_handle: e.target.value }))
                       }
-                      title="Tên @handle hiển thị trên thẻ OP"
+                      title="Tên tài khoản hiển thị trên thẻ OP"
                     />
                     <input
                       className="input"
-                      style={{ width: 82, minHeight: 32, padding: '4px 8px', fontSize: 12.4 }}
+                      style={{ width: 78, minHeight: 31, padding: '4px 8px', fontSize: 12.3 }}
                       value={bundle.op_likes_display}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_likes_display: e.target.value }))
                       }
                       title="Số lượt tim hiển thị"
                     />
-                    <select
-                      className="select"
-                      style={{ width: 195, minHeight: 32, padding: '4px 8px', fontSize: 12.2 }}
-                      value={bundle.op_voice_profile_id || hostVoiceId}
-                      onChange={(e) =>
-                        setBundle((prev) => ({ ...prev, op_voice_profile_id: e.target.value }))
-                      }
-                    >
-                      {voices.map((v) => (
-                        <option key={v.profile_id} value={v.profile_id}>
-                          {stripLeadingEmoji(v.display_name).split('—')[0].trim()}
-                        </option>
-                      ))}
-                    </select>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
+                      style={{ minHeight: 31 }}
+                      onClick={() => {
+                        const nextId =
+                          (bundle.op_voice_profile_id || hostVoiceId) === femaleVoiceId
+                            ? maleVoiceId
+                            : femaleVoiceId;
+                        setBundle((prev) => ({ ...prev, op_voice_profile_id: nextId }));
+                      }}
+                    >
+                      {(bundle.op_voice_profile_id || hostVoiceId) === maleVoiceId
+                        ? 'Giọng Nam Chính'
+                        : 'Giọng Nữ Chính'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ minHeight: 31 }}
                       onClick={() =>
                         handlePreviewVoiceSnippet(
                           'op_voice',
@@ -841,6 +1130,28 @@ export default function ThreadsStudioForm({
                       )}{' '}
                       Nghe OP
                     </button>
+                    <label
+                      className="btn btn-secondary btn-sm"
+                      style={{ minHeight: 31, cursor: 'pointer' }}
+                      title="Đính kèm hoặc đổi ảnh trong thẻ bài đăng gốc"
+                    >
+                      {uploadingCardImgKey === 'OP' ? (
+                        <Loader2 size={13} />
+                      ) : (
+                        <ImagePlus size={13} />
+                      )}{' '}
+                      Ảnh bài gốc
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleAttachCardImage('OP', f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
 
@@ -865,7 +1176,7 @@ export default function ThreadsStudioForm({
                     </label>
                     <textarea
                       className="textarea"
-                      style={{ minHeight: 68, fontSize: 13 }}
+                      style={{ minHeight: 66, fontSize: 13 }}
                       value={bundle.op_display_text}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_display_text: e.target.value }))
@@ -874,11 +1185,11 @@ export default function ThreadsStudioForm({
                   </div>
                   <div>
                     <label className="form-label" style={{ fontSize: 11.8 }}>
-                      Lời đọc lồng tiếng AI (đã bung từ viết tắt)
+                      Lời đọc giọng Việt ({Number(voiceSpeed).toFixed(2)}x)
                     </label>
                     <textarea
                       className="textarea"
-                      style={{ minHeight: 68, fontSize: 13 }}
+                      style={{ minHeight: 66, fontSize: 13 }}
                       value={bundle.op_spoken_vi_text}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_spoken_vi_text: e.target.value }))
@@ -886,12 +1197,60 @@ export default function ThreadsStudioForm({
                     />
                   </div>
                 </div>
+
+                {(bundle.op_image_media_url || bundle.op_image_path) && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: 6,
+                      borderRadius: 8,
+                      background: 'var(--bg-step)',
+                      border: '1px solid var(--border-strong)',
+                    }}
+                  >
+                    {bundle.op_image_media_url && (
+                      <img
+                        src={bundle.op_image_media_url}
+                        alt="OP attachment"
+                        style={{
+                          width: 68,
+                          height: 68,
+                          objectFit: 'cover',
+                          borderRadius: 6,
+                        }}
+                      />
+                    )}
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>
+                      Ảnh đính kèm hiển thị trong Thẻ Bài Gốc
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      style={{ padding: '2px 7px', minHeight: 26 }}
+                      onClick={() =>
+                        setBundle((prev) => ({
+                          ...prev,
+                          op_image_path: '',
+                          op_image_url: '',
+                          op_image_media_url: '',
+                        }))
+                      }
+                    >
+                      <X size={12} /> Bỏ ảnh
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* COMMENTS LIST */}
-              <div style={{ display: 'grid', gap: 9, maxHeight: 460, overflowY: 'auto', paddingRight: 3 }}>
+              <div style={{ display: 'grid', gap: 9, maxHeight: 500, overflowY: 'auto', paddingRight: 3 }}>
                 {(bundle.comments || []).map((cmt, idx) => {
                   const pKey = `cmt_${idx}`;
+                  const isMaleLine = (cmt.voice_profile_id || hostVoiceId) === maleVoiceId;
+                  const hasCmtImg = Boolean(cmt.attached_image_media_url || cmt.attached_image_path);
                   return (
                     <div
                       key={cmt.comment_id || idx}
@@ -931,7 +1290,12 @@ export default function ThreadsStudioForm({
                             checked={Boolean(cmt.selected)}
                             onChange={(e) => patchComment(idx, { selected: e.target.checked })}
                           />
-                          <span>Bình luận #{idx + 1}</span>
+                          <span>Thẻ trả lời {idx + 1}</span>
+                          {hasCmtImg && (
+                            <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 6px' }}>
+                              Có ảnh bình luận
+                            </span>
+                          )}
                           {cmt.is_ai_suggested && (
                             <span className="badge badge-warn" style={{ fontSize: 10.5, padding: '1px 6px' }}>
                               Gợi ý AI
@@ -942,42 +1306,40 @@ export default function ThreadsStudioForm({
                         <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                           <input
                             className="input"
-                            style={{ width: 140, minHeight: 30, padding: '3px 8px', fontSize: 12.2 }}
+                            style={{ width: 138, minHeight: 30, padding: '3px 8px', fontSize: 12.2 }}
                             value={cmt.author_handle}
                             onChange={(e) => patchComment(idx, { author_handle: e.target.value })}
-                            title="Tên @handle người bình luận"
+                            title="Tên tài khoản bình luận"
                           />
                           <input
                             className="input"
-                            style={{ width: 72, minHeight: 30, padding: '3px 7px', fontSize: 12.2 }}
+                            style={{ width: 68, minHeight: 30, padding: '3px 7px', fontSize: 12.2 }}
                             value={cmt.likes_display}
                             onChange={(e) => patchComment(idx, { likes_display: e.target.value })}
                             title="Số lượt thích"
                           />
-                          <select
-                            className="select"
-                            style={{ width: 185, minHeight: 30, padding: '3px 7px', fontSize: 12 }}
-                            value={cmt.voice_profile_id || hostVoiceId}
-                            onChange={(e) =>
-                              patchComment(idx, { voice_profile_id: e.target.value })
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ minHeight: 30, padding: '0 9px', fontSize: 11.8 }}
+                            title="Bấm để đổi nhanh giữa Giọng Nam Chính và Giọng Nữ Chính"
+                            onClick={() =>
+                              patchComment(idx, {
+                                voice_profile_id: isMaleLine ? femaleVoiceId : maleVoiceId,
+                              })
                             }
-                            title="Giọng đọc riêng cho bình luận này"
                           >
-                            {voices.map((v) => (
-                              <option key={v.profile_id} value={v.profile_id}>
-                                {stripLeadingEmoji(v.display_name).split('—')[0].trim()}
-                              </option>
-                            ))}
-                          </select>
+                            {isMaleLine ? 'Giọng Nam Chính' : 'Giọng Nữ Chính'}
+                          </button>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
                             style={{ padding: '0 8px', minHeight: 30 }}
-                            title="Nghe thử giọng đọc bình luận này"
+                            title="Nghe thử giọng đọc bình luận này ở tốc độ đã chọn"
                             onClick={() =>
                               handlePreviewVoiceSnippet(
                                 pKey,
-                                cmt.voice_profile_id || hostVoiceId,
+                                isMaleLine ? maleVoiceId : femaleVoiceId,
                                 cmt.spoken_vi_text || cmt.display_text
                               )
                             }
@@ -988,6 +1350,27 @@ export default function ThreadsStudioForm({
                               <Volume2 size={12} />
                             )}
                           </button>
+                          <label
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '0 7px', minHeight: 30, cursor: 'pointer' }}
+                            title="Đính kèm hoặc đổi ảnh trong bình luận này"
+                          >
+                            {uploadingCardImgKey === String(idx) ? (
+                              <Loader2 size={12} />
+                            ) : (
+                              <ImagePlus size={12} />
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              hidden
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAttachCardImage(String(idx), f);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
@@ -1036,11 +1419,56 @@ export default function ThreadsStudioForm({
                         <input
                           className="input"
                           style={{ minHeight: 34, fontSize: 12.8 }}
-                          placeholder="Lời đọc AI (đã bung viết tắt)..."
+                          placeholder="Lời đọc giọng Việt (đã bung viết tắt)..."
                           value={cmt.spoken_vi_text}
                           onChange={(e) => patchComment(idx, { spoken_vi_text: e.target.value })}
                         />
                       </div>
+
+                      {hasCmtImg && (
+                        <div
+                          style={{
+                            marginTop: 7,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 9,
+                            padding: 5,
+                            borderRadius: 8,
+                            background: 'var(--bg-step)',
+                            border: '1px solid rgba(16, 185, 129, 0.45)',
+                          }}
+                        >
+                          {cmt.attached_image_media_url && (
+                            <img
+                              src={cmt.attached_image_media_url}
+                              alt="Comment attachment"
+                              style={{
+                                width: 62,
+                                height: 62,
+                                objectFit: 'cover',
+                                borderRadius: 6,
+                              }}
+                            />
+                          )}
+                          <span style={{ fontSize: 11.8, fontWeight: 600 }}>
+                            Ảnh đính kèm của bình luận (sẽ hiển thị ngay bên trong thẻ)
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            style={{ padding: '2px 6px', minHeight: 24, fontSize: 11 }}
+                            onClick={() =>
+                              patchComment(idx, {
+                                attached_image_path: '',
+                                attached_image_url: '',
+                                attached_image_media_url: '',
+                              })
+                            }
+                          >
+                            <X size={11} /> Bỏ ảnh
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1076,7 +1504,6 @@ export default function ThreadsStudioForm({
           </div>
         </div>
 
-        {/* SAVED BG VIDEO LIBRARY GRID */}
         {bgLibrary.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <div className="form-label">
@@ -1206,7 +1633,10 @@ export default function ThreadsStudioForm({
             </div>
           </div>
 
-          <div className="surface-box" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10 }}>
+          <div
+            className="surface-box"
+            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10 }}
+          >
             <div>
               <label className="form-label">
                 Hoặc dán link YouTube / TikTok để tải về làm Video Nền
@@ -1302,10 +1732,10 @@ export default function ThreadsStudioForm({
           <span className="step-num">3</span>
           <div>
             <div className="step-title">
-              Giao diện Thẻ Bình Luận Nổi, Tiếng Pop Chuyển Thẻ &amp; Nhạc Nền
+              Giao diện Thẻ Bình Luận Nổi (Gọn Đẹp Không Đánh Số), Tiếng Pop &amp; Nhạc Nền
             </div>
             <div className="step-desc">
-              Tùy chỉnh màu sắc thẻ bình luận đồng bộ trực tiếp với khung mô phỏng 9:16 bên phải
+              Thẻ bình luận hiển thị tự nhiên đúng giao diện Threads kèm ảnh đính kèm bên trong thẻ
             </div>
           </div>
         </div>
@@ -1371,13 +1801,13 @@ export default function ThreadsStudioForm({
               onChange={(e) => setSubtitleStyle(e.target.value)}
             >
               <option value="NONE">
-                Tắt phụ đề dưới đáy (Khuyên dùng vì chữ đã hiện rõ trên Thẻ Threads)
+                Tắt phụ đề dưới đáy (Khuyên dùng vì chữ &amp; ảnh đã hiện rõ trên Thẻ Threads)
               </option>
               <option value="KARAOKE_CAPCUT">Bật thêm chữ Karaoke chạy từng từ</option>
               <option value="CINEMA">Bật thêm phụ đề câu thanh lịch</option>
             </select>
             <div className="text-muted" style={{ fontSize: 11.8 }}>
-              Mỗi thẻ bình luận nổi đã tự động căn chữ to rõ ngay tầm mắt người xem và chuyển thẻ khớp từng mili-giây giọng đọc.
+              Mỗi thẻ bình luận nổi đã tự động căn chữ &amp; ảnh đính kèm ngay tầm mắt người xem, khớp từng mili-giây giọng đọc.
             </div>
           </div>
         </div>
@@ -1420,4 +1850,3 @@ export default function ThreadsStudioForm({
     </div>
   );
 }
-

@@ -1,14 +1,15 @@
 """Floating Threads / Social Post & Comment RGBA Card Renderer (`m04_visual_producer`).
 
 Renders crisp 1080p transparent PNG overlays with circular avatar, @handle, verified tick,
-multi-line Vietnamese typography, thread connector line, and engagement metrics.
+multi-line Vietnamese typography, embedded post/comment photo attachments, thread connector
+line, and clean authentic engagement metrics (without artificial 'Bình luận #X' badges).
 """
 
 import asyncio
 import hashlib
 from pathlib import Path
 from typing import List, Optional
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.m00_core_contracts import (
     AssetType,
@@ -60,7 +61,7 @@ def _wrap_pixel_lines(
     text: str,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
     max_width_px: int,
-    max_lines: int = 11,
+    max_lines: int = 10,
 ) -> List[str]:
     """Wrap multi-paragraph Vietnamese text accurately by rendered pixel width."""
     paragraphs = [p.strip() for p in (text or "").splitlines() if p.strip()]
@@ -91,6 +92,51 @@ def _wrap_pixel_lines(
     if len(lines) > max_lines:
         lines = lines[:max_lines]
     return lines
+
+
+def _prepare_rounded_card_photo(
+    img_path: Path,
+    max_w: int,
+    max_h: int,
+    radius: int = 24,
+    border_col: tuple[int, int, int, int] = (148, 163, 184, 110),
+) -> Optional[Image.Image]:
+    """Load and format an attached post/comment image into a crisp rounded RGBA block."""
+    if not img_path.exists() or not img_path.is_file():
+        return None
+    try:
+        with Image.open(img_path) as raw_im:
+            im = ImageOps.exif_transpose(raw_im).convert("RGBA")
+        iw, ih = im.size
+        if iw < 16 or ih < 16:
+            return None
+
+        # Fit smoothly inside `(max_w, max_h)`; if very tall portrait, center-crop gently to 5:6 first
+        aspect = iw / float(ih)
+        if aspect < 0.72:
+            target_h = int(round(iw / 0.78))
+            y_trim = max(0, (ih - target_h) // 2)
+            im = im.crop((0, y_trim, iw, min(ih, y_trim + target_h)))
+            iw, ih = im.size
+
+        scale = min(max_w / float(iw), max_h / float(ih))
+        nw = max(120, int(round(iw * scale)))
+        nh = max(100, int(round(ih * scale)))
+        resized = im.resize((nw, nh), Image.Resampling.LANCZOS)
+
+        mask = Image.new("L", (nw, nh), 0)
+        md = ImageDraw.Draw(mask)
+        md.rounded_rectangle([(0, 0), (nw - 1, nh - 1)], radius=radius, fill=255)
+
+        framed = Image.new("RGBA", (nw, nh), (0, 0, 0, 0))
+        framed.paste(resized, (0, 0), mask)
+        fd = ImageDraw.Draw(framed)
+        fd.rounded_rectangle(
+            [(0, 0), (nw - 1, nh - 1)], radius=radius, outline=border_col, width=2
+        )
+        return framed
+    except Exception:
+        return None
 
 
 def _draw_heart_icon(
@@ -129,7 +175,7 @@ def _draw_repost_icon(
 
 
 class ThreadsCardVisualRenderer:
-    """Builds transparent RGBA PNG floating cards for OP Thread post & replies."""
+    """Builds transparent RGBA PNG floating cards for OP Thread post & replies (with attached images)."""
 
     @classmethod
     def render_single_card_png(
@@ -154,14 +200,17 @@ class ThreadsCardVisualRenderer:
         if anonymize_handles:
             raw_handle = "@chuthot" if line.is_op_post else f"@nguoila_{comment_rank:02d}"
 
+        has_card_img = bool(line.card_image_path and Path(line.card_image_path).exists())
         body_text = (line.display_card_text or line.original_text or line.vi_text).strip()
         char_len = len(body_text)
-        body_font_px = 39 if char_len <= 95 else (34 if char_len <= 210 else 29)
-        line_spacing = int(round(body_font_px * 1.42))
+        body_font_px = (
+            35 if has_card_img and char_len > 80 else (39 if char_len <= 95 else (34 if char_len <= 210 else 29))
+        )
+        line_spacing = int(round(body_font_px * 1.40))
 
         f_handle = _load_card_font(31, bold=True)
-        f_badge = _load_card_font(23, bold=True)
-        f_body = _load_card_font(body_font_px, bold=line.is_op_post and char_len <= 110)
+        f_time = _load_card_font(24, bold=False)
+        f_body = _load_card_font(body_font_px, bold=line.is_op_post and char_len <= 110 and not has_card_img)
         f_meta = _load_card_font(25, bold=True)
         f_avatar = _load_card_font(29, bold=True)
 
@@ -171,33 +220,54 @@ class ThreadsCardVisualRenderer:
         text_right_pad = 44
         max_text_w = card_w - text_left_pad - text_right_pad
 
-        wrapped_lines = _wrap_pixel_lines(probe_draw, body_text, f_body, max_text_w, max_lines=11)
+        max_allowed_lines = 6 if has_card_img else 11
+        wrapped_lines = _wrap_pixel_lines(
+            probe_draw, body_text, f_body, max_text_w, max_lines=max_allowed_lines
+        )
         body_h = max(line_spacing, len(wrapped_lines) * line_spacing)
-        header_h = 98
-        footer_h = 84
-        card_h = min(int(canvas_h * 0.68), header_h + body_h + footer_h + 24)
-        # Position floating card comfortably in upper-center eye-level zone
-        card_y = max(int(canvas_h * 0.16), (canvas_h - card_h) // 2 - int(canvas_h * 0.04))
 
         # Theme colors
         if card_theme == ThreadsCardTheme.LIGHT_THREADS:
-            bg_fill = (255, 255, 255, 246)
-            border_col = (203, 213, 225, 245)
+            bg_fill = (255, 255, 255, 248)
+            border_col = (212, 220, 232, 245)
             txt_primary = (15, 23, 42, 255)
             txt_muted = (100, 116, 139, 255)
-            thread_line_col = (203, 213, 225, 255)
+            thread_line_col = (214, 222, 234, 255)
+            photo_border = (203, 213, 225, 220)
         elif card_theme == ThreadsCardTheme.FROSTED_GLASS:
-            bg_fill = (17, 24, 39, 204)
+            bg_fill = (17, 24, 39, 206)
             border_col = (125, 211, 252, 165)
             txt_primary = (248, 250, 252, 255)
-            txt_muted = (186, 230, 253, 220)
+            txt_muted = (186, 230, 253, 215)
             thread_line_col = (56, 189, 248, 135)
+            photo_border = (125, 211, 252, 145)
         else:
-            bg_fill = (16, 18, 22, 242)
+            bg_fill = (16, 18, 22, 244)
             border_col = (52, 58, 70, 235)
             txt_primary = (248, 250, 252, 255)
             txt_muted = (148, 163, 184, 255)
             thread_line_col = (63, 71, 86, 255)
+            photo_border = (71, 85, 105, 210)
+
+        # Prepare optional attached post/comment photo
+        card_photo_im: Optional[Image.Image] = None
+        photo_block_h = 0
+        if has_card_img:
+            max_photo_h = min(int(canvas_h * 0.34), max(260, int(canvas_h * 0.58) - body_h))
+            card_photo_im = _prepare_rounded_card_photo(
+                Path(line.card_image_path),
+                max_w=max_text_w,
+                max_h=max_photo_h,
+                radius=24,
+                border_col=photo_border,
+            )
+            if card_photo_im is not None:
+                photo_block_h = card_photo_im.height + 20
+
+        header_h = 96
+        footer_h = 82
+        card_h = min(int(canvas_h * 0.78), header_h + body_h + photo_block_h + footer_h + 20)
+        card_y = max(int(canvas_h * 0.11), (canvas_h - card_h) // 2 - int(canvas_h * 0.03))
 
         # 1. Soft Ambient Drop Shadow
         shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
@@ -217,14 +287,14 @@ class ThreadsCardVisualRenderer:
             [(card_x, card_y), (card_x + card_w, card_y + card_h)],
             radius=36,
             fill=bg_fill,
-            outline=(14, 165, 233, 215) if line.is_op_post else border_col,
-            width=3 if line.is_op_post else 2,
+            outline=border_col,
+            width=2,
         )
 
         # 3. Circular Initials Avatar + Signature Vertical Thread Connector Line
         av_size = 66
         av_x = card_x + 34
-        av_y = card_y + 30
+        av_y = card_y + 28
         h_digest = int(hashlib.md5(raw_handle.encode("utf-8")).hexdigest()[:6], 16)
         c_top, c_bot = AVATAR_PALETTE[h_digest % len(AVATAR_PALETTE)]
         cd.ellipse([(av_x, av_y), (av_x + av_size, av_y + av_size)], fill=(*c_top, 255))
@@ -251,35 +321,35 @@ class ThreadsCardVisualRenderer:
         if stem_y1 > stem_y0 + 16:
             cd.line([(stem_x, stem_y0), (stem_x, stem_y1)], fill=thread_line_col, width=4)
 
-        # 4. Author Handle + Verified Badge + Top-Right Role Pill
+        # 4. Clean Authentic Threads Header (@handle + verified check + subtle relative time — NO 'Bình luận #X' badge!)
         tx_x = card_x + text_left_pad
-        ty_handle = card_y + 34
-        cd.text((tx_x, ty_handle), raw_handle[:26], font=f_handle, fill=txt_primary)
-        bb_h = cd.textbbox((tx_x, ty_handle), raw_handle[:26], font=f_handle)
+        ty_handle = card_y + 33
+        disp_handle = raw_handle.lstrip("@")[:26] if card_theme == ThreadsCardTheme.LIGHT_THREADS else raw_handle[:27]
+        cd.text((tx_x, ty_handle), disp_handle, font=f_handle, fill=txt_primary)
+        bb_h = cd.textbbox((tx_x, ty_handle), disp_handle, font=f_handle)
 
-        # Blue verified tick on OP or popular comments
+        # Blue verified tick on OP or high-like comments
         if line.is_op_post or "K" in (line.likes_display or ""):
             vx = bb_h[2] + 10
             vy = ty_handle + 7
-            cd.ellipse([(vx, vy), (vx + 26, vy + 26)], fill=(14, 165, 233, 255))
-            cd.line([(vx + 7, vy + 14), (vx + 12, vy + 19), (vx + 20, vy + 8)], fill=(255, 255, 255, 255), width=3)
+            cd.ellipse([(vx, vy), (vx + 25, vy + 25)], fill=(14, 165, 233, 255))
+            cd.line(
+                [(vx + 7, vy + 13), (vx + 11, vy + 18), (vx + 19, vy + 8)],
+                fill=(255, 255, 255, 255),
+                width=3,
+            )
 
-        role_txt = (
-            "Chủ đề gốc • Threads"
-            if line.is_op_post
-            else (line.callout_label or f"Bình luận #{comment_rank}/{max(1, total_comments)}")
-        )
-        bb_r = cd.textbbox((0, 0), role_txt, font=f_badge)
-        rw = (bb_r[2] - bb_r[0]) + 28
-        rx = card_x + card_w - rw - 30
-        ry = card_y + 32
-        pill_bg = (14, 165, 233, 42) if line.is_op_post else (16, 185, 129, 38)
-        pill_bd = (56, 189, 248, 190) if line.is_op_post else (52, 211, 153, 185)
-        pill_fg = (56, 189, 248, 255) if card_theme != ThreadsCardTheme.LIGHT_THREADS else (2, 132, 199, 255)
-        if not line.is_op_post:
-            pill_fg = (52, 211, 153, 255) if card_theme != ThreadsCardTheme.LIGHT_THREADS else (5, 150, 105, 255)
-        cd.rounded_rectangle([(rx, ry), (rx + rw, ry + 40)], radius=20, fill=pill_bg, outline=pill_bd, width=2)
-        cd.text((rx + 14, ry + 6), role_txt, font=f_badge, fill=pill_fg)
+        # Subtle authentic timestamp & 3-dots on top right (just like real Threads UI)
+        rel_time_txt = "3 giờ" if line.is_op_post else f"{max(5, 58 - comment_rank * 6)} phút"
+        bb_t = cd.textbbox((0, 0), rel_time_txt, font=f_time)
+        tw = bb_t[2] - bb_t[0]
+        dots_x = card_x + card_w - 42
+        cd.text((dots_x - tw - 22, ty_handle + 5), rel_time_txt, font=f_time, fill=txt_muted)
+        for dx in (-8, 0, 8):
+            cd.ellipse(
+                [(dots_x + dx - 2, ty_handle + 18), (dots_x + dx + 2, ty_handle + 22)],
+                fill=txt_muted,
+            )
 
         # 5. Wrapped Comment Body Text
         cur_y = card_y + header_h
@@ -290,8 +360,14 @@ class ThreadsCardVisualRenderer:
             cd.text((tx_x, cur_y), w_ln, font=f_body, fill=txt_primary)
             cur_y += line_spacing
 
-        # 6. Bottom Engagement Action Bar (Heart + Likes, Reply Bubble, Repost)
-        bar_y = card_y + card_h - 56
+        # 6. Embedded Post / Comment Photo Attachment (if present)
+        if card_photo_im is not None:
+            photo_y = cur_y + 12
+            card_layer.alpha_composite(card_photo_im, dest=(tx_x, photo_y))
+            cur_y = photo_y + card_photo_im.height + 8
+
+        # 7. Bottom Engagement Action Bar (Heart + Likes, Reply Bubble, Repost)
+        bar_y = card_y + card_h - 54
         _draw_heart_icon(cd, tx_x, bar_y + 4, 28, (244, 63, 94, 255))
         likes_txt = line.likes_display or ("1,6K" if line.is_op_post else "218")
         cd.text((tx_x + 36, bar_y - 1), likes_txt, font=f_meta, fill=txt_muted)
@@ -354,8 +430,7 @@ class ThreadsCardVisualRenderer:
                 on_progress(
                     "GENERATING_ASSETS",
                     pct,
-                    f"Đã thiết kế thẻ bình luận nổi {idx + 1}/{len(clip.lines)}",
+                    f"Đã thiết kế thẻ Threads {idx + 1}/{len(clip.lines)}",
                 )
 
         return VisualAssetListDTO(clip_id=clip.clip_id, items=items)
-

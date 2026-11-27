@@ -173,8 +173,32 @@ DEFAULT_VOICE_PROFILES: List[VoiceProfileDTO] = [
     ),
 
     # =========================================================================
-    # NHÓM 2: CHUYÊN SHORT TIKTOK NHỊP NHANH (TIKTOK_SHORT — 7 Giọng)
+    # NHÓM 2: CHUYÊN SHORT TIKTOK & THREADS NHỊP NHANH (TIKTOK_SHORT — 9 Giọng)
     # =========================================================================
+    VoiceProfileDTO(
+        profile_id="threads_nu_chinh",
+        display_name="Hoài My (Giọng Nữ Chính) — Nữ Việt Tự Nhiên Đọc Threads & TikTok Nhịp Nhanh",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Giọng Nữ Chính", "Chuẩn tiếng Việt", "Nhịp nhanh ổn định"],
+        voice_id_or_sample_path="vi-VN-HoaiMyNeural",
+        speed_rate=1.25,
+        pitch_hz=0.0,
+        emotion_prompt="Giọng nữ bản ngữ Việt Nam trẻ trung, tự nhiên, biểu cảm đời thường và dứt khoát cho đọc bài đăng & bình luận Threads",
+        dsp_preset="tiktok_punchy_bright",
+    ),
+    VoiceProfileDTO(
+        profile_id="threads_nam_chinh",
+        display_name="Nam Minh (Giọng Nam Chính) — Nam Việt Ấm Rõ Đọc Threads & TikTok Nhịp Nhanh",
+        tier=VoiceTier.EDGE_TTS,
+        category=VoiceUseCaseCategory.TIKTOK_SHORT,
+        tags=["Giọng Nam Chính", "Chuẩn tiếng Việt", "Nhịp nhanh ổn định"],
+        voice_id_or_sample_path="vi-VN-NamMinhNeural",
+        speed_rate=1.25,
+        pitch_hz=-0.3,
+        emotion_prompt="Giọng nam bản ngữ Việt Nam ấm rõ, tự nhiên, tốc độ nhanh bắt tai cho đối thoại bình luận Threads & Shorts",
+        dsp_preset="tiktok_male_crisp",
+    ),
     VoiceProfileDTO(
         profile_id="edge_hoai_my_fast",
         display_name="Mai Phương — Nữ Review Nhịp Nhanh Bắt Trend TikTok (Giữ chân 3s đầu)",
@@ -682,6 +706,10 @@ class SQLiteRepository:
                 conn.execute(
                     "ALTER TABLE subtitle_segments ADD COLUMN is_op_post INTEGER DEFAULT 0"
                 )
+            if "card_image_path" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN card_image_path TEXT DEFAULT ''"
+                )
             seo_cols = [
                 r["name"] for r in conn.execute("PRAGMA table_info(seo_metadata)").fetchall()
             ]
@@ -971,8 +999,9 @@ class SQLiteRepository:
                         (segment_id, clip_id, seq_index, rel_start_ms, rel_end_ms, original_text,
                          vi_narration_text, image_prompt, stock_keywords_json, matched_image_index,
                          is_real_demo_slot, callout_label, voice_speed_override, voice_pitch_override,
-                         voice_profile_override, speaker_handle, display_card_text, likes_display, is_op_post)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         voice_profile_override, speaker_handle, display_card_text, likes_display, is_op_post,
+                         card_image_path)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             seg_id,
@@ -994,6 +1023,7 @@ class SQLiteRepository:
                             line.display_card_text,
                             line.likes_display,
                             1 if line.is_op_post else 0,
+                            line.card_image_path,
                         ),
                     )
 

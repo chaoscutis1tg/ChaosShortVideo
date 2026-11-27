@@ -849,7 +849,14 @@ class GeminiContentBrainService(ILLMService):
             "rep": "trả lời",
             "ib": "nhắn tin",
         }
-        cleaned = re.sub(r"https?://\S+", "", text or "").strip()
+        cleaned = re.sub(r"https?://\S+", "", text or "")
+        cleaned = re.sub(r"(?:[:;=xX][\-^']*[)DdpPvV3/(|]+|=\)+|\^\^|-_-|T_T)", " ", cleaned)
+        cleaned = re.sub(
+            "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0000FE00-\U0000FE0F]+",
+            " ",
+            cleaned,
+        )
+        cleaned = re.sub(r"([a-zA-Zà-ỹÀ-Ỹ])\1{2,}", r"\1", cleaned).strip()
         if not cleaned:
             return ""
         pat = r"\b(" + "|".join(re.escape(k) for k in slang.keys()) + r")\b"
@@ -871,37 +878,46 @@ class GeminiContentBrainService(ILLMService):
         host_voice_id: str,
         available_voice_ids: List[str],
         multi_voice_cast: bool,
+        male_voice_id: str = "threads_nam_chinh",
+        female_voice_id: str = "threads_nu_chinh",
     ) -> List[ThreadCommentItemDTO]:
-        """Assign contrasting male/female dialogue voices across comments so consecutive speakers differ."""
+        """Strictly use ONLY the 2 main voices (1 Male & 1 Female) alternating across comments."""
+        eff_male = (
+            male_voice_id
+            if male_voice_id in available_voice_ids
+            else (
+                "threads_nam_chinh"
+                if "threads_nam_chinh" in available_voice_ids
+                else (available_voice_ids[0] if available_voice_ids else host_voice_id)
+            )
+        )
+        eff_female = (
+            female_voice_id
+            if female_voice_id in available_voice_ids
+            else (
+                "threads_nu_chinh"
+                if "threads_nu_chinh" in available_voice_ids
+                else (
+                    next((v for v in available_voice_ids if v != eff_male), eff_male)
+                )
+            )
+        )
         if not multi_voice_cast:
             return [c.model_copy(update={"voice_profile_id": host_voice_id}) for c in comments]
 
-        preferred_cast = [
-            "edge_tuan_kiet_tiktok",
-            "gemini_tiktok_zephyr",
-            "edge_gia_bao_consult",
-            "edge_minh_chau_lifestyle",
-            "gemini_tiktok_achird",
-            "edge_lan_anh_story",
-            "edge_nam_uslt_saigon",
-            "edge_phuong_anh_fashion",
-            "local_vivos_tiktok_fast",
-            "local_vais_studio",
-        ]
-        valid_pool = [
-            vid for vid in preferred_cast if vid in available_voice_ids and vid != host_voice_id
-        ]
-        if not valid_pool:
-            valid_pool = [vid for vid in available_voice_ids if vid != host_voice_id] or [
-                host_voice_id
-            ]
+        # Start Comment #1 with the opposite voice from OP so OP -> Comment #1 contrasts immediately
+        two_voice_pair = (
+            [eff_male, eff_female]
+            if host_voice_id == eff_female
+            else [eff_female, eff_male]
+        )
 
         updated: List[ThreadCommentItemDTO] = []
         for idx, c in enumerate(comments):
             chosen = (
                 c.voice_profile_id
-                if (c.voice_profile_id and c.voice_profile_id in available_voice_ids)
-                else valid_pool[idx % len(valid_pool)]
+                if (c.voice_profile_id and c.voice_profile_id in (eff_male, eff_female))
+                else two_voice_pair[idx % len(two_voice_pair)]
             )
             updated.append(c.model_copy(update={"voice_profile_id": chosen}))
         return updated
@@ -925,37 +941,41 @@ class GeminiContentBrainService(ILLMService):
         if self.api_key:
             raw_cmts_dump = [
                 {
+                    "source_index": i,
                     "author": c.author_handle,
                     "text": c.raw_text[:500],
                     "likes": c.likes_display or str(c.likes_count),
+                    "has_attached_image": bool(c.attached_image_url or c.attached_image_path),
                 }
-                for c in raw_bundle.comments[:24]
+                for i, c in enumerate(raw_bundle.comments[:26])
             ]
             prompt = (
                 "Bạn là đạo diễn sản xuất video ngắn 'Chủ đề Threads & Bình luận cộng đồng' triệu view trên TikTok/Shorts.\n"
-                f"Bài đăng gốc ({raw_bundle.op_author_handle}): {raw_bundle.op_display_text}\n"
+                f"Bài đăng gốc ({raw_bundle.op_author_handle}, có ảnh đính kèm={bool(raw_bundle.op_image_url or raw_bundle.op_image_path)}): {raw_bundle.op_display_text}\n"
                 f"Danh sách bình luận thô thu thập được ({len(raw_cmts_dump)} mục): {json.dumps(raw_cmts_dump, ensure_ascii=False)}\n"
                 f"Số lượng bình luận tiêu biểu cần lấy: ĐÚNG {target_n} bình luận.\n"
                 f"Gu chọn lọc mong muốn: {vibe_desc}.\n"
                 f"Bung viết tắt teen-code & dịch sang tiếng Việt tự nhiên: {'CÓ' if req.expand_slang_and_translate else 'KHÔNG'}.\n\n"
                 "Yêu cầu bắt buộc:\n"
                 "1. Nếu bài gốc hoặc bình luận bằng tiếng nước ngoài (Anh/Trung...), hãy dịch mượt sang tiếng Việt đời thường chuẩn văn phong Threads.\n"
-                f"2. Nếu danh sách bình luận thô có sẵn >= {target_n} câu chất lượng, hãy lọc ra ĐÚNG {target_n} bình luận đắt giá nhất khớp gu '{vibe_desc}' (đặt is_ai_suggested=false). "
-                f"Nếu danh sách thô bị thiếu (do Threads ẩn bình luận khi chưa đăng nhập), hãy giữ các bình luận thật có sẵn và viết bổ sung các bình luận cộng đồng siêu tự nhiên, đa dạng giọng điệu như người dùng thật trên Threads Việt Nam cho đủ ĐÚNG {target_n} bình luận (đặt is_ai_suggested=true cho câu bổ sung).\n"
+                f"2. ƯU TIÊN SỐ 1 giữ lại các bình luận thật có `has_attached_image: true` (vì bình luận kèm ảnh thực tế cực kỳ cuốn hút), kèm các bình luận hay nhất khớp gu '{vibe_desc}' cho đủ ĐÚNG {target_n} bình luận. "
+                "Nếu lấy từ danh sách thô, BẮT BUỘC giữ đúng `source_index` (0..N-1) của bình luận đó và đặt `is_ai_suggested: false`. "
+                f"Chỉ khi danh sách thô ít hơn {target_n} câu thì mới viết bổ sung cho đủ {target_n} câu (`source_index: -1`, `is_ai_suggested: true`).\n"
                 "3. Với cả bài gốc và mỗi bình luận, trả về 2 phiên bản:\n"
-                "   - display_text: Văn bản hiển thị đẹp trên Thẻ Bình Luận (ngắn gọn, súc tích, tự nhiên).\n"
-                "   - spoken_vi_text: Lời đọc cho diễn viên lồng tiếng AI — TUYỆT ĐỐI bung hết viết tắt (ko->không, đc->được, ny->người yêu, cty->công ty, mn->mọi người...), bỏ icon/emoji rác để giọng đọc trôi chảy 100%.\n"
+                "   - display_text: Văn bản hiển thị đẹp trên Thẻ Bình Luận (tự nhiên, giữ cảm xúc gốc).\n"
+                "   - spoken_vi_text: Lời đọc cho diễn viên giọng Việt bản ngữ tốc độ nhanh — TUYỆT ĐỐI bung hết viết tắt (ko->không, đc->được, ny->người yêu, cty->công ty, mn->mọi người...), xóa sạch emoji/ký hiệu (=)), :)), 🤣, 🙂), đặt dấu phẩy ngắt nhịp tự nhiên để đọc cuốn hút không hời hợt.\n"
                 "Trả về JSON hợp lệ:\n"
                 "{\n"
                 '  "topic_title": "Tiêu đề ngắn gọn giật tít <= 85 ký tự",\n'
                 '  "op_author_handle": "@ten_chu_thot",\n'
                 '  "op_display_text": "Nội dung bài đăng gốc hiển thị trên thẻ",\n'
-                '  "op_spoken_vi_text": "Lời đọc bài đăng gốc tròn vành rõ chữ",\n'
+                '  "op_spoken_vi_text": "Lời đọc bài đăng gốc tự nhiên truyền cảm",\n'
                 '  "comments": [\n'
                 "    {\n"
+                '      "source_index": 0,\n'
                 '      "author_handle": "@nickname_tu_nhien",\n'
                 '      "display_text": "Nội dung bình luận trên thẻ",\n'
-                '      "spoken_vi_text": "Lời đọc bình luận đã bung hết từ viết tắt",\n'
+                '      "spoken_vi_text": "Lời đọc bình luận mượt mà không có icon",\n'
                 '      "likes_display": "1,4K",\n'
                 '      "is_ai_suggested": false\n'
                 "    }\n"
@@ -966,6 +986,25 @@ class GeminiContentBrainService(ILLMService):
                 data = await self._call_gemini_json(prompt)
                 ai_cmts_raw = data.get("comments") or []
                 curated_list: List[ThreadCommentItemDTO] = []
+                used_raw_indices: set[int] = set()
+
+                def _match_raw_comment(item_dict: dict) -> Optional[ThreadCommentItemDTO]:
+                    s_idx = item_dict.get("source_index")
+                    if isinstance(s_idx, int) and 0 <= s_idx < len(raw_bundle.comments):
+                        used_raw_indices.add(s_idx)
+                        return raw_bundle.comments[s_idx]
+                    h_cand = str(item_dict.get("author_handle") or "").lstrip("@").lower()
+                    d_cand = str(item_dict.get("display_text") or "").strip().lower()[:40]
+                    for r_i, rc in enumerate(raw_bundle.comments):
+                        if r_i in used_raw_indices:
+                            continue
+                        if (h_cand and rc.author_handle.lstrip("@").lower() == h_cand) or (
+                            len(d_cand) >= 10 and d_cand in rc.raw_text.lower()
+                        ):
+                            used_raw_indices.add(r_i)
+                            return rc
+                    return None
+
                 for idx, item in enumerate(ai_cmts_raw[:target_n], start=1):
                     if not isinstance(item, dict):
                         continue
@@ -973,7 +1012,11 @@ class GeminiContentBrainService(ILLMService):
                     spoken = str(item.get("spoken_vi_text") or disp).strip()
                     if not disp:
                         continue
-                    h_raw = str(item.get("author_handle") or f"@thanhvien_{idx:02d}").strip()
+                    matched_rc = _match_raw_comment(item)
+                    h_raw = str(
+                        item.get("author_handle")
+                        or (matched_rc.author_handle if matched_rc else f"@thanhvien_{idx:02d}")
+                    ).strip()
                     if not h_raw.startswith("@"):
                         h_raw = f"@{h_raw}"
                     if req.anonymize_handles:
@@ -987,20 +1030,70 @@ class GeminiContentBrainService(ILLMService):
                             spoken_vi_text=self._expand_slang_vi(spoken)[:1500]
                             if req.expand_slang_and_translate
                             else spoken[:1500],
-                            likes_display=str(item.get("likes_display") or f"{max(24, 680 - idx * 53)}")[:24],
-                            is_ai_suggested=bool(item.get("is_ai_suggested")),
+                            likes_display=str(
+                                item.get("likes_display")
+                                or (matched_rc.likes_display if matched_rc else f"{max(24, 680 - idx * 53)}")
+                            )[:24],
+                            attached_image_url=matched_rc.attached_image_url if matched_rc else "",
+                            attached_image_path=matched_rc.attached_image_path if matched_rc else "",
+                            avatar_url=matched_rc.avatar_url if matched_rc else "",
+                            is_ai_suggested=bool(item.get("is_ai_suggested")) and matched_rc is None,
                             selected=True,
                         )
                     )
 
+                # Ensure real comments with attached images are never accidentally left behind
+                missed_img_cmts = [
+                    (r_i, rc)
+                    for r_i, rc in enumerate(raw_bundle.comments)
+                    if r_i not in used_raw_indices and (rc.attached_image_url or rc.attached_image_path)
+                ]
+                for _, img_rc in missed_img_cmts:
+                    if len(curated_list) < target_n:
+                        curated_list.append(
+                            img_rc.model_copy(
+                                update={
+                                    "author_handle": f"@nguoila_{len(curated_list) + 1:02d}"
+                                    if req.anonymize_handles
+                                    else img_rc.author_handle,
+                                    "spoken_vi_text": self._expand_slang_vi(
+                                        img_rc.spoken_vi_text or img_rc.display_text
+                                    ),
+                                    "selected": True,
+                                }
+                            )
+                        )
+                    elif any(not c.attached_image_url and not c.attached_image_path for c in curated_list):
+                        # Swap into last non-image slot so user gets the real comment photo!
+                        for rep_idx in range(len(curated_list) - 1, -1, -1):
+                            if not curated_list[rep_idx].attached_image_url and not curated_list[rep_idx].attached_image_path:
+                                curated_list[rep_idx] = img_rc.model_copy(
+                                    update={
+                                        "comment_id": f"cur_{rep_idx + 1:02d}",
+                                        "author_handle": f"@nguoila_{rep_idx + 1:02d}"
+                                        if req.anonymize_handles
+                                        else img_rc.author_handle,
+                                        "spoken_vi_text": self._expand_slang_vi(
+                                            img_rc.spoken_vi_text or img_rc.display_text
+                                        ),
+                                        "selected": True,
+                                    }
+                                )
+                                break
+
                 if curated_list:
                     voiced_cmts = self._assign_comment_voices(
-                        curated_list, req.host_voice_id, available_voice_ids, req.multi_voice_cast
+                        curated_list,
+                        req.host_voice_id,
+                        available_voice_ids,
+                        req.multi_voice_cast,
+                        req.male_voice_id,
+                        req.female_voice_id,
                     )
                     op_disp = str(data.get("op_display_text") or raw_bundle.op_display_text).strip()
                     op_sp = str(data.get("op_spoken_vi_text") or op_disp).strip()
                     if req.expand_slang_and_translate:
-                        op_sp = self._expand_slang_vi(op_sp)
+                        op_sp = self._expand_slang_vi(op_sp) or op_sp
                     op_h = (
                         "@chuthot_threads"
                         if req.anonymize_handles
@@ -1008,6 +1101,10 @@ class GeminiContentBrainService(ILLMService):
                     )
                     if not op_h.startswith("@"):
                         op_h = f"@{op_h}"
+                    img_cnt = sum(1 for c in voiced_cmts if c.attached_image_url or c.attached_image_path) + (
+                        1 if (raw_bundle.op_image_url or raw_bundle.op_image_path) else 0
+                    )
+                    img_note = f" (kèm {img_cnt} ảnh bài đăng/bình luận)" if img_cnt > 0 else ""
                     return ScrapedThreadBundleDTO(
                         source_url=raw_bundle.source_url,
                         platform=raw_bundle.platform,
@@ -1015,20 +1112,29 @@ class GeminiContentBrainService(ILLMService):
                         op_author_handle=op_h[:60],
                         op_display_text=op_disp[:2200],
                         op_spoken_vi_text=op_sp[:2200],
+                        op_image_url=raw_bundle.op_image_url,
+                        op_image_path=raw_bundle.op_image_path,
+                        op_avatar_url=raw_bundle.op_avatar_url,
                         op_likes_display=raw_bundle.op_likes_display or "2,3K",
                         op_replies_display=raw_bundle.op_replies_display or str(len(voiced_cmts) * 14),
                         op_is_verified=raw_bundle.op_is_verified,
                         op_voice_profile_id=req.host_voice_id,
+                        male_voice_id=req.male_voice_id,
+                        female_voice_id=req.female_voice_id,
                         comments=voiced_cmts,
                         used_api_key=True,
-                        extraction_note=f"AI đã chọn lọc & chuẩn hóa {len(voiced_cmts)} bình luận tiêu biểu theo gu '{vibe_desc}'.",
+                        extraction_note=f"AI đã chọn lọc {len(voiced_cmts)} bình luận tiêu biểu{img_note} & phân vai 2 giọng Nam/Nữ!",
                     )
             except Exception:
                 if not self.allow_offline_fallback:
                     raise
 
-        # Deterministic offline fallback curation
-        base_cmts = list(raw_bundle.comments[:target_n])
+        # Deterministic offline fallback curation (prioritizing comments with real attached images!)
+        ordered_raw = sorted(
+            raw_bundle.comments,
+            key=lambda item: (0 if (item.attached_image_url or item.attached_image_path) else 1),
+        )
+        base_cmts = list(ordered_raw[:target_n])
         fallback_templates = [
             ("@minhkhoi.98", "Đọc xong thấy đúng tâm lý số đông thật sự, ai trải qua rồi mới hiểu cảm giác này.", "842"),
             ("@linhchi.daily", "Mình từng rơi vào đúng hoàn cảnh y hệt chủ thớt luôn, mất gần nửa năm mới rút ra bài học.", "519"),
@@ -1070,18 +1176,25 @@ class GeminiContentBrainService(ILLMService):
             )
 
         voiced_cmts = self._assign_comment_voices(
-            normalized_cmts, req.host_voice_id, available_voice_ids, req.multi_voice_cast
+            normalized_cmts,
+            req.host_voice_id,
+            available_voice_ids,
+            req.multi_voice_cast,
+            req.male_voice_id,
+            req.female_voice_id,
         )
         op_sp = (
             self._expand_slang_vi(raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
             if req.expand_slang_and_translate
             else (raw_bundle.op_spoken_vi_text or raw_bundle.op_display_text)
-        )
+        ) or raw_bundle.op_display_text
         return raw_bundle.model_copy(
             update={
                 "op_author_handle": "@chuthot_threads" if req.anonymize_handles else raw_bundle.op_author_handle,
                 "op_spoken_vi_text": op_sp,
                 "op_voice_profile_id": req.host_voice_id,
+                "male_voice_id": req.male_voice_id,
+                "female_voice_id": req.female_voice_id,
                 "comments": voiced_cmts,
                 "used_api_key": False,
             }
@@ -1094,13 +1207,13 @@ class GeminiContentBrainService(ILLMService):
         append_cta_comment: str = "",
         anonymize_handles: bool = False,
     ) -> CutPlanDTO:
-        """Build timed CutPlanDTO from approved Threads OP post and selected replies."""
+        """Build timed CutPlanDTO from approved Threads OP post and selected replies (with card images)."""
         lines: List[NarrationLineDTO] = []
         cursor_ms = 0
 
         def _estimate_dur_ms(txt: str) -> int:
             words = max(1, len((txt or "").split()))
-            return max(2600, int(round((words / 2.75) * 1000.0)) + 450)
+            return max(1850, int(round((words / 3.55) * 1000.0)) + 200)
 
         # 1. Opening OP Post Card (seq_index = 0)
         op_disp = bundle.op_display_text.strip()
@@ -1114,16 +1227,17 @@ class GeminiContentBrainService(ILLMService):
                 rel_end_ms=cursor_ms + op_dur,
                 original_text=op_disp,
                 vi_text=op_spoken,
-                callout_label="Chủ thớt • Threads",
+                callout_label="",
                 voice_profile_override=bundle.op_voice_profile_id or None,
                 speaker_handle=op_handle,
                 display_card_text=op_disp,
                 likes_display=bundle.op_likes_display or "1,8K",
+                card_image_path=bundle.op_image_path or "",
                 is_op_post=True,
                 words=_distribute_words(op_spoken, cursor_ms, cursor_ms + op_dur),
             )
         )
-        cursor_ms += op_dur + 220
+        cursor_ms += op_dur + 110
 
         # 2. Selected Comment Cards (seq_index = 1..N)
         active_comments = [c for c in bundle.comments if c.selected]
@@ -1142,21 +1256,22 @@ class GeminiContentBrainService(ILLMService):
                     rel_end_ms=cursor_ms + c_dur,
                     original_text=c_disp,
                     vi_text=c_spoken,
-                    callout_label=f"Bình luận #{idx}",
+                    callout_label="",
                     voice_profile_override=c.voice_profile_id or None,
                     speaker_handle=c_handle,
                     display_card_text=c_disp,
                     likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
+                    card_image_path=c.attached_image_path or "",
                     is_op_post=False,
                     words=_distribute_words(c_spoken, cursor_ms, cursor_ms + c_dur),
                 )
             )
-            cursor_ms += c_dur + 220
+            cursor_ms += c_dur + 110
 
         # 3. Optional Engagement Hook CTA Card at the end
         clean_cta = append_cta_comment.strip()
         if clean_cta:
-            cta_spoken = self._expand_slang_vi(clean_cta)
+            cta_spoken = self._expand_slang_vi(clean_cta) or clean_cta
             cta_dur = _estimate_dur_ms(cta_spoken)
             seq = len(lines)
             lines.append(
@@ -1166,16 +1281,17 @@ class GeminiContentBrainService(ILLMService):
                     rel_end_ms=cursor_ms + cta_dur,
                     original_text=clean_cta,
                     vi_text=cta_spoken,
-                    callout_label="Câu hỏi cùng bàn luận",
+                    callout_label="",
                     voice_profile_override=bundle.op_voice_profile_id or None,
                     speaker_handle=op_handle,
                     display_card_text=clean_cta,
                     likes_display="Ghim",
+                    card_image_path="",
                     is_op_post=True,
                     words=_distribute_words(cta_spoken, cursor_ms, cursor_ms + cta_dur),
                 )
             )
-            cursor_ms += cta_dur + 200
+            cursor_ms += cta_dur + 120
 
         clip = ClipSpecDTO(
             clip_id=f"{project_id}_part_01",

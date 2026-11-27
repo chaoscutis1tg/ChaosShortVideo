@@ -252,6 +252,7 @@ class NarrationLineDTO(BaseContractDTO):
     speaker_handle: str = Field(default="", max_length=90)
     display_card_text: str = ""
     likes_display: str = Field(default="", max_length=32)
+    card_image_path: str = ""
     is_op_post: bool = False
     voice_speed_override: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_override: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
@@ -645,6 +646,10 @@ class ThreadCommentItemDTO(BaseContractDTO):
     spoken_vi_text: str = Field(default="", max_length=2500)
     likes_count: int = Field(default=0, ge=0)
     likes_display: str = Field(default="", max_length=32)
+    attached_image_url: str = ""
+    attached_image_path: str = ""
+    attached_image_media_url: str = ""
+    avatar_url: str = ""
     is_verified: bool = False
     is_ai_suggested: bool = False
     voice_profile_id: str = ""
@@ -662,8 +667,14 @@ class ScrapedThreadBundleDTO(BaseContractDTO):
     op_spoken_vi_text: str = Field(default="", max_length=3000)
     op_likes_display: str = Field(default="1,2K", max_length=32)
     op_replies_display: str = Field(default="86", max_length=32)
+    op_image_url: str = ""
+    op_image_path: str = ""
+    op_image_media_url: str = ""
+    op_avatar_url: str = ""
     op_is_verified: bool = False
-    op_voice_profile_id: str = "edge_hoai_my_fast"
+    op_voice_profile_id: str = "threads_nu_chinh"
+    male_voice_id: str = "threads_nam_chinh"
+    female_voice_id: str = "threads_nu_chinh"
     comments: List[ThreadCommentItemDTO] = Field(default_factory=list)
     used_api_key: bool = False
     extraction_note: str = ""
@@ -679,7 +690,9 @@ class ThreadsExtractRequestDTO(BaseContractDTO):
     expand_slang_and_translate: bool = True
     anonymize_handles: bool = False
     multi_voice_cast: bool = True
-    host_voice_id: str = "edge_hoai_my_fast"
+    host_voice_id: str = "threads_nu_chinh"
+    male_voice_id: str = "threads_nam_chinh"
+    female_voice_id: str = "threads_nu_chinh"
 
     @model_validator(mode="after")
     def _ensure_url_or_text(self) -> "ThreadsExtractRequestDTO":

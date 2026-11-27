@@ -238,14 +238,13 @@ class LocalPiperVITSProvider(ITTSProvider):
 
 
 class EdgeTTSProvider(ITTSProvider):
-    """Expressive DragonHD Neural Voices (`Brian`, `Remy`, `Ava`, `Vivienne`, `Emma`)
-    with Dramatic Prosody pauses, Studio Broadcast Mastering, and automatic Local VITS fallback.
+    """Native Vietnamese (`vi-VN-HoaiMyNeural`, `vi-VN-NamMinhNeural`) & Expressive DragonHD
+    Neural Voices with native prosodic speed control (`rate`), Studio Broadcast Mastering,
+    and multi-attempt automatic fallback for 100% stability.
     """
 
     DRAGON_FALLBACKS = {
-        "vi-vn-namminhneural": "en-US-BrianMultilingualNeural",
-        "vi-vn-hoaimyneural": "en-US-AvaMultilingualNeural",
-        "de-de-seraphinamultilingualneural": "en-US-AvaMultilingualNeural",
+        "de-de-seraphinamultilingualneural": "vi-VN-HoaiMyNeural",
     }
 
     def __init__(
@@ -272,38 +271,50 @@ class EdgeTTSProvider(ITTSProvider):
                 word_timestamps=_proportional_words(text or "...", dur_ms),
             )
 
-        primary_voice = profile.voice_id_or_sample_path or "en-US-BrianMultilingualNeural"
-        # Automatically upgrade legacy unstable vi-VN voices to 100%-reliable DragonHD voices
+        primary_voice = profile.voice_id_or_sample_path or "vi-VN-NamMinhNeural"
         mapped_voice = self.DRAGON_FALLBACKS.get(primary_voice.lower(), primary_voice)
-        backup_voice = (
-            "fr-FR-RemyMultilingualNeural"
-            if "male" in (profile.dsp_preset or "")
-            else "en-US-AvaMultilingualNeural"
+        is_male_voice = (
+            "namminh" in mapped_voice.lower()
+            or "male" in (profile.dsp_preset or "").lower()
+            or "nam " in (profile.display_name or "").lower()
         )
+        # Reliable 3-step chain: Primary -> Native Vietnamese peer -> DragonHD Multilingual backup
+        candidate_chain: List[str] = [mapped_voice]
+        native_vn_peer = "vi-VN-NamMinhNeural" if is_male_voice else "vi-VN-HoaiMyNeural"
+        dragon_backup = "en-US-BrianMultilingualNeural" if is_male_voice else "en-US-AvaMultilingualNeural"
+        for cand in (native_vn_peer, dragon_backup):
+            if cand.lower() not in {c.lower() for c in candidate_chain}:
+                candidate_chain.append(cand)
+
+        # Apply speed natively inside Neural TTS prosody (`rate="+25%"`) for crisp, natural fast speech!
+        clamped_speed = max(0.75, min(1.65, float(profile.speed_rate or 1.0)))
+        rate_pct = int(round((clamped_speed - 1.0) * 100.0))
+        edge_rate_str = f"{rate_pct:+d}%"
 
         tmp_mp3 = out_wav_path.with_suffix(".edge_raw.mp3")
         synthesized_ok = False
         last_err: Optional[Exception] = None
 
-        # Keep SSML clean (no SSML pitch/boundary quirks); apply speed & pitch in Studio DSP!
-        for attempt_idx, v_candidate in enumerate((mapped_voice, backup_voice), start=1):
+        for attempt_idx, v_candidate in enumerate(candidate_chain, start=1):
             tmp_mp3.unlink(missing_ok=True)
             try:
                 import edge_tts  # type: ignore
 
                 if attempt_idx > 1:
-                    await asyncio.sleep(0.35)
+                    await asyncio.sleep(0.28)
                 else:
-                    await asyncio.sleep(0.08)
+                    await asyncio.sleep(0.04)
 
                 async def _download_mp3() -> None:
-                    comm = edge_tts.Communicate(text=enhanced_txt, voice=v_candidate)
+                    comm = edge_tts.Communicate(
+                        text=enhanced_txt, voice=v_candidate, rate=edge_rate_str
+                    )
                     with open(tmp_mp3, "wb") as f_mp3:
                         async for chunk in comm.stream():
                             if chunk.get("type") == "audio":
                                 f_mp3.write(chunk["data"])
 
-                await asyncio.wait_for(_download_mp3(), timeout=12.0)
+                await asyncio.wait_for(_download_mp3(), timeout=14.0)
                 if not tmp_mp3.exists() or tmp_mp3.stat().st_size < 256:
                     raise VoiceSynthesisError("Dữ liệu âm thanh trả về rỗng.")
 
@@ -312,9 +323,9 @@ class EdgeTTSProvider(ITTSProvider):
                     StudioVoiceMasteringDSP.master_audio,
                     src_audio=tmp_mp3,
                     dst_wav=out_wav_path,
-                    speed_rate=profile.speed_rate,
+                    speed_rate=1.0,
                     pitch_semitones=semitones,
-                    preset=profile.dsp_preset or "movie_male_deep",
+                    preset=profile.dsp_preset or ("tiktok_male_crisp" if is_male_voice else "tiktok_punchy_bright"),
                     src_sample_rate=24000,
                 )
                 synthesized_ok = True

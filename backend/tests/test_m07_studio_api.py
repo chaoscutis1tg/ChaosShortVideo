@@ -899,37 +899,50 @@ def test_m07_uc16_threads_extract_bg_library_multivoice_and_floating_cards(tmp_p
     studio_app = create_studio_app(custom_settings=test_settings)
 
     with TestClient(studio_app) as client:
-        # 1. Extract & Curate pasted Threads post + teen-code expansion + multi-voice cast
+        # 1. Extract & Curate pasted Threads post + teen-code expansion + strict 2 main voices (Nam & Nữ)
+        cmt_photo = tmp_path / "guitar_fingers.jpg"
+        from PIL import Image as _PILImage
+
+        _PILImage.new("RGB", (800, 600), (210, 145, 95)).save(cmt_photo, format="JPEG")
+
         ext_res = client.post(
             "/api/threads/extract",
             json={
                 "post_url": "",
                 "raw_pasted_text": (
-                    "@minhanh: Mn ơi 26 tuổi mới tập đàn Guitar thì có muộn ko ạ?\n\n"
-                    "@tuankiet: Ko hề muộn nha b, tập 20 phút mỗi tối là chơi đc ngay!\n\n"
-                    "@linhchi: Đi làm cty về tập đàn cực kỳ xả stress luôn."
+                    "@minhanh: Mn ơi 26 tuổi mới tập đàn Guitar thì có muộn ko ạ? 🙂\n\n"
+                    "@tuankiet: Ko hề muộn nha b, tập 20 phút mỗi tối là chơi đc ngay! =))\n\n"
+                    "@linhchi: Chơi đàn thì chấp nhận xấu tay nhaa 🤣\n\n"
+                    "@hoangnam: Đi làm cty về tập đàn cực kỳ xả stress luôn."
                 ),
-                "max_comments": 2,
+                "max_comments": 3,
                 "filter_vibe": "FUNNY_VIRAL",
                 "expand_slang_and_translate": True,
                 "anonymize_handles": False,
                 "multi_voice_cast": True,
-                "host_voice_id": "local_vais_studio",
+                "host_voice_id": "threads_nu_chinh",
+                "male_voice_id": "threads_nam_chinh",
+                "female_voice_id": "threads_nu_chinh",
             },
         )
         assert ext_res.status_code == 200
         bundle = ext_res.json()
         assert "mọi người" in bundle["op_spoken_vi_text"].lower()
         assert "không" in bundle["op_spoken_vi_text"].lower()
-        assert len(bundle["comments"]) == 2
-        assert "được" in bundle["comments"][0]["spoken_vi_text"].lower()
-        assert "công ty" in bundle["comments"][1]["spoken_vi_text"].lower()
+        assert "=))" not in bundle["comments"][0]["spoken_vi_text"]
+        assert len(bundle["comments"]) == 3
 
-        # Assert multi-voice casting assigned distinct voices, then switch to pre-bundled local_vais_studio for offline speed
-        assert bundle["comments"][0]["voice_profile_id"] != bundle["op_voice_profile_id"]
+        # Assert STRICTLY ONLY the 2 main voices (threads_nam_chinh & threads_nu_chinh) are used!
+        assigned_voices = {c["voice_profile_id"] for c in bundle["comments"]}
+        assert assigned_voices.issubset({"threads_nam_chinh", "threads_nu_chinh"})
+        assert bundle["comments"][0]["voice_profile_id"] == "threads_nam_chinh"
+        assert bundle["comments"][1]["voice_profile_id"] == "threads_nu_chinh"
+
+        # Attach a real comment photo on Comment #2 and switch to pre-bundled offline voice for fast unit test
+        bundle["comments"][1]["attached_image_path"] = str(cmt_photo)
         bundle["op_voice_profile_id"] = "local_vais_studio"
-        bundle["comments"][0]["voice_profile_id"] = "local_vais_studio"
-        bundle["comments"][1]["voice_profile_id"] = "local_vais_studio"
+        for c_item in bundle["comments"]:
+            c_item["voice_profile_id"] = "local_vais_studio"
 
         # 2. Upload Background Video to persistent Kho Video Nền
         with open(bg_mp4, "rb") as f_bg:
@@ -969,13 +982,14 @@ def test_m07_uc16_threads_extract_bg_library_multivoice_and_floating_cards(tmp_p
                 "append_cta_comment": "",
                 "enable_card_pop_sfx": True,
                 "voice_profile_id": "local_vais_studio",
+                "voice_speed_global": 1.25,
                 "bgm_preset_id": "bgm_lofi_story",
                 "bgm_volume": 0.05,
                 "subtitle_style": "NONE",
                 "layout_config": {
                     "aspect_ratio": "9:16",
                     "show_top_banner": False,
-                    "threads_card_theme": "DARK_THREADS",
+                    "threads_card_theme": "LIGHT_THREADS",
                     "threads_anonymize_handles": False,
                     "threads_bg_dim": 0.30,
                 },

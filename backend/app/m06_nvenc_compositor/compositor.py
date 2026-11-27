@@ -665,23 +665,11 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         cap = cv2.VideoCapture(str(bg_video_path))
         last_bg = np.full((canvas_h, canvas_w, 3), (18, 22, 30), dtype=np.uint8)
         bright_keep = max(0.22, min(1.0, 1.0 - float(bg_dim)))
-        cached_loop_frames: List[np.ndarray] = []
-        using_cached_loop = False
-        cache_cursor = 0
 
         def _next_bg_frame() -> np.ndarray:
-            nonlocal last_bg, using_cached_loop, cache_cursor
-            if using_cached_loop and cached_loop_frames:
-                frm_out = cached_loop_frames[cache_cursor % len(cached_loop_frames)]
-                cache_cursor += 1
-                return frm_out
-
+            nonlocal last_bg
             ok, frm = cap.read()
             if not ok or frm is None:
-                if cached_loop_frames:
-                    using_cached_loop = True
-                    cache_cursor = 1
-                    return cached_loop_frames[0]
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frm = cap.read()
             if ok and frm is not None:
@@ -695,10 +683,6 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 if bright_keep < 0.99:
                     cropped = cv2.convertScaleAbs(cropped, alpha=bright_keep, beta=0.0)
                 last_bg = cropped
-                if len(cached_loop_frames) < 180:
-                    cached_loop_frames.append(cropped)
-                else:
-                    cached_loop_frames.clear()
             return last_bg
 
         def _load_card_roi(path: Path):

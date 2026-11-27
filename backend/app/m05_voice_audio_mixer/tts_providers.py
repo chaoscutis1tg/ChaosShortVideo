@@ -21,6 +21,7 @@ from app.m00_core_contracts import (
     VoiceProfileDTO,
     VoiceSynthesisError,
     VoiceTier,
+    WORKSPACE_ROOT,
     WordTimestampDTO,
     get_settings,
 )
@@ -124,12 +125,14 @@ class LocalPiperVITSProvider(ITTSProvider):
         p = Path(clean_ref)
         if p.is_absolute() and p.exists():
             return p, speaker_id
-        candidate = self._settings.assets_dir / "tts_models" / p.name
+        model_fname = p.name if p.name.endswith(".onnx") else "vi_VN-vais1000-medium.onnx"
+        candidate = self._settings.assets_dir / "tts_models" / model_fname
         if candidate.exists():
             return candidate, speaker_id
-        fallback_target = self._settings.workspace_root / "assets" / "tts_models" / (
-            p.name if p.name.endswith(".onnx") else "vi_VN-vais1000-medium.onnx"
-        )
+        shared_bundled = WORKSPACE_ROOT / "assets" / "tts_models" / model_fname
+        if shared_bundled.exists():
+            return shared_bundled, speaker_id
+        fallback_target = self._settings.workspace_root / "assets" / "tts_models" / model_fname
         return fallback_target, speaker_id
 
     @staticmethod
@@ -692,7 +695,7 @@ class F5VoiceCloneGPUProvider(ITTSProvider):
 
 
 class CloudAPITTSProvider(ITTSProvider):
-    """Commercial Vietnamese Narration APIs (ElevenLabs, FPT.AI)."""
+    """Commercial Vietnamese Narration APIs (ElevenLabs, FPT.AI, Vbee)."""
 
     def __init__(self, settings: Optional[StudioSettings] = None) -> None:
         self._settings = settings or get_settings()
@@ -711,6 +714,10 @@ class CloudAPITTSProvider(ITTSProvider):
                 await self._call_elevenlabs(enhanced, profile.voice_id_or_sample_path, tmp_audio)
             elif vendor == "fpt":
                 await self._call_fpt_ai(
+                    enhanced, profile.voice_id_or_sample_path, profile.speed_rate, tmp_audio
+                )
+            elif vendor == "vbee":
+                await self._call_vbee(
                     enhanced, profile.voice_id_or_sample_path, profile.speed_rate, tmp_audio
                 )
             else:
@@ -733,6 +740,38 @@ class CloudAPITTSProvider(ITTSProvider):
             duration_ms=dur_ms,
             word_timestamps=_proportional_words(text, dur_ms),
         )
+
+    async def _call_vbee(self, text: str, voice_code: str, speed: float, dst: Path) -> None:
+        if not self._settings.vbee_api_key or not self._settings.vbee_app_id:
+            raise VoiceSynthesisError("Chưa cấu hình VBEE_API_KEY và VBEE_APP_ID trong .env.")
+        headers = {
+            "Authorization": f"Bearer {self._settings.vbee_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "app_id": self._settings.vbee_app_id,
+            "response_type": "direct",
+            "audio_type": "mp3",
+            "bitrate": 128,
+            "voice_code": voice_code or "hn_male_manhdung_news_48k-fhg",
+            "input_text": text,
+            "speed_rate": str(round(max(0.8, min(1.4, speed)), 2)),
+        }
+        async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+            res = await client.post("https://vbee.vn/api/v1/tts", headers=headers, json=payload)
+            if res.status_code != 200:
+                raise VoiceSynthesisError(f"Vbee TTS API lỗi ({res.status_code})")
+            body = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
+            audio_link = (body.get("result") or {}).get("audio_link")
+            if audio_link:
+                dl = await client.get(audio_link)
+                if dl.status_code == 200 and len(dl.content) > 512:
+                    dst.write_bytes(dl.content)
+                    return
+            if len(res.content) > 512 and not body:
+                dst.write_bytes(res.content)
+                return
+            raise VoiceSynthesisError("Vbee TTS không trả về dữ liệu âm thanh hợp lệ.")
 
     async def _call_elevenlabs(self, text: str, voice_id: str, dst: Path) -> None:
         if not self._settings.elevenlabs_api_key:

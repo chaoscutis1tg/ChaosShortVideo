@@ -263,6 +263,8 @@ class APIKeysUpdateRequest(BaseModel):
     pixabay_api_key: Optional[str] = None
     elevenlabs_api_key: Optional[str] = None
     fpt_ai_api_key: Optional[str] = None
+    vbee_api_key: Optional[str] = None
+    vbee_app_id: Optional[str] = None
 
 
 class GPUSelectRequest(BaseModel):
@@ -530,6 +532,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 "pixabay": bool(settings.pixabay_api_key),
                 "elevenlabs": bool(settings.elevenlabs_api_key),
                 "fpt_ai": bool(settings.fpt_ai_api_key),
+                "vbee": bool(settings.vbee_api_key and settings.vbee_app_id),
             },
         }
 
@@ -562,6 +565,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             "PIXABAY_API_KEY": req.pixabay_api_key,
             "ELEVENLABS_API_KEY": req.elevenlabs_api_key,
             "FPT_AI_API_KEY": req.fpt_ai_api_key,
+            "VBEE_API_KEY": req.vbee_api_key,
+            "VBEE_APP_ID": req.vbee_app_id,
         }
         for env_key, val in updates.items():
             if val is not None:
@@ -574,6 +579,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         settings.pixabay_api_key = existing.get("PIXABAY_API_KEY", settings.pixabay_api_key)
         settings.elevenlabs_api_key = existing.get("ELEVENLABS_API_KEY", settings.elevenlabs_api_key)
         settings.fpt_ai_api_key = existing.get("FPT_AI_API_KEY", settings.fpt_ai_api_key)
+        settings.vbee_api_key = existing.get("VBEE_API_KEY", settings.vbee_api_key)
+        settings.vbee_app_id = existing.get("VBEE_APP_ID", settings.vbee_app_id)
 
         env_lines = [f"{k}={v}" for k, v in existing.items()]
         env_path.write_text("\n".join(env_lines) + "\n", encoding="utf-8")

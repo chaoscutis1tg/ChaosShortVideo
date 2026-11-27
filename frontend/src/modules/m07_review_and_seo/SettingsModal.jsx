@@ -14,6 +14,8 @@ export default function SettingsModal({
   const [pixabayKey, setPixabayKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
   const [fptKey, setFptKey] = useState('');
+  const [vbeeKey, setVbeeKey] = useState('');
+  const [vbeeAppId, setVbeeAppId] = useState('');
   const [saving, setSaving] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
 
@@ -27,6 +29,8 @@ export default function SettingsModal({
       if (pixabayKey.trim()) payload.pixabay_api_key = pixabayKey.trim();
       if (elevenKey.trim()) payload.elevenlabs_api_key = elevenKey.trim();
       if (fptKey.trim()) payload.fpt_ai_api_key = fptKey.trim();
+      if (vbeeKey.trim()) payload.vbee_api_key = vbeeKey.trim();
+      if (vbeeAppId.trim()) payload.vbee_app_id = vbeeAppId.trim();
 
       const updated = await studioApi.updateApiKeys(payload);
       onUpdated(updated);
@@ -183,6 +187,33 @@ export default function SettingsModal({
               placeholder="FPT_AI_API_KEY"
               value={fptKey}
               onChange={(e) => setFptKey(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <div className="form-group">
+            <label className="form-label">
+              Vbee TTS API Key ({keys.vbee ? 'Đã có' : 'Tùy chọn'})
+            </label>
+            <input
+              type="password"
+              className="input"
+              placeholder="VBEE_API_KEY"
+              value={vbeeKey}
+              onChange={(e) => setVbeeKey(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">
+              Vbee App ID ({keys.vbee ? 'Đã có' : 'Đi kèm Vbee Key'})
+            </label>
+            <input
+              type="text"
+              className="input"
+              placeholder="VBEE_APP_ID"
+              value={vbeeAppId}
+              onChange={(e) => setVbeeAppId(e.target.value)}
             />
           </div>
         </div>

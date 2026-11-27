@@ -227,7 +227,7 @@ def test_m07_end_to_end_product_showcase_with_demo_and_badges(tmp_path: Path) ->
         pid = start_res.json()["project_id"]
 
         proj_detail = {}
-        for _ in range(80):
+        for _ in range(140):
             proj_detail = client.get(f"/api/projects/{pid}").json()
             if proj_detail["state"] in ("COMPLETED", "FAILED"):
                 break

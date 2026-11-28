@@ -2,9 +2,14 @@
 
 from pathlib import Path
 from typing import Optional
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from app.m00_core_contracts import CANVAS_HEIGHT, CANVAS_WIDTH, CoverTemplateStyle
+from app.m00_core_contracts import (
+    AmbienceOverlayStyle,
+    CANVAS_HEIGHT,
+    CANVAS_WIDTH,
+    CoverTemplateStyle,
+)
 
 
 def _load_vn_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -563,4 +568,89 @@ class StudioOverlayArtist:
 
         canvas.convert("RGB").save(out_png, format="PNG")
         return out_png
+
+    @staticmethod
+    def apply_ambience_and_story_bar(
+        base_rgba: Image.Image,
+        ambience_overlay: AmbienceOverlayStyle = AmbienceOverlayStyle.NONE,
+        story_progress_bar_enabled: bool = False,
+        total_segments: int = 5,
+        active_progress: float = 0.44,
+        safe_zone_guard: bool = True,
+    ) -> Image.Image:
+        """Apply opt-in Cinematic Ambience Overlay & Top Segmented Story Progress Bar for 1080p snapshots."""
+        out = base_rgba.convert("RGBA")
+        if ambience_overlay == AmbienceOverlayStyle.NONE and not story_progress_bar_enabled:
+            return out
+
+        w, h = out.size
+
+        if ambience_overlay == AmbienceOverlayStyle.GOLDEN_BOKEH:
+            fx = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            fd = ImageDraw.Draw(fx)
+            spots = [
+                (0.16, 0.18, 44, (254, 215, 102, 72)),
+                (0.84, 0.14, 58, (251, 191, 36, 58)),
+                (0.12, 0.56, 36, (254, 240, 138, 66)),
+                (0.88, 0.64, 50, (245, 158, 11, 62)),
+                (0.26, 0.82, 42, (253, 224, 71, 60)),
+                (0.74, 0.86, 48, (251, 191, 36, 54)),
+            ]
+            for rx, ry, rad, col in spots:
+                cx, cy = int(w * rx), int(h * ry)
+                fd.ellipse([(cx - rad, cy - rad), (cx + rad, cy + rad)], fill=col)
+            out = Image.alpha_composite(out, fx.filter(ImageFilter.GaussianBlur(radius=14)))
+        elif ambience_overlay == AmbienceOverlayStyle.NIGHT_RAIN:
+            fx = Image.new("RGBA", (w, h), (12, 22, 38, 28))
+            fd = ImageDraw.Draw(fx)
+            for i in range(42):
+                sx = (i * 97 + 41) % w
+                sy = (i * 173 + 29) % h
+                sl = 32 + (i % 5) * 9
+                fd.line([(sx, sy), (sx - 9, sy + sl)], fill=(186, 230, 253, 95), width=2)
+            out = Image.alpha_composite(out, fx)
+        elif ambience_overlay == AmbienceOverlayStyle.WARM_LIGHT_LEAK:
+            fx = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            fd = ImageDraw.Draw(fx)
+            r1, r2 = int(w * 0.52), int(w * 0.46)
+            fd.ellipse([(-r1 // 2, -r1 // 3), (r1, r1)], fill=(251, 146, 60, 88))
+            fd.ellipse([(w - r2, h - r2), (w + r2 // 2, h + r2 // 3)], fill=(244, 63, 94, 72))
+            out = Image.alpha_composite(out, fx.filter(ImageFilter.GaussianBlur(radius=68)))
+        elif ambience_overlay == AmbienceOverlayStyle.VINTAGE_FILM_35MM:
+            fx = Image.new("RGBA", (w, h), (245, 208, 144, 22))
+            fd = ImageDraw.Draw(fx)
+            fd.rectangle([(0, 0), (w - 1, h - 1)], outline=(10, 12, 18, 125), width=22)
+            out = Image.alpha_composite(out, fx)
+
+        if story_progress_bar_enabled:
+            bar_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            bd = ImageDraw.Draw(bar_layer)
+            is_vert = h > int(w * 1.5)
+            pad_x = int(w * 0.045)
+            bar_y = int(h * (0.032 if (safe_zone_guard and is_vert) else 0.022))
+            bar_h = max(6, int(h * 0.0038))
+            n_seg = max(2, min(12, int(total_segments)))
+            gap = 6
+            avail_w = max(80, w - 2 * pad_x - gap * (n_seg - 1))
+            seg_w = avail_w / float(n_seg)
+            overall = max(0.05, min(0.98, float(active_progress))) * n_seg
+            for s_i in range(n_seg):
+                sx0 = int(round(pad_x + s_i * (seg_w + gap)))
+                sx1 = int(round(sx0 + seg_w))
+                bd.rounded_rectangle(
+                    [(sx0, bar_y), (sx1, bar_y + bar_h)],
+                    radius=bar_h // 2,
+                    fill=(255, 255, 255, 78),
+                )
+                seg_fill = max(0.0, min(1.0, overall - s_i))
+                if seg_fill > 0.02:
+                    fx1 = max(sx0 + bar_h, int(round(sx0 + (sx1 - sx0) * seg_fill)))
+                    bd.rounded_rectangle(
+                        [(sx0, bar_y), (min(sx1, fx1), bar_y + bar_h)],
+                        radius=bar_h // 2,
+                        fill=(255, 255, 255, 245),
+                    )
+            out = Image.alpha_composite(out, bar_layer)
+
+        return out
 

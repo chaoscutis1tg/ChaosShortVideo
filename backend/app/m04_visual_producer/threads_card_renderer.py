@@ -7,6 +7,8 @@ line, and clean authentic engagement metrics (without artificial 'Bình luận #
 
 import asyncio
 import hashlib
+import json
+import math
 from pathlib import Path
 import re
 from typing import List, Optional, Tuple
@@ -560,6 +562,353 @@ class ThreadsCardVisualRenderer:
         return out_png
 
     @classmethod
+    def render_vinyl_lyric_card_png(
+        cls,
+        line: NarrationLineDTO,
+        out_png: Path,
+        anonymize_handles: bool = False,
+        canvas_w: int = 1080,
+        canvas_h: int = 1920,
+        sentences_override: Optional[List[str]] = None,
+        active_sentence_idx: Optional[int] = None,
+        progress_ratio: float = 0.35,
+        safe_zone_guard: bool = True,
+        export_spinning_disc: bool = False,
+    ) -> Path:
+        """Render Midnight Vinyl Turntable + Spotify Live Lyrics card (and optional 256px spinning disc sprite)."""
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        probe = ImageDraw.Draw(canvas)
+
+        is_vertical_916 = canvas_h > int(canvas_w * 1.5)
+        if safe_zone_guard and is_vertical_916:
+            card_w = int(canvas_w * 0.84)
+            card_x = int(canvas_w * 0.035)
+            card_y = int(canvas_h * 0.095)
+            card_h = int(canvas_h * 0.745)
+        else:
+            card_w = int(canvas_w * 0.86)
+            card_x = (canvas_w - card_w) // 2
+            card_y = int(canvas_h * 0.08)
+            card_h = int(canvas_h * 0.82)
+
+        raw_handle = "@Dai_Dem_Khuya" if anonymize_handles else (line.speaker_handle or "@Midnight_Radio").strip()
+        disp_handle = raw_handle.lstrip("@").replace("_", " ")[:26]
+
+        # Drop shadow
+        shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [(card_x + 4, card_y + 14), (card_x + card_w + 4, card_y + card_h + 14)],
+            radius=42,
+            fill=(0, 0, 0, 160),
+        )
+        canvas = Image.alpha_composite(canvas, shadow.filter(ImageFilter.GaussianBlur(radius=20)))
+
+        layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(layer)
+        cd.rounded_rectangle(
+            [(card_x, card_y), (card_x + card_w, card_y + card_h)],
+            radius=40,
+            fill=(12, 15, 24, 236),
+            outline=(71, 85, 105, 195),
+            width=2,
+        )
+
+        f_tag = _load_card_font(21, bold=True)
+        f_title = _load_card_font(26, bold=True)
+        f_lyric_bold = _load_card_font(33, bold=True)
+        f_lyric_dim = _load_card_font(30, bold=False)
+        f_time = _load_card_font(19, bold=False)
+
+        # Header badge
+        cd.text((card_x + 36, card_y + 26), "♫ ĐÀI ĐÊM KHUYA • VINYL & LYRICS", font=f_tag, fill=(56, 189, 248, 245))
+        bb_h = cd.textbbox((0, 0), disp_handle, font=f_title)
+        cd.text(
+            (card_x + card_w - (bb_h[2] - bb_h[0]) - 36, card_y + 24),
+            disp_handle,
+            font=f_title,
+            fill=(226, 232, 240, 235),
+        )
+
+        # Build 248px Vinyl Record Sprite
+        disc_sz = 248
+        disc_cx = card_x + card_w // 2
+        disc_cy = card_y + 206
+        disc_im = Image.new("RGBA", (disc_sz, disc_sz), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(disc_im)
+        dd.ellipse([(2, 2), (disc_sz - 3, disc_sz - 3)], fill=(18, 20, 26, 255), outline=(94, 106, 128, 220), width=3)
+        # Diagonal vinyl specular sheen wedges
+        dd.pieslice([(8, 8), (disc_sz - 9, disc_sz - 9)], start=28, end=62, fill=(52, 60, 78, 120))
+        dd.pieslice([(8, 8), (disc_sz - 9, disc_sz - 9)], start=208, end=242, fill=(52, 60, 78, 120))
+        for r_g in range(48, disc_sz // 2 - 8, 11):
+            dd.ellipse(
+                [(disc_sz // 2 - r_g, disc_sz // 2 - r_g), (disc_sz // 2 + r_g, disc_sz // 2 + r_g)],
+                outline=(64, 74, 92, 95),
+                width=1,
+            )
+
+        # Center Vinyl Label / Attached Cover Art
+        lbl_r = 48
+        c0 = disc_sz // 2 - lbl_r
+        c1 = disc_sz // 2 + lbl_r
+        art_src = line.card_image_path or ("" if anonymize_handles else line.speaker_avatar_path)
+        drew_art = False
+        if art_src and Path(art_src).exists():
+            try:
+                with Image.open(art_src) as raw_a:
+                    art_fit = ImageOps.fit(
+                        ImageOps.exif_transpose(raw_a).convert("RGBA"),
+                        (lbl_r * 2, lbl_r * 2),
+                        method=Image.Resampling.LANCZOS,
+                    )
+                amask = Image.new("L", (lbl_r * 2, lbl_r * 2), 0)
+                ImageDraw.Draw(amask).ellipse([(0, 0), (lbl_r * 2 - 1, lbl_r * 2 - 1)], fill=255)
+                disc_im.paste(art_fit, (c0, c0), amask)
+                drew_art = True
+            except Exception:
+                drew_art = False
+        if not drew_art:
+            h_d = int(hashlib.md5(disp_handle.encode("utf-8")).hexdigest()[:6], 16)
+            col_a, col_b = AVATAR_PALETTE[h_d % len(AVATAR_PALETTE)]
+            dd.ellipse([(c0, c0), (c1, c1)], fill=(*col_a, 255), outline=(255, 255, 255, 190), width=2)
+            dd.ellipse([(c0 + 12, c0 + 12), (c1 - 12, c1 - 12)], fill=(*col_b, 255))
+        # Center spindle hole & marker dot so rotation is clearly visible to the human eye!
+        dd.ellipse(
+            [(disc_sz // 2 - 8, disc_sz // 2 - 8), (disc_sz // 2 + 8, disc_sz // 2 + 8)],
+            fill=(12, 15, 24, 255),
+            outline=(226, 232, 240, 220),
+            width=2,
+        )
+        dd.ellipse([(disc_sz // 2 + 18, disc_sz // 2 - 5), (disc_sz // 2 + 26, disc_sz // 2 + 3)], fill=(250, 204, 21, 235))
+
+        eq_y = card_y + 368
+        eq_x0 = card_x + 84
+        eq_x1 = card_x + card_w - 84
+
+        if export_spinning_disc:
+            disc_png = out_png.parent / "vinyl_disc_sprite.png"
+            meta_json = out_png.parent / "vinyl_meta.json"
+            if not disc_png.exists():
+                disc_im.save(disc_png, format="PNG", compress_level=1)
+                meta_json.write_text(
+                    json.dumps(
+                        {
+                            "cx": disc_cx,
+                            "cy": disc_cy,
+                            "size": disc_sz,
+                            "eq_y": eq_y,
+                            "eq_x0": eq_x0,
+                            "eq_x1": eq_x1,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+        else:
+            # Snapshot mode: composite static vinyl + static equalizer bars directly
+            layer.alpha_composite(disc_im, dest=(disc_cx - disc_sz // 2, disc_cy - disc_sz // 2))
+            n_b = 22
+            span_w = max(80, eq_x1 - eq_x0)
+            step_x = span_w / float(n_b)
+            for bi in range(n_b):
+                bh = int(10 + 22 * (0.5 + 0.5 * math.sin(bi * 0.72)))
+                bx0 = int(eq_x0 + bi * step_x)
+                cd.rounded_rectangle(
+                    [(bx0, eq_y - bh // 2), (bx0 + 7, eq_y + bh // 2)],
+                    radius=3,
+                    fill=(56, 189, 248, 220),
+                )
+
+        # Brushed-silver Turntable Tonearm on the right of the disc
+        arm_px = disc_cx + disc_sz // 2 + 34
+        arm_py = disc_cy - disc_sz // 2 + 18
+        cd.ellipse([(arm_px - 14, arm_py - 14), (arm_px + 14, arm_py + 14)], fill=(148, 163, 184, 235))
+        cd.line([(arm_px, arm_py), (arm_px - 22, disc_cy + 34)], fill=(203, 213, 225, 235), width=5)
+        cd.line([(arm_px - 22, disc_cy + 34), (disc_cx + disc_sz // 2 - 22, disc_cy + 58)], fill=(226, 232, 240, 245), width=5)
+
+        # Spotify Synced Lyrics Area
+        body_text = (line.display_card_text or line.original_text or line.vi_text).strip()
+        lyric_box_w = card_w - 84
+        if sentences_override and len(sentences_override) > 1 and active_sentence_idx is not None:
+            tagged = _wrap_tagged_sentences(probe, sentences_override, f_lyric_bold, lyric_box_w, max_lines=9)
+        else:
+            wrapped = _wrap_pixel_lines(probe, body_text, f_lyric_bold, lyric_box_w, max_lines=9)
+            tagged = [(w_l, 0) for w_l in wrapped]
+
+        ly_top = card_y + 408
+        ly_bot = card_y + card_h - 68
+        line_h = 46
+        total_ly_h = len(tagged) * line_h
+        cur_y = max(ly_top, ly_top + (max(line_h, ly_bot - ly_top) - total_ly_h) // 2)
+
+        for w_ln, s_idx in tagged:
+            if not w_ln:
+                cur_y += 20
+                continue
+            if cur_y + 34 > ly_bot:
+                break
+            is_act = active_sentence_idx is None or s_idx == active_sentence_idx
+            use_f = f_lyric_bold if is_act else f_lyric_dim
+            col = (255, 255, 255, 255) if is_act else (148, 163, 184, 130)
+            bb_l = cd.textbbox((0, 0), w_ln, font=use_f)
+            lx = card_x + (card_w - (bb_l[2] - bb_l[0])) // 2
+            cd.text((lx, cur_y), w_ln, font=use_f, fill=col)
+            cur_y += line_h
+
+        # Bottom Spotify Progress Scrubber
+        bar_y = card_y + card_h - 38
+        bx0, bx1 = card_x + 48, card_x + card_w - 48
+        p_clamped = max(0.04, min(1.0, float(progress_ratio)))
+        bx_fill = int(bx0 + (bx1 - bx0) * p_clamped)
+        cd.rounded_rectangle([(bx0, bar_y), (bx1, bar_y + 6)], radius=3, fill=(51, 65, 85, 210))
+        cd.rounded_rectangle([(bx0, bar_y), (bx_fill, bar_y + 6)], radius=3, fill=(56, 189, 248, 255))
+        cd.ellipse([(bx_fill - 7, bar_y - 4), (bx_fill + 7, bar_y + 10)], fill=(255, 255, 255, 255))
+        cd.text((bx0, bar_y - 24), "LIVE LYRICS", font=f_time, fill=(148, 163, 184, 200))
+
+        canvas = Image.alpha_composite(canvas, layer)
+        canvas.save(out_png, format="PNG", compress_level=1)
+        return out_png
+
+    @classmethod
+    def render_quiz_card_png(
+        cls,
+        line: NarrationLineDTO,
+        out_png: Path,
+        canvas_w: int = 1080,
+        canvas_h: int = 1920,
+        countdown_remaining: Optional[int] = None,
+        countdown_total: int = 3,
+        safe_zone_guard: bool = True,
+    ) -> Path:
+        """Render an interactive Quiz / Blind Test card with styled A/B/C options, 3-2-1 timer ring, or Emerald Answer reveal."""
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        probe = ImageDraw.Draw(canvas)
+
+        is_vertical_916 = canvas_h > int(canvas_w * 1.5)
+        if safe_zone_guard and is_vertical_916:
+            card_w = int(canvas_w * 0.84)
+            card_x = int(canvas_w * 0.035)
+        else:
+            card_w = int(canvas_w * 0.86)
+            card_x = (canvas_w - card_w) // 2
+
+        raw_txt = (line.display_card_text or line.original_text or line.vi_text).strip()
+        spk_low = (line.speaker_handle or "").lower()
+        is_answer = spk_low.startswith("@dap_an") or raw_txt.startswith("✅") or "đáp án đúng" in raw_txt.lower()
+
+        f_badge = _load_card_font(23, bold=True)
+        f_q = _load_card_font(33, bold=True)
+        f_opt = _load_card_font(29, bold=False)
+        f_cd = _load_card_font(54, bold=True)
+
+        # Split question prompt vs option lines (`A. ...`, `B. ...`, `C. ...`)
+        raw_lines = [ln.strip() for ln in raw_txt.splitlines() if ln.strip()]
+        head_text = raw_lines[0] if raw_lines else raw_txt
+        option_rows = raw_lines[1:] if len(raw_lines) > 1 else []
+
+        inner_w = card_w - 76
+        wrapped_head = _wrap_pixel_lines(probe, head_text, f_q, inner_w, max_lines=6)
+        wrapped_opts: List[List[str]] = [
+            _wrap_pixel_lines(probe, opt, f_opt, inner_w - 36, max_lines=3) for opt in option_rows[:4]
+        ]
+
+        head_h = len(wrapped_head) * 45
+        opts_h = sum(len(wo) * 39 + 28 for wo in wrapped_opts) + (16 if wrapped_opts else 0)
+        timer_h = 148 if countdown_remaining is not None else 24
+        card_h = min(int(canvas_h * 0.78), 106 + head_h + opts_h + timer_h + 36)
+        card_y = max(int(canvas_h * 0.10), (canvas_h - card_h) // 2 - int(canvas_h * 0.02))
+
+        shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [(card_x + 4, card_y + 14), (card_x + card_w + 4, card_y + card_h + 14)],
+            radius=38,
+            fill=(0, 0, 0, 155),
+        )
+        canvas = Image.alpha_composite(canvas, shadow.filter(ImageFilter.GaussianBlur(radius=18)))
+
+        layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(layer)
+        bg_col = (10, 38, 32, 244) if is_answer else (15, 23, 42, 244)
+        bd_col = (52, 211, 153, 235) if is_answer else (56, 189, 248, 215)
+        cd.rounded_rectangle(
+            [(card_x, card_y), (card_x + card_w, card_y + card_h)],
+            radius=36,
+            fill=bg_col,
+            outline=bd_col,
+            width=3,
+        )
+
+        badge_txt = (
+            "🏆 KẾT QUẢ CHÍNH XÁC"
+            if is_answer
+            else ("⚡ THỬ THÁCH PHẢN XẠ" if line.is_op_post else "⏱ ĐỐ VUI PHẢN XẠ • COMMENT ĐÁP ÁN!")
+        )
+        pill_col = (16, 185, 129, 240) if is_answer else (2, 132, 199, 240)
+        bb_b = cd.textbbox((0, 0), badge_txt, font=f_badge)
+        pw = (bb_b[2] - bb_b[0]) + 34
+        cd.rounded_rectangle(
+            [(card_x + 36, card_y + 26), (card_x + 36 + pw, card_y + 68)],
+            radius=21,
+            fill=pill_col,
+        )
+        cd.text((card_x + 53, card_y + 33), badge_txt, font=f_badge, fill=(255, 255, 255, 255))
+
+        cur_y = card_y + 92
+        for hl in wrapped_head:
+            cd.text((card_x + 38, cur_y), hl, font=f_q, fill=(248, 250, 252, 255))
+            cur_y += 45
+
+        cur_y += 12
+        for wo in wrapped_opts:
+            bh_opt = len(wo) * 39 + 18
+            opt_bg = (6, 78, 59, 225) if is_answer else (30, 41, 59, 235)
+            opt_bd = (52, 211, 153, 180) if is_answer else (100, 116, 139, 165)
+            cd.rounded_rectangle(
+                [(card_x + 38, cur_y), (card_x + card_w - 38, cur_y + bh_opt)],
+                radius=18,
+                fill=opt_bg,
+                outline=opt_bd,
+                width=2,
+            )
+            oy = cur_y + 9
+            for ol in wo:
+                cd.text((card_x + 58, oy), ol, font=f_opt, fill=(241, 245, 249, 255))
+                oy += 39
+            cur_y += bh_opt + 10
+
+        if countdown_remaining is not None:
+            ring_r = 52
+            rcx = card_x + card_w // 2
+            rcy = card_y + card_h - 80
+            cd.ellipse(
+                [(rcx - ring_r, rcy - ring_r), (rcx + ring_r, rcy + ring_r)],
+                fill=(15, 23, 42, 255),
+                outline=(51, 65, 85, 230),
+                width=8,
+            )
+            frac = max(0.15, min(1.0, countdown_remaining / float(max(countdown_total, 1))))
+            arc_col = (245, 158, 11, 255) if countdown_remaining <= 1 else (56, 189, 248, 255)
+            cd.arc(
+                [(rcx - ring_r, rcy - ring_r), (rcx + ring_r, rcy + ring_r)],
+                start=-90,
+                end=-90 + int(round(360 * frac)),
+                fill=arc_col,
+                width=9,
+            )
+            num_s = str(countdown_remaining)
+            bb_n = cd.textbbox((0, 0), num_s, font=f_cd)
+            cd.text(
+                (rcx - (bb_n[2] - bb_n[0]) // 2, rcy - (bb_n[3] - bb_n[1]) // 2 - 8),
+                num_s,
+                font=f_cd,
+                fill=(254, 240, 138, 255) if countdown_remaining <= 1 else (255, 255, 255, 255),
+            )
+
+        canvas = Image.alpha_composite(canvas, layer)
+        canvas.save(out_png, format="PNG", compress_level=1)
+        return out_png
+
+    @classmethod
     def render_single_card_png(
         cls,
         line: NarrationLineDTO,
@@ -576,6 +925,30 @@ class ThreadsCardVisualRenderer:
         safe_zone_guard: bool = True,
     ) -> Path:
         """Render a single transparent `canvas_w x canvas_h` RGBA PNG containing the floating card."""
+        if card_theme == ThreadsCardTheme.MIDNIGHT_VINYL_LYRIC:
+            return cls.render_vinyl_lyric_card_png(
+                line=line,
+                out_png=out_png,
+                anonymize_handles=anonymize_handles,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+                sentences_override=sentences_override,
+                active_sentence_idx=active_sentence_idx,
+                progress_ratio=0.38,
+                safe_zone_guard=safe_zone_guard,
+                export_spinning_disc=False,
+            )
+        if card_theme == ThreadsCardTheme.QUIZ_COUNTDOWN_CARD:
+            return cls.render_quiz_card_png(
+                line=line,
+                out_png=out_png,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+                countdown_remaining=3,
+                countdown_total=3,
+                safe_zone_guard=safe_zone_guard,
+            )
+
         if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT):
             reply_preview = NarrationLineDTO(
                 seq_index=1,
@@ -909,6 +1282,7 @@ class ThreadsCardVisualRenderer:
         on_progress: Optional[ProgressCallback] = None,
         eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT,
         safe_zone_guard: bool = True,
+        quiz_countdown_sec: int = 3,
     ) -> VisualAssetListDTO:
         """Render transparent RGBA card PNGs (with optional sentence-level eye-guiding beats)."""
         cards_dir = out_dir / clip.clip_id / "threads_cards"
@@ -920,16 +1294,132 @@ class ThreadsCardVisualRenderer:
         cmt_counter = 0
 
         if on_progress:
-            mode_lbl = (
-                "Chat Story"
-                if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT)
-                else "Threads Card"
-            )
+            if card_theme == ThreadsCardTheme.MIDNIGHT_VINYL_LYRIC:
+                mode_lbl = "Midnight Vinyl"
+            elif card_theme == ThreadsCardTheme.QUIZ_COUNTDOWN_CARD:
+                mode_lbl = "Quiz 3-2-1"
+            elif card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT):
+                mode_lbl = "Chat Story"
+            else:
+                mode_lbl = "Threads Card"
             on_progress(
                 "GENERATING_VISUALS",
                 2.0,
-                f"[{mode_lbl}] Đang kết xuất {len(clip.lines)} khung hội thoại RGBA 1080p...",
+                f"[{mode_lbl}] Đang kết xuất {len(clip.lines)} khung nội dung RGBA 1080p...",
             )
+
+        if card_theme == ThreadsCardTheme.MIDNIGHT_VINYL_LYRIC:
+            total_clip_ms = max(1, clip.duration_ms)
+            for idx, ln in enumerate(clip.lines):
+                dur_ms = max(500, ln.rel_end_ms - ln.rel_start_ms)
+                body_text = (ln.display_card_text or ln.original_text or ln.vi_text).strip()
+                beats = _split_sentences_for_eye_guide(body_text, dur_ms)
+                sent_texts = [b[0] for b in beats]
+                elapsed_sub = 0
+                for b_idx, (_, beat_dur_ms) in enumerate(beats):
+                    prog_r = (ln.rel_start_ms + elapsed_sub + beat_dur_ms * 0.5) / float(total_clip_ms)
+                    elapsed_sub += beat_dur_ms
+                    png_path = cards_dir / f"vinyl_{idx:04d}_s{b_idx:02d}.png"
+                    await asyncio.to_thread(
+                        cls.render_vinyl_lyric_card_png,
+                        line=ln,
+                        out_png=png_path,
+                        anonymize_handles=anonymize_handles,
+                        canvas_w=canvas_w,
+                        canvas_h=canvas_h,
+                        sentences_override=sent_texts if len(beats) > 1 else None,
+                        active_sentence_idx=b_idx if len(beats) > 1 else None,
+                        progress_ratio=prog_r,
+                        safe_zone_guard=safe_zone_guard,
+                        export_spinning_disc=True,
+                    )
+                    items.append(
+                        SceneVisualItemDTO(
+                            seq_index=len(items),
+                            asset_path=png_path,
+                            asset_type=AssetType.IMAGE,
+                            duration_ms=max(300, beat_dur_ms),
+                            motion_effect=MotionEffect.ZOOM_IN,
+                            card_group_id="vinyl_player_session",
+                        )
+                    )
+                if on_progress:
+                    pct = round(((idx + 1) / max(len(clip.lines), 1)) * 100.0, 1)
+                    on_progress(
+                        "GENERATING_VISUALS",
+                        pct,
+                        f"[Midnight Vinyl {idx + 1}/{len(clip.lines)}] Đã kết xuất lời chữ & đĩa than #{idx + 1}",
+                    )
+            return VisualAssetListDTO(clip_id=clip.clip_id, items=items)
+
+        if card_theme == ThreadsCardTheme.QUIZ_COUNTDOWN_CARD:
+            cd_sec = max(2, min(5, int(quiz_countdown_sec)))
+            for idx, ln in enumerate(clip.lines):
+                dur_ms = max(500, ln.rel_end_ms - ln.rel_start_ms)
+                spk_low = (ln.speaker_handle or "").strip().lower()
+                raw_txt = (ln.display_card_text or ln.original_text or ln.vi_text).strip()
+                is_q = (
+                    (spk_low.startswith("@cau_do") or "câu " in raw_txt.lower()[:14])
+                    and not ln.is_op_post
+                    and not spk_low.startswith("@dap_an")
+                )
+                cd_ms = cd_sec * 1000 if (is_q and dur_ms > (cd_sec * 1000 + 650)) else 0
+                q_body_ms = max(450, dur_ms - cd_ms)
+                grp = f"quiz_card_{idx:04d}"
+
+                q_png = cards_dir / f"quiz_{idx:04d}_base.png"
+                await asyncio.to_thread(
+                    cls.render_quiz_card_png,
+                    line=ln,
+                    out_png=q_png,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    countdown_remaining=None,
+                    safe_zone_guard=safe_zone_guard,
+                )
+                items.append(
+                    SceneVisualItemDTO(
+                        seq_index=len(items),
+                        asset_path=q_png,
+                        asset_type=AssetType.IMAGE,
+                        duration_ms=q_body_ms,
+                        motion_effect=MotionEffect.ZOOM_IN,
+                        card_group_id=grp,
+                    )
+                )
+
+                if cd_ms > 0:
+                    for rem_s in range(cd_sec, 0, -1):
+                        t_png = cards_dir / f"quiz_{idx:04d}_cd_{rem_s}.png"
+                        await asyncio.to_thread(
+                            cls.render_quiz_card_png,
+                            line=ln,
+                            out_png=t_png,
+                            canvas_w=canvas_w,
+                            canvas_h=canvas_h,
+                            countdown_remaining=rem_s,
+                            countdown_total=cd_sec,
+                            safe_zone_guard=safe_zone_guard,
+                        )
+                        items.append(
+                            SceneVisualItemDTO(
+                                seq_index=len(items),
+                                asset_path=t_png,
+                                asset_type=AssetType.IMAGE,
+                                duration_ms=1000,
+                                motion_effect=MotionEffect.ZOOM_IN,
+                                card_group_id=grp,
+                                is_typing_indicator=True,
+                            )
+                        )
+                if on_progress:
+                    pct = round(((idx + 1) / max(len(clip.lines), 1)) * 100.0, 1)
+                    on_progress(
+                        "GENERATING_VISUALS",
+                        pct,
+                        f"[Quiz 3-2-1 {idx + 1}/{len(clip.lines)}] Đã kết xuất thẻ đố vui & đồng hồ đếm ngược #{idx + 1}",
+                    )
+            return VisualAssetListDTO(clip_id=clip.clip_id, items=items)
 
         if card_theme in (ThreadsCardTheme.CHAT_MESSENGER_ZALO, ThreadsCardTheme.CHAT_IMESSAGE_LIGHT):
             primary_spk = (clip.lines[0].speaker_handle or "@minh") if clip.lines else "@minh"
@@ -1074,3 +1564,222 @@ class ThreadsCardVisualRenderer:
                 )
 
         return VisualAssetListDTO(clip_id=clip.clip_id, items=items)
+
+
+class ChillBgLoopGenerator:
+    """Generates clean, 100% copyright-free seamless 9:16 30fps loop MP4 background videos
+    with a valid stereo 44.1kHz AAC audio track so users never get blocked by YouTube bot walls.
+    """
+
+    PRESET_META = {
+        "STARRY_LOFI_BOKEH": ("Đêm Sao Lofi & Đom Đóm Ấm (9:16 Chill)", "Chill / Đêm khuya"),
+        "RAINY_WINDOW_NEON": ("Mưa Đêm Phố Thị & Ánh Đèn Neon (9:16)", "Tâm sự / Mưa đêm"),
+        "SUNSET_OCEAN_WAVES": ("Hoàng Hôn Tím Chill & Bụi Nắng (9:16)", "Hoàng hôn / Lãng mạn"),
+        "CYBER_SYNTH_GRID": ("Không Gian Đêm Tối Giản & Lưới Sáng (9:16)", "Đố vui / Công nghệ"),
+    }
+
+    @classmethod
+    def generate_mp4(
+        cls,
+        preset_id: str,
+        out_mp4: Path,
+        duration_sec: int = 6,
+        width: int = 720,
+        height: int = 1280,
+        fps: int = 30,
+    ) -> tuple[Path, str, str]:
+        """Synthesize a seamless periodic `width x height` H.264 + AAC MP4 in ~0.5s."""
+        import subprocess
+        import cv2
+        import numpy as np
+
+        key = preset_id.strip().upper()
+        if key not in cls.PRESET_META:
+            key = "STARRY_LOFI_BOKEH"
+        title, category_tag = cls.PRESET_META[key]
+
+        out_mp4.parent.mkdir(parents=True, exist_ok=True)
+        total_frames = max(60, int(duration_sec) * int(fps))
+        yy = np.linspace(0.0, 1.0, height, dtype=np.float32)[:, None]
+
+        # Build base vertical gradient (BGR)
+        base_grad = np.zeros((height, width, 3), dtype=np.uint8)
+        if key == "RAINY_WINDOW_NEON":
+            top_c = np.array([34, 20, 14], dtype=np.float32)
+            bot_c = np.array([62, 38, 28], dtype=np.float32)
+        elif key == "SUNSET_OCEAN_WAVES":
+            top_c = np.array([76, 32, 48], dtype=np.float32)
+            bot_c = np.array([42, 68, 138], dtype=np.float32)
+        elif key == "CYBER_SYNTH_GRID":
+            top_c = np.array([24, 12, 10], dtype=np.float32)
+            bot_c = np.array([64, 24, 38], dtype=np.float32)
+        else:  # STARRY_LOFI_BOKEH
+            top_c = np.array([36, 18, 12], dtype=np.float32)
+            bot_c = np.array([68, 36, 26], dtype=np.float32)
+
+        for ch in range(3):
+            col_1d = np.clip(top_c[ch] * (1.0 - yy) + bot_c[ch] * yy, 0, 255).astype(np.uint8)
+            base_grad[:, :, ch] = np.broadcast_to(col_1d, (height, width))
+
+        rng = np.random.default_rng(abs(hash(key)) % (2**31 - 1))
+        n_orbs = 24
+        orb_x0 = rng.uniform(0.08, 0.92, size=n_orbs)
+        orb_y0 = rng.uniform(0.06, 0.94, size=n_orbs)
+        orb_r = rng.integers(14, 54, size=n_orbs)
+        orb_phase = rng.uniform(0.0, 2.0 * math.pi, size=n_orbs)
+        orb_palette = (
+            [(220, 180, 65), (180, 105, 235), (110, 195, 250)]
+            if key == "RAINY_WINDOW_NEON"
+            else (
+                [(95, 175, 255), (145, 125, 245), (120, 220, 255)]
+                if key == "SUNSET_OCEAN_WAVES"
+                else (
+                    [(235, 195, 45), (215, 90, 190), (185, 230, 80)]
+                    if key == "CYBER_SYNTH_GRID"
+                    else [(115, 205, 252), (165, 225, 255), (210, 165, 130)]
+                )
+            )
+        )
+
+        # Raindrop or star seeds
+        n_streaks = 48
+        st_x = rng.integers(10, width - 10, size=n_streaks)
+        st_y = rng.integers(0, height, size=n_streaks)
+        st_len = rng.integers(24, 52, size=n_streaks)
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            f"{width}x{height}",
+            "-r",
+            str(fps),
+            "-i",
+            "-",
+            "-f",
+            "lavfi",
+            "-t",
+            f"{duration_sec:.2f}",
+            "-i",
+            "anullsrc=r=44100:cl=stereo",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(out_mp4),
+        ]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert proc.stdin is not None
+
+        frame = np.empty_like(base_grad)
+        overlay = np.empty_like(base_grad)
+        try:
+            for f_i in range(total_frames):
+                theta = (2.0 * math.pi * f_i) / float(total_frames)
+                np.copyto(frame, base_grad)
+                np.copyto(overlay, frame)
+
+                # Periodic drifting bokeh orbs (100% seamless at loop boundary!)
+                for oi in range(n_orbs):
+                    cx = int(
+                        (orb_x0[oi] + 0.045 * math.sin(theta + orb_phase[oi])) * width
+                    ) % width
+                    cy = int(
+                        (orb_y0[oi] + 0.055 * math.cos(theta + orb_phase[oi] * 0.8)) * height
+                    ) % height
+                    rad = int(orb_r[oi] * (0.86 + 0.14 * math.sin(2.0 * theta + orb_phase[oi])))
+                    col = orb_palette[oi % len(orb_palette)]
+                    cv2.circle(overlay, (cx, cy), max(6, rad), col, -1, lineType=cv2.LINE_AA)
+
+                cv2.addWeighted(frame, 0.74, overlay, 0.26, 0.0, dst=frame)
+
+                if key == "RAINY_WINDOW_NEON":
+                    # Periodic falling rain streaks (2 full cycles per clip)
+                    shift_y = int(round((2.0 * f_i / float(total_frames)) * height))
+                    shift_x = int(round((2.0 * f_i / float(total_frames)) * (width * 0.18)))
+                    for si in range(n_streaks):
+                        rx0 = int((st_x[si] - shift_x) % width)
+                        ry0 = int((st_y[si] + shift_y) % height)
+                        sl = int(st_len[si])
+                        cv2.line(
+                            frame,
+                            (rx0, ry0),
+                            (rx0 - 7, ry0 + sl),
+                            (215, 205, 190),
+                            1,
+                            lineType=cv2.LINE_AA,
+                        )
+                elif key == "CYBER_SYNTH_GRID":
+                    hz_y = int(height * 0.68)
+                    cv2.line(frame, (0, hz_y), (width, hz_y), (220, 175, 55), 2, lineType=cv2.LINE_AA)
+                    grid_phase = (f_i / float(total_frames)) * 2.0 % 1.0
+                    for gi in range(8):
+                        gy_rel = ((gi + grid_phase) / 8.0) ** 1.65
+                        gy = hz_y + int(gy_rel * (height - hz_y))
+                        cv2.line(frame, (0, gy), (width, gy), (145, 95, 45), 1)
+                    for vx in range(-4, 5):
+                        bx = width // 2 + vx * (width // 3)
+                        cv2.line(
+                            frame,
+                            (width // 2 + vx * 24, hz_y),
+                            (bx, height),
+                            (135, 85, 55),
+                            1,
+                            lineType=cv2.LINE_AA,
+                        )
+                elif key == "SUNSET_OCEAN_WAVES":
+                    xs = np.arange(0, width, 8, dtype=np.int32)
+                    for wi in range(4):
+                        wy_base = int(height * (0.70 + wi * 0.065))
+                        pts = np.column_stack(
+                            [
+                                xs,
+                                wy_base
+                                + (
+                                    10.0
+                                    * np.sin(xs * 0.018 + theta + wi * 1.1)
+                                ).astype(np.int32),
+                            ]
+                        )
+                        poly = np.vstack([pts, [[width, height], [0, height]]])
+                        shade = (36 - wi * 5, 24 - wi * 3, 44 - wi * 6)
+                        cv2.fillPoly(frame, [poly], shade)
+                else:
+                    # Twinkling stars in upper sky
+                    for si in range(28):
+                        sx = int(st_x[si])
+                        sy = int(st_y[si] * 0.65)
+                        tw = int(135 + 110 * (0.5 + 0.5 * math.sin(2.0 * theta + si)))
+                        cv2.circle(frame, (sx, sy), 2 if si % 3 == 0 else 1, (tw, tw, min(255, tw + 20)), -1)
+
+                proc.stdin.write(memoryview(frame))
+        finally:
+            proc.stdin.close()
+
+        stderr_b = proc.stderr.read() if proc.stderr else b""
+        proc.wait()
+        if proc.returncode != 0 or not out_mp4.exists() or out_mp4.stat().st_size < 2048:
+            raise RuntimeError(
+                f"Không thể khởi tạo video nền Chill ({stderr_b.decode('utf-8', errors='replace')[-240:]})"
+            )
+        return out_mp4, title, category_tag

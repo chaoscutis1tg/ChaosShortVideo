@@ -1289,6 +1289,34 @@ export default function ProjectWorkspaceView({
                       {STAGE_LABELS[detail.state] || detail.state}
                     </span>
                     <span className="badge">{MODE_LABELS[detail.mode] || detail.mode}</span>
+                    <span className="badge" style={{ fontSize: 11.2 }}>
+                      {savedAspect}
+                    </span>
+                    {detail.mode === 'THREADS_TOPIC' &&
+                      detail.saved_request?.layout_config?.threads_card_theme ===
+                        'MIDNIGHT_VINYL_LYRIC' && (
+                        <span className="badge badge-info" style={{ fontSize: 11.2 }}>
+                          🎵 Đĩa Than Vinyl
+                        </span>
+                      )}
+                    {detail.mode === 'THREADS_TOPIC' &&
+                      detail.saved_request?.layout_config?.threads_card_theme ===
+                        'QUIZ_COUNTDOWN_CARD' && (
+                        <span className="badge badge-info" style={{ fontSize: 11.2 }}>
+                          ⏱ Đố Vui 3-2-1
+                        </span>
+                      )}
+                    {detail.saved_request?.layout_config?.ambience_overlay &&
+                      detail.saved_request.layout_config.ambience_overlay !== 'NONE' && (
+                        <span className="badge badge-ok" style={{ fontSize: 11.2 }}>
+                          ✨ {detail.saved_request.layout_config.ambience_overlay}
+                        </span>
+                      )}
+                    {detail.saved_request?.layout_config?.story_progress_bar_enabled && (
+                      <span className="badge badge-info" style={{ fontSize: 11.2 }}>
+                        Thanh đốt truyện
+                      </span>
+                    )}
                     {detail.clips?.length > 0 && (
                       <span className="text-sub" style={{ fontSize: 12.8 }}>
                         Đã xuất xong{' '}

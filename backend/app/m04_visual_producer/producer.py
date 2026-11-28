@@ -143,6 +143,7 @@ class VisualProducerFacade(IVisualProducer):
         on_progress: Optional[ProgressCallback] = None,
         eye_guide_mode: ThreadsEyeGuideMode = ThreadsEyeGuideMode.ACTIVE_HIGHLIGHT,
         safe_zone_guard: bool = True,
+        quiz_countdown_sec: int = 3,
     ) -> VisualAssetListDTO:
         """Render transparent RGBA PNG floating Threads post & comment cards synced to clip lines."""
         return await ThreadsCardVisualRenderer.build_clip_cards(
@@ -154,6 +155,7 @@ class VisualProducerFacade(IVisualProducer):
             on_progress=on_progress,
             eye_guide_mode=eye_guide_mode,
             safe_zone_guard=safe_zone_guard,
+            quiz_countdown_sec=quiz_countdown_sec,
         )
 
     def _select_provider(self, mode: VisualMode, scene_idx: int) -> IVisualProvider:

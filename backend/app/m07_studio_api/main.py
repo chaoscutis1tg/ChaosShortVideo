@@ -33,6 +33,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from pydantic import BaseModel, Field
 
 from app.m00_core_contracts import (
+    AmbienceOverlayStyle,
     AudioSubConfigDTO,
     BrandKitDTO,
     BriefExpandRequestDTO,
@@ -53,6 +54,7 @@ from app.m00_core_contracts import (
     ProductFramingStyle,
     ProductReviewPromptDTO,
     ProjectMode,
+    QuizGenerateRequestDTO,
     SalesScriptAngle,
     SavedBgVideoDTO,
     SavedProductTemplateDTO,
@@ -90,7 +92,9 @@ from app.m03_ai_content_brain import (
     TikTokShopComplianceChecker,
 )
 from app.m04_visual_producer import (
+    ChillBgLoopGenerator,
     ProductPhotoShowcaseProvider,
+    StockVideoProvider,
     ThreadsCardVisualRenderer,
     VisualProducerFacade,
 )
@@ -413,6 +417,13 @@ class BgVideoFromUrlRequest(BaseModel):
     category_tag: str = Field(default="Chill / Đời sống", max_length=80)
 
 
+class ChillBgGenerateRequest(BaseModel):
+    preset_id: str = Field(default="STARRY_LOFI_BOKEH", max_length=64)
+    duration_sec: int = Field(default=6, ge=4, le=12)
+    prefer_stock_video: bool = False
+    stock_query: str = Field(default="night city rain aesthetic vertical", max_length=140)
+
+
 class OnlineBgmImportRequest(BaseModel):
     title: str = Field(min_length=2, max_length=140)
     audio_url: str = Field(min_length=8, max_length=1200)
@@ -438,6 +449,7 @@ class ThreadsStartRequest(BaseModel):
     custom_bgm_path: Optional[str] = None
     bgm_volume: float = 0.06
     subtitle_style: SubtitleStyle = SubtitleStyle.NONE
+    series_parts: int = Field(default=1, ge=1, le=4)
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
@@ -1311,6 +1323,15 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     font_size=cfg.subtitle_font_size,
                 )
 
+            composed = StudioOverlayArtist.apply_ambience_and_story_bar(
+                composed,
+                ambience_overlay=cfg.ambience_overlay,
+                story_progress_bar_enabled=cfg.story_progress_bar_enabled,
+                total_segments=5,
+                active_progress=0.44,
+                safe_zone_guard=cfg.safe_zone_guard,
+            )
+
             composed.convert("RGB").save(out_jpg, format="JPEG", quality=93)
             plate_png.unlink(missing_ok=True)
             ovr_png.unlink(missing_ok=True)
@@ -1739,6 +1760,15 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/threads/generate-quiz")
+    async def generate_quiz_countdown_script(req: QuizGenerateRequestDTO) -> Dict[str, Any]:
+        """Generate an interactive 3-2-1 Quiz / Ear-Training / Psychology bundle ready for preview & render."""
+        try:
+            bundle = await orchestrator.brain.generate_quiz_bundle(req)
+            return bundle.model_dump()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/api/brain/score-hook")
     async def score_and_optimize_opening_hook(req: HookScoreRequestDTO) -> Dict[str, Any]:
         """Score 3-second retention of an opening Hook/OP and suggest 3 stronger A/B variants."""
@@ -1752,6 +1782,103 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
     async def list_saved_background_videos() -> List[Dict[str, Any]]:
         """List reusable background videos stored in the Studio Background Library."""
         return [_serialize_bg_video(bg) for bg in repo.list_bg_videos()]
+
+    @app.post("/api/threads/bg-videos/generate-chill")
+    async def generate_clean_chill_background_video(req: ChillBgGenerateRequest) -> Dict[str, Any]:
+        """Create a 100% copyright-free 9:16 Chill Loop MP4 (or import vertical Stock clip if configured)
+        directly into `Kho Video Nền` without needing YouTube links.
+        """
+        bg_dir = settings.assets_dir / "bg_videos"
+        bg_dir.mkdir(parents=True, exist_ok=True)
+        bg_id = f"bg_{uuid.uuid4().hex[:8]}"
+        dest = bg_dir / f"{bg_id}.mp4"
+
+        used_stock = False
+        if req.prefer_stock_video and (settings.pexels_api_key or settings.pixabay_api_key):
+            stock_prov = StockVideoProvider(
+                pexels_api_key=settings.pexels_api_key,
+                pixabay_api_key=settings.pixabay_api_key,
+            )
+            q = req.stock_query.strip() or "night rain aesthetic vertical"
+            raw_stock = bg_dir / f"{bg_id}_raw.mp4"
+            try:
+                ok_dl = False
+                if settings.pexels_api_key:
+                    ok_dl = await stock_prov._try_pexels(q, raw_stock)
+                if not ok_dl and settings.pixabay_api_key:
+                    ok_dl = await stock_prov._try_pixabay(q, raw_stock)
+                if ok_dl and raw_stock.exists() and raw_stock.stat().st_size > 8192:
+                    # Ensure valid stereo AAC track so M01 ingestor always succeeds
+                    mux_proc = await asyncio.to_thread(
+                        subprocess.run,
+                        [
+                            "ffmpeg",
+                            "-y",
+                            "-hide_banner",
+                            "-loglevel",
+                            "error",
+                            "-i",
+                            str(raw_stock),
+                            "-f",
+                            "lavfi",
+                            "-i",
+                            "anullsrc=r=44100:cl=stereo",
+                            "-map",
+                            "0:v:0",
+                            "-map",
+                            "1:a:0",
+                            "-c:v",
+                            "copy",
+                            "-c:a",
+                            "aac",
+                            "-shortest",
+                            str(dest),
+                        ],
+                        capture_output=True,
+                        check=False,
+                    )
+                    if mux_proc.returncode == 0 and dest.exists():
+                        used_stock = True
+            finally:
+                raw_stock.unlink(missing_ok=True)
+
+        if used_stock:
+            info = await asyncio.to_thread(FFprobeInspector.inspect, dest)
+            saved = repo.upsert_bg_video(
+                SavedBgVideoDTO(
+                    bg_id=bg_id,
+                    title=f"Stock Chill 9:16 • {req.stock_query.strip()[:48]}",
+                    category_tag="Stock 9:16 Sạch Bản Quyền",
+                    local_path=dest,
+                    duration_ms=info.duration_ms,
+                    width=info.width,
+                    height=info.height,
+                )
+            )
+            return _serialize_bg_video(saved)
+
+        try:
+            _, gen_title, gen_cat = await asyncio.to_thread(
+                ChillBgLoopGenerator.generate_mp4,
+                req.preset_id,
+                dest,
+                req.duration_sec,
+            )
+            info = await asyncio.to_thread(FFprobeInspector.inspect, dest)
+            saved = repo.upsert_bg_video(
+                SavedBgVideoDTO(
+                    bg_id=bg_id,
+                    title=gen_title,
+                    category_tag=gen_cat,
+                    local_path=dest,
+                    duration_ms=info.duration_ms,
+                    width=info.width,
+                    height=info.height,
+                )
+            )
+            return _serialize_bg_video(saved)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/threads/bg-videos/upload")
     async def upload_background_video_to_library(
@@ -1946,6 +2073,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 audio_config=audio_cfg,
                 layout_config=req.layout_config,
                 auto_one_click=req.auto_one_click,
+                series_parts=req.series_parts,
             ),
         )
         return {"project_id": project_id, "state": initial_state}

@@ -20,6 +20,7 @@ from .config import (
     MIN_ALLOWED_CLIP_SEC,
 )
 from .enums import (
+    AmbienceOverlayStyle,
     AssetType,
     CopywritingTone,
     CoverTemplateStyle,
@@ -387,6 +388,8 @@ class AudioSubConfigDTO(BaseContractDTO):
     voice_pitch_global: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
     enable_card_pop_sfx: bool = False
     chat_sfx_mode: bool = False
+    quiz_countdown_sfx_mode: bool = False
+    quiz_countdown_sec: int = Field(default=3, ge=2, le=5)
     enable_smart_sfx: bool = True
     smart_sfx_volume: float = Field(default=0.22, ge=0.0, le=1.0)
     smart_keyword_highlight: bool = True
@@ -491,6 +494,11 @@ class LayoutAndAntiCopyConfigDTO(BaseContractDTO):
     smart_camera_motion: bool = True
     smart_micro_punch_in: bool = True
     dynamic_face_tracking: bool = True
+
+    # UC-19: Opt-in Creative Polish (Strictly OFF / NONE by default unless user explicitly enables)
+    ambience_overlay: AmbienceOverlayStyle = AmbienceOverlayStyle.NONE
+    story_progress_bar_enabled: bool = False
+    quiz_countdown_sec: int = Field(default=3, ge=2, le=5)
 
     @field_validator("top_banner_template")
     @classmethod
@@ -804,6 +812,17 @@ class HookScoreResultDTO(BaseContractDTO):
     weakness_note: str = Field(default="", max_length=600)
     variants: List[HookVariantDTO] = Field(default_factory=list)
     used_api_key: bool = False
+
+
+class QuizGenerateRequestDTO(BaseContractDTO):
+    """Input contract for generating an interactive 3-2-1 Countdown Quiz / Blind Test bundle."""
+
+    quiz_topic: str = Field(min_length=3, max_length=1500)
+    quiz_category: str = Field(default="MUSIC_EAR", max_length=60)
+    question_count: int = Field(default=3, ge=1, le=8)
+    countdown_sec: int = Field(default=3, ge=2, le=5)
+    host_voice_id: str = "threads_nu_chinh"
+    answer_voice_id: str = "threads_nam_chinh"
 
 
 

@@ -160,6 +160,7 @@ class PipelineOrchestrator:
         audio_config: AudioSubConfigDTO,
         layout_config: LayoutAndAntiCopyConfigDTO,
         auto_one_click: bool = True,
+        series_parts: int = 1,
     ) -> CutPlanDTO:
         """Run Mode 4 (Threads & Comments): Ingest BG video -> Build CutPlan -> Render Floating Cards."""
         pid = ingest_req.project_id
@@ -180,6 +181,7 @@ class PipelineOrchestrator:
                 project_id=pid,
                 append_cta_comment=append_cta_comment,
                 anonymize_handles=layout_config.threads_anonymize_handles,
+                series_parts=series_parts,
             )
             self.repo.save_cut_plan(cut_plan)
             self._pending_plans[pid] = cut_plan
@@ -551,9 +553,18 @@ class PipelineOrchestrator:
                     ThreadsCardTheme.CHAT_MESSENGER_ZALO,
                     ThreadsCardTheme.CHAT_IMESSAGE_LIGHT,
                 )
+                is_quiz_theme = (
+                    layout_config.threads_card_theme == ThreadsCardTheme.QUIZ_COUNTDOWN_CARD
+                )
+                audio_updates: Dict[str, Any] = {}
+                if is_chat_theme:
+                    audio_updates["chat_sfx_mode"] = True
+                if is_quiz_theme:
+                    audio_updates["quiz_countdown_sfx_mode"] = True
+                    audio_updates["quiz_countdown_sec"] = int(layout_config.quiz_countdown_sec)
                 threads_audio_cfg = (
-                    synced_audio_cfg.model_copy(update={"chat_sfx_mode": True})
-                    if is_chat_theme
+                    synced_audio_cfg.model_copy(update=audio_updates)
+                    if audio_updates
                     else synced_audio_cfg
                 )
                 audio_sub = await self.audio_mixer.process(
@@ -588,6 +599,7 @@ class PipelineOrchestrator:
                     on_progress=cb,
                     eye_guide_mode=layout_config.threads_eye_guide_mode,
                     safe_zone_guard=layout_config.safe_zone_guard,
+                    quiz_countdown_sec=layout_config.quiz_countdown_sec,
                 )
                 effective_layout = layout_config.model_copy(
                     update={"hardsub_mask_enabled": False, "anti_copyright_enabled": False}

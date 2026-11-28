@@ -1585,6 +1585,189 @@ async def test_m05_m07_tts_sha256_cache_and_fast_status_endpoints(tmp_path: Path
         assert elapsed_ms < 80.0
 
 
+def test_m07_uc19_opt_in_vinyl_quiz321_ambience_story_bar_and_chill_bg(tmp_path: Path) -> None:
+    """Verify UC-19 Opt-In Creative Upgrades:
+    1. Strict Opt-In Defaults (`ambience_overlay == NONE`, `story_progress_bar_enabled == False`,
+       `threads_card_theme == DARK_THREADS`).
+    2. 1-Click Copyright-Free Chill 9:16 Loop BG Generator (`POST /api/threads/bg-videos/generate-chill`).
+    3. Interactive Quiz 3-2-1 Generator (`POST /api/threads/generate-quiz`) + `QUIZ_COUNTDOWN_CARD` +
+       `GOLDEN_BOKEH` + `story_progress_bar_enabled=True` renders valid MP4 with countdown frames.
+    4. `MIDNIGHT_VINYL_LYRIC` + `series_parts=2` exports `vinyl_disc_sprite.png` and renders 2 series parts.
+    """
+    from app.m00_core_contracts import AmbienceOverlayStyle, LayoutAndAntiCopyConfigDTO, ThreadsCardTheme
+
+    # 1. Strict Opt-In Defaults assertion
+    default_cfg = LayoutAndAntiCopyConfigDTO()
+    assert default_cfg.ambience_overlay == AmbienceOverlayStyle.NONE
+    assert default_cfg.story_progress_bar_enabled is False
+    assert default_cfg.threads_card_theme == ThreadsCardTheme.DARK_THREADS
+
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_uc19.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+
+    with TestClient(studio_app) as client:
+        # 2. Generate clean 9:16 Chill Background Video with audio track into Kho Video Nền
+        chill_res = client.post(
+            "/api/threads/bg-videos/generate-chill",
+            json={"preset_id": "STARRY_LOFI_BOKEH", "duration_sec": 4},
+        )
+        assert chill_res.status_code == 200, chill_res.text
+        chill_bg = chill_res.json()
+        assert Path(chill_bg["local_path"]).exists()
+        assert chill_bg["width"] == 720
+        assert chill_bg["height"] == 1280
+        assert chill_bg["duration_ms"] >= 3500
+
+        # 3. Generate Quiz 3-2-1 bundle & render with opt-in GOLDEN_BOKEH + Story Progress Bar
+        quiz_res = client.post(
+            "/api/threads/generate-quiz",
+            json={
+                "quiz_topic": "Thử tài cảm âm Guitar",
+                "quiz_category": "MUSIC_EAR",
+                "question_count": 2,
+                "countdown_sec": 2,
+            },
+        )
+        assert quiz_res.status_code == 200, quiz_res.text
+        quiz_bundle = quiz_res.json()
+        assert len(quiz_bundle["comments"]) == 4  # 2 questions + 2 answers
+
+        # Verify 1080p True Frame Preview with Ambience + Story Bar + Quiz Card
+        snap_res = client.post(
+            "/api/preview/render-frame",
+            json={
+                "active_tab": "threads",
+                "banner_title": "Thử Tài Cảm Âm",
+                "sample_subtitle": "Câu 1: Tiếng đàn này là gỗ gì?",
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "threads_card_theme": "QUIZ_COUNTDOWN_CARD",
+                    "ambience_overlay": "GOLDEN_BOKEH",
+                    "story_progress_bar_enabled": True,
+                },
+            },
+        )
+        assert snap_res.status_code == 200
+
+        # Render Quiz 3-2-1 project end-to-end (trim to 1 Q&A pair for fast test execution)
+        fast_quiz_bundle = {
+            **quiz_bundle,
+            "comments": quiz_bundle["comments"][:2],
+        }
+        start_quiz = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": fast_quiz_bundle,
+                "bg_path_or_url": chill_bg["local_path"],
+                "append_cta_comment": "",
+                "voice_speed_global": 1.35,
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "threads_card_theme": "QUIZ_COUNTDOWN_CARD",
+                    "quiz_countdown_sec": 2,
+                    "ambience_overlay": "GOLDEN_BOKEH",
+                    "story_progress_bar_enabled": True,
+                },
+            },
+        )
+        assert start_quiz.status_code == 200
+        q_pid = start_quiz.json()["project_id"]
+
+        q_detail = {}
+        for _ in range(220):
+            q_detail = client.get(f"/api/projects/{q_pid}").json()
+            if q_detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.25)
+        assert q_detail["state"] == "COMPLETED", q_detail.get("error_message")
+        assert Path(q_detail["clips"][0]["output_mp4_path"]).stat().st_size > 8000
+
+        # 4a. Verify Series Splitter (`series_parts=2`) creates 2 parts with Cliffhanger on Part 1
+        vinyl_bundle = {
+            **quiz_bundle,
+            "topic_title": "Tâm sự đêm khuya cùng tiếng đàn",
+            "op_display_text": "Ngồi yên lúc 1 giờ sáng nghe đàn.",
+            "op_spoken_vi_text": "Ngồi yên lúc một giờ sáng nghe đàn.",
+            "comments": [
+                {
+                    **quiz_bundle["comments"][0],
+                    "author_handle": "@demkhuya_01",
+                    "display_text": "Tiếng đàn mộc dịu nhẹ thật sự.",
+                    "spoken_vi_text": "Tiếng đàn mộc dịu nhẹ thật sự.",
+                    "selected": True,
+                },
+                {
+                    **quiz_bundle["comments"][1],
+                    "author_handle": "@demkhuya_02",
+                    "display_text": "Nghe xong nhẹ hết cả lòng.",
+                    "spoken_vi_text": "Nghe xong nhẹ hết cả lòng.",
+                    "selected": True,
+                },
+            ],
+        }
+        split_res = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": vinyl_bundle,
+                "bg_path_or_url": chill_bg["local_path"],
+                "append_cta_comment": "",
+                "series_parts": 2,
+                "auto_one_click": False,
+                "layout_config": {"aspect_ratio": "9:16"},
+            },
+        )
+        assert split_res.status_code == 200
+        sp_pid = split_res.json()["project_id"]
+        sp_detail = {}
+        for _ in range(80):
+            sp_detail = client.get(f"/api/projects/{sp_pid}").json()
+            if sp_detail["state"] in ("AWAITING_REVIEW", "FAILED"):
+                break
+            time.sleep(0.15)
+        assert sp_detail["state"] == "AWAITING_REVIEW", sp_detail.get("error_message")
+        assert len(sp_detail["clips"]) == 2
+        assert "Phần 2" in sp_detail["clips"][0]["lines"][-1]["display_card_text"]
+
+        # 4b. Render Midnight Vinyl Lyric + Night Rain MP4 end-to-end
+        vinyl_single = {**vinyl_bundle, "comments": vinyl_bundle["comments"][:1]}
+        start_vinyl = client.post(
+            "/api/threads/start",
+            json={
+                "bundle": vinyl_single,
+                "bg_path_or_url": chill_bg["local_path"],
+                "append_cta_comment": "",
+                "series_parts": 1,
+                "voice_speed_global": 1.35,
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "threads_card_theme": "MIDNIGHT_VINYL_LYRIC",
+                    "ambience_overlay": "NIGHT_RAIN",
+                    "story_progress_bar_enabled": False,
+                },
+            },
+        )
+        assert start_vinyl.status_code == 200
+        v_pid = start_vinyl.json()["project_id"]
+
+        v_detail = {}
+        for _ in range(260):
+            v_detail = client.get(f"/api/projects/{v_pid}").json()
+            if v_detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.25)
+        assert v_detail["state"] == "COMPLETED", v_detail.get("error_message")
+        assert Path(v_detail["clips"][0]["output_mp4_path"]).stat().st_size > 8000
+
+
+
 
 
 

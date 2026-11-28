@@ -152,6 +152,12 @@ export const studioApi = {
       body: JSON.stringify(payload),
     }),
 
+  generateQuizBundle: (payload) =>
+    requestJSON('/api/threads/generate-quiz', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   scoreOpeningHook: (payload) =>
     requestJSON('/api/brain/score-hook', {
       method: 'POST',
@@ -159,6 +165,12 @@ export const studioApi = {
     }),
 
   listBgVideos: () => requestJSON('/api/threads/bg-videos'),
+
+  generateChillBgVideo: (payload) =>
+    requestJSON('/api/threads/bg-videos/generate-chill', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
 
   async uploadBgVideo(file, title = '', category_tag = 'Chill / Đời sống') {
     const fd = new FormData();

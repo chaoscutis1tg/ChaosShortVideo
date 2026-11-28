@@ -177,6 +177,42 @@ def _build_chat_receive_sfx_wav(dst_wav: Path) -> Path:
     return dst_wav
 
 
+def _build_quiz_tick_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a crisp 65ms studio woodblock countdown tick for 3-2-1 Quiz timers."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.065
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    env = np.minimum(1.0, t / 0.002) * np.exp(-t * 72.0)
+    sig = ((0.72 * np.sin(2.0 * np.pi * 980.0 * t) + 0.28 * np.sin(2.0 * np.pi * 1960.0 * t)) * env * 0.22).astype(
+        np.float32
+    )
+    _write_wav_float32_stereo(dst_wav, np.column_stack((sig, sig)))
+    return dst_wav
+
+
+def _build_quiz_ding_sfx_wav(dst_wav: Path) -> Path:
+    """Synthesize a bright 340ms C6+E6+G6 answer-reveal bell ding."""
+    if dst_wav.exists() and dst_wav.stat().st_size > 200:
+        return dst_wav
+    dur_sec = 0.34
+    n_s = int(MASTER_AUDIO_SAMPLE_RATE * dur_sec)
+    t = np.linspace(0.0, dur_sec, n_s, endpoint=False, dtype=np.float32)
+    env = np.minimum(1.0, t / 0.006) * np.exp(-t * 11.0)
+    sig = (
+        (
+            0.50 * np.sin(2.0 * np.pi * 1046.50 * t)
+            + 0.32 * np.sin(2.0 * np.pi * 1318.51 * t)
+            + 0.18 * np.sin(2.0 * np.pi * 1567.98 * t)
+        )
+        * env
+        * 0.19
+    ).astype(np.float32)
+    _write_wav_float32_stereo(dst_wav, np.column_stack((sig, sig)))
+    return dst_wav
+
+
 class MovieAudioAndSubMixer(IVoiceAudioMixer):
     """Synthesizes 3-tier Vietnamese narration, time-syncs lines, ducks original movie audio,
     mixes optional anti-copyright BGM, and builds `.ass` subtitles.
@@ -206,9 +242,11 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
 
         default_provider = self._tts_factory.get_provider(profile.tier)
         is_chat_sfx = bool(getattr(audio_config, "chat_sfx_mode", False))
+        is_quiz_sfx = bool(getattr(audio_config, "quiz_countdown_sfx_mode", False))
+        quiz_cd_sec = max(2, min(5, int(getattr(audio_config, "quiz_countdown_sec", 3) or 3)))
         pop_sfx_wav: Optional[Path] = (
             _build_ui_pop_sfx_wav(chunks_dir / "_ui_card_pop.wav")
-            if (getattr(audio_config, "enable_card_pop_sfx", False) and not is_chat_sfx)
+            if (getattr(audio_config, "enable_card_pop_sfx", False) and not is_chat_sfx and not is_quiz_sfx)
             else None
         )
         chat_send_wav: Optional[Path] = (
@@ -216,6 +254,12 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
         )
         chat_recv_wav: Optional[Path] = (
             _build_chat_receive_sfx_wav(chunks_dir / "_sfx_chat_recv.wav") if is_chat_sfx else None
+        )
+        quiz_tick_wav: Optional[Path] = (
+            _build_quiz_tick_sfx_wav(chunks_dir / "_sfx_quiz_tick.wav") if is_quiz_sfx else None
+        )
+        quiz_ding_wav: Optional[Path] = (
+            _build_quiz_ding_sfx_wav(chunks_dir / "_sfx_quiz_ding.wav") if is_quiz_sfx else None
         )
         primary_speaker = (clip.lines[0].speaker_handle or "").strip().lower() if clip.lines else ""
         use_smart_sfx = bool(getattr(audio_config, "enable_smart_sfx", True))
@@ -435,7 +479,30 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 chunk = pre_synthesized[idx]
                 chunk = await asyncio.to_thread(self._fit_chunk_to_slot, chunk, slot_ms)
                 placed_chunks.append((eff_start_ms + speech_offset_ms, chunk.audio_path))
-                ev_end = eff_start_ms + speech_offset_ms + chunk.duration_ms
+                speech_finish_ms = eff_start_ms + speech_offset_ms + chunk.duration_ms
+
+                # Opt-in Quiz 3-2-1 Countdown Hold & Tick/Ding SFX synchronization
+                spk_low = (line.speaker_handle or "").strip().lower()
+                is_quiz_question = is_quiz_sfx and (
+                    spk_low.startswith("@cau_do") or "câu " in (line.display_card_text or "").lower()[:14]
+                ) and not line.is_op_post and not spk_low.startswith("@dap_an")
+                is_quiz_answer = is_quiz_sfx and (
+                    spk_low.startswith("@dap_an") or "đáp án" in (line.display_card_text or "").lower()[:24]
+                )
+                if is_quiz_answer and quiz_ding_wav is not None:
+                    smart_sfx_cues.append((eff_start_ms + 15, quiz_ding_wav, max(0.95, sfx_gain)))
+
+                if is_quiz_question:
+                    cd_total_ms = quiz_cd_sec * 1000
+                    if quiz_tick_wav is not None:
+                        for sec_i in range(quiz_cd_sec):
+                            smart_sfx_cues.append(
+                                (speech_finish_ms + sec_i * 1000 + 80, quiz_tick_wav, max(0.95, sfx_gain))
+                            )
+                    ev_end = speech_finish_ms + cd_total_ms
+                else:
+                    ev_end = speech_finish_ms
+
                 ev_words = chunk.word_timestamps
                 if ev_end > next_start_ms and not audio_config.keep_original_audio:
                     cursor_shift_ms += (ev_end - next_start_ms) + 110

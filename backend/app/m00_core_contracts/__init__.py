@@ -62,6 +62,7 @@ from .dtos import (
     ProductReviewPromptDTO,
     ProjectGroupDTO,
     ProjectPublishStatusDTO,
+    QuizGenerateRequestDTO,
     RawTranscriptSegmentDTO,
     RenderJobSpecDTO,
     RenderOutputDTO,
@@ -82,6 +83,7 @@ from .dtos import (
     resolve_aspect_dimensions,
 )
 from .enums import (
+    AmbienceOverlayStyle,
     AssetType,
     CopywritingTone,
     CoverTemplateStyle,
@@ -212,6 +214,8 @@ __all__ = [
     "HookVariantDTO",
     "HookScoreRequestDTO",
     "HookScoreResultDTO",
+    "QuizGenerateRequestDTO",
+    "AmbienceOverlayStyle",
     "ProjectPublishStatusDTO",
     "ThreadFilterVibe",
     "ThreadsCardTheme",

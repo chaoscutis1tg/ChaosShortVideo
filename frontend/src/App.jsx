@@ -772,6 +772,7 @@ export default function App() {
               voices={voices}
               bgmPresets={bgmPresets}
               layoutConfig={layoutConfig}
+              setLayoutConfig={setLayoutConfig}
               projectGroups={projectGroups}
               onGroupsChanged={refreshGroupsAndProjects}
               onProjectStarted={handleProjectStarted}
@@ -830,6 +831,7 @@ export default function App() {
                   voices={voices}
                   bgmPresets={bgmPresets}
                   layoutConfig={layoutConfig}
+                  setLayoutConfig={setLayoutConfig}
                   projectGroups={projectGroups}
                   onGroupsChanged={refreshGroupsAndProjects}
                   onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}

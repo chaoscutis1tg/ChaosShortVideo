@@ -23,13 +23,25 @@ class ThreadFilterVibe(str, Enum):
 
 
 class ThreadsCardTheme(str, Enum):
-    """Visual overlay card styles for floating Threads / Reddit posts & Chat Story bubbles."""
+    """Visual overlay card styles for floating Threads / Reddit posts, Chat Story, Vinyl & Quiz."""
 
     DARK_THREADS = "DARK_THREADS"
     LIGHT_THREADS = "LIGHT_THREADS"
     FROSTED_GLASS = "FROSTED_GLASS"
     CHAT_MESSENGER_ZALO = "CHAT_MESSENGER_ZALO"
     CHAT_IMESSAGE_LIGHT = "CHAT_IMESSAGE_LIGHT"
+    MIDNIGHT_VINYL_LYRIC = "MIDNIGHT_VINYL_LYRIC"
+    QUIZ_COUNTDOWN_CARD = "QUIZ_COUNTDOWN_CARD"
+
+
+class AmbienceOverlayStyle(str, Enum):
+    """Opt-in procedural cinematic atmosphere overlays (defaults strictly to NONE)."""
+
+    NONE = "NONE"
+    GOLDEN_BOKEH = "GOLDEN_BOKEH"
+    NIGHT_RAIN = "NIGHT_RAIN"
+    WARM_LIGHT_LEAK = "WARM_LIGHT_LEAK"
+    VINTAGE_FILM_35MM = "VINTAGE_FILM_35MM"
 
 
 class ThreadsEyeGuideMode(str, Enum):

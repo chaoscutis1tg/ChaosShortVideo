@@ -81,6 +81,7 @@ export default function TopicStudioForm({
   voices,
   bgmPresets,
   layoutConfig,
+  setLayoutConfig,
   projectGroups = [],
   onGroupsChanged,
   onProjectStarted,
@@ -88,6 +89,11 @@ export default function TopicStudioForm({
   apiKeyConfigured = false,
   onOpenApiSettings,
 }) {
+  const updateTopicLayout = (patch) => {
+    if (setLayoutConfig) {
+      setLayoutConfig((prev) => ({ ...prev, ...patch }));
+    }
+  };
   const savedDraft = loadTopicDraft();
   const rootRef = useRef(null);
 
@@ -438,6 +444,12 @@ export default function TopicStudioForm({
           </span>
           <span className="badge badge-info">Thời lượng: ~{durationSec}s</span>
           <span className="badge">{partCount} tập</span>
+          {layoutConfig?.ambience_overlay && layoutConfig.ambience_overlay !== 'NONE' && (
+            <span className="badge badge-ok">✨ Không khí: {layoutConfig.ambience_overlay}</span>
+          )}
+          {layoutConfig?.story_progress_bar_enabled && (
+            <span className="badge badge-info">Thanh đốt truyện</span>
+          )}
         </div>
       </div>
 
@@ -991,12 +1003,46 @@ export default function TopicStudioForm({
           </div>
         </div>
 
-        <div className="toggle-grid">
+        <div className="toggle-grid" style={{ marginBottom: 12 }}>
           <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
             Âm hiệu điểm nhấn tinh tế (Micro-SFX: Chuông ấm mở đầu 3s &amp; Whoosh chuyển cảnh)
           </SwitchCard>
           <SwitchCard checked={smartKeywordHighlight} onChange={setSmartKeywordHighlight}>
             Tự tô sáng từ khóa đắt giá &amp; con số trên phụ đề
+          </SwitchCard>
+        </div>
+
+        {/* SYNCED OPT-IN CINEMATIC POLISH (DEFAULT OFF) */}
+        <div
+          className="surface-box"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: 10,
+            alignItems: 'end',
+          }}
+        >
+          <div>
+            <label className="form-label" style={{ fontSize: 12.2, marginBottom: 4 }}>
+              ✨ Lớp phủ không khí điện ảnh (Tùy chọn — Mặc định Tắt)
+            </label>
+            <select
+              className="select"
+              value={layoutConfig?.ambience_overlay || 'NONE'}
+              onChange={(e) => updateTopicLayout({ ambience_overlay: e.target.value })}
+            >
+              <option value="NONE">Tắt hiệu ứng (Giữ nguyên bản 100%)</option>
+              <option value="GOLDEN_BOKEH">✨ Hạt bụi nắng vàng (Golden Bokeh)</option>
+              <option value="NIGHT_RAIN">🌧️ Mưa đêm phố thị (Night Rain)</option>
+              <option value="WARM_LIGHT_LEAK">🌅 Vệt nắng chiều ấm (Warm Light Leak)</option>
+              <option value="VINTAGE_FILM_35MM">🎞️ Phim nhựa cổ điển 35mm</option>
+            </select>
+          </div>
+          <SwitchCard
+            checked={Boolean(layoutConfig?.story_progress_bar_enabled)}
+            onChange={(val) => updateTopicLayout({ story_progress_bar_enabled: val })}
+          >
+            Thanh tiến trình đốt truyện trên đỉnh theo từng câu (Mặc định Tắt)
           </SwitchCard>
         </div>
       </div>

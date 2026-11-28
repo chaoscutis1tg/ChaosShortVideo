@@ -26,6 +26,7 @@ from app.m00_core_contracts import (
     ProductCategory,
     ProductReviewPromptDTO,
     ProjectMode,
+    QuizGenerateRequestDTO,
     RawTranscriptSegmentDTO,
     SalesScriptAngle,
     ScrapedThreadBundleDTO,
@@ -1485,39 +1486,12 @@ class GeminiContentBrainService(ILLMService):
         project_id: str,
         append_cta_comment: str = "",
         anonymize_handles: bool = False,
+        series_parts: int = 1,
     ) -> CutPlanDTO:
-        """Build timed CutPlanDTO from approved Threads OP post and selected replies (with card images)."""
-        lines: List[NarrationLineDTO] = []
-        cursor_ms = 0
-
+        """Build timed CutPlanDTO from approved Threads OP post & replies (supports opt-in Part 1..K Series split)."""
         def _estimate_dur_ms(txt: str) -> int:
             words = max(1, len((txt or "").split()))
             return max(1850, int(round((words / 3.55) * 1000.0)) + 200)
-
-        # 1. Opening OP Post Card (seq_index = 0)
-        op_disp = bundle.op_display_text.strip()
-        op_spoken = (bundle.op_spoken_vi_text or self._expand_slang_vi(op_disp) or op_disp).strip()
-        op_dur = _estimate_dur_ms(op_spoken)
-        op_handle = "@chuthot_threads" if anonymize_handles else (bundle.op_author_handle or "@chuthot")
-        lines.append(
-            NarrationLineDTO(
-                seq_index=0,
-                rel_start_ms=cursor_ms,
-                rel_end_ms=cursor_ms + op_dur,
-                original_text=op_disp,
-                vi_text=op_spoken,
-                callout_label="",
-                voice_profile_override=bundle.op_voice_profile_id or None,
-                speaker_handle=op_handle,
-                speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
-                display_card_text=op_disp,
-                likes_display=bundle.op_likes_display or "1,8K",
-                card_image_path=bundle.op_image_path or "",
-                is_op_post=True,
-                words=_distribute_words(op_spoken, cursor_ms, cursor_ms + op_dur),
-            )
-        )
-        cursor_ms += op_dur + 110
 
         def _split_long_story_pairs(disp_text: str, spoken_text: str, max_card_chars: int = 560) -> List[tuple[str, str]]:
             """Keep comments <= 560 chars on 1 full card; split essay-length stories cleanly at sentence boundaries."""
@@ -1561,79 +1535,148 @@ class GeminiContentBrainService(ILLMService):
                 pairs.append((ch_d, ch_sp))
             return pairs or [(d_clean, s_clean)]
 
-        # 2. Selected Comment Cards (seq_index = 1..N, supporting multi-card continuation for essay-length comments)
         active_comments = [c for c in bundle.comments if c.selected]
-        for idx, c in enumerate(active_comments, start=1):
-            c_disp = (c.display_text or c.raw_text).strip()
-            c_spoken = (c.spoken_vi_text or self._expand_slang_vi(c_disp) or c_disp).strip()
-            if not c_spoken:
-                continue
-            c_handle = f"@nguoila_{idx:02d}" if anonymize_handles else (c.author_handle or f"@thanhvien_{idx:02d}")
-            story_parts = _split_long_story_pairs(c_disp, c_spoken, max_card_chars=560)
-            for p_idx, (part_disp, part_sp) in enumerate(story_parts):
-                c_dur = _estimate_dur_ms(part_sp)
+        eff_parts = max(1, min(4, int(series_parts or 1), max(1, len(active_comments))))
+
+        op_disp = bundle.op_display_text.strip()
+        op_spoken = (bundle.op_spoken_vi_text or self._expand_slang_vi(op_disp) or op_disp).strip()
+        op_handle = "@chuthot_threads" if anonymize_handles else (bundle.op_author_handle or "@chuthot")
+
+        # Partition comments evenly across `eff_parts` (1 by default!)
+        comment_slices: List[List[ThreadCommentItemDTO]] = []
+        if eff_parts <= 1:
+            comment_slices = [active_comments]
+        else:
+            n_c = len(active_comments)
+            for p_i in range(eff_parts):
+                s_i = int(round(p_i * n_c / eff_parts))
+                e_i = int(round((p_i + 1) * n_c / eff_parts))
+                if e_i > s_i:
+                    comment_slices.append(active_comments[s_i:e_i])
+            eff_parts = len(comment_slices)
+
+        clips_out: List[ClipSpecDTO] = []
+        global_cmt_rank = 0
+        for part_num, part_cmts in enumerate(comment_slices, start=1):
+            lines: List[NarrationLineDTO] = []
+            cursor_ms = 0
+
+            part_op_disp = (
+                op_disp
+                if eff_parts == 1 or part_num == 1
+                else f"[Phần {part_num}/{eff_parts}] {op_disp}"
+            )
+            part_op_sp = (
+                op_spoken
+                if eff_parts == 1 or part_num == 1
+                else f"Phần {part_num}. {op_spoken}"
+            )
+            op_dur = _estimate_dur_ms(part_op_sp)
+            lines.append(
+                NarrationLineDTO(
+                    seq_index=0,
+                    rel_start_ms=cursor_ms,
+                    rel_end_ms=cursor_ms + op_dur,
+                    original_text=part_op_disp,
+                    vi_text=part_op_sp,
+                    callout_label="",
+                    voice_profile_override=bundle.op_voice_profile_id or None,
+                    speaker_handle=op_handle,
+                    speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
+                    display_card_text=part_op_disp,
+                    likes_display=bundle.op_likes_display or "1,8K",
+                    card_image_path=(bundle.op_image_path or "") if part_num == 1 else "",
+                    is_op_post=True,
+                    words=_distribute_words(part_op_sp, cursor_ms, cursor_ms + op_dur),
+                )
+            )
+            cursor_ms += op_dur + 110
+
+            for c in part_cmts:
+                global_cmt_rank += 1
+                c_disp = (c.display_text or c.raw_text).strip()
+                c_spoken = (c.spoken_vi_text or self._expand_slang_vi(c_disp) or c_disp).strip()
+                if not c_spoken:
+                    continue
+                c_handle = (
+                    f"@nguoila_{global_cmt_rank:02d}"
+                    if anonymize_handles
+                    else (c.author_handle or f"@thanhvien_{global_cmt_rank:02d}")
+                )
+                story_parts = _split_long_story_pairs(c_disp, c_spoken, max_card_chars=560)
+                for p_idx, (part_disp, part_sp) in enumerate(story_parts):
+                    c_dur = _estimate_dur_ms(part_sp)
+                    seq = len(lines)
+                    lines.append(
+                        NarrationLineDTO(
+                            seq_index=seq,
+                            rel_start_ms=cursor_ms,
+                            rel_end_ms=cursor_ms + c_dur,
+                            original_text=part_disp,
+                            vi_text=part_sp,
+                            callout_label="",
+                            voice_profile_override=c.voice_profile_id or None,
+                            speaker_handle=c_handle,
+                            speaker_avatar_path="" if anonymize_handles else (c.avatar_path or ""),
+                            display_card_text=part_disp,
+                            likes_display=c.likes_display or str(max(19, 450 - global_cmt_rank * 35)),
+                            card_image_path=(c.attached_image_path or "") if p_idx == 0 else "",
+                            is_op_post=False,
+                            words=_distribute_words(part_sp, cursor_ms, cursor_ms + c_dur),
+                        )
+                    )
+                    cursor_ms += c_dur + (70 if p_idx < len(story_parts) - 1 else 110)
+
+            # Cliffhanger on intermediate parts; user CTA on final part
+            tail_txt = (
+                f"Vẫn còn những bình luận gay cấn nhất ở Phần {part_num + 1} — vào kênh xem tiếp ngay nhé!"
+                if part_num < eff_parts
+                else append_cta_comment.strip()
+            )
+            if tail_txt:
+                cta_spoken = self._expand_slang_vi(tail_txt) or tail_txt
+                cta_dur = _estimate_dur_ms(cta_spoken)
                 seq = len(lines)
                 lines.append(
                     NarrationLineDTO(
                         seq_index=seq,
                         rel_start_ms=cursor_ms,
-                        rel_end_ms=cursor_ms + c_dur,
-                        original_text=part_disp,
-                        vi_text=part_sp,
+                        rel_end_ms=cursor_ms + cta_dur,
+                        original_text=tail_txt,
+                        vi_text=cta_spoken,
                         callout_label="",
-                        voice_profile_override=c.voice_profile_id or None,
-                        speaker_handle=c_handle,
-                        speaker_avatar_path="" if anonymize_handles else (c.avatar_path or ""),
-                        display_card_text=part_disp,
-                        likes_display=c.likes_display or str(max(19, 450 - idx * 35)),
-                        card_image_path=(c.attached_image_path or "") if p_idx == 0 else "",
-                        is_op_post=False,
-                        words=_distribute_words(part_sp, cursor_ms, cursor_ms + c_dur),
+                        voice_profile_override=bundle.op_voice_profile_id or None,
+                        speaker_handle=op_handle,
+                        speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
+                        display_card_text=tail_txt,
+                        likes_display="Xem tiếp" if part_num < eff_parts else "Ghim",
+                        card_image_path="",
+                        is_op_post=True,
+                        words=_distribute_words(cta_spoken, cursor_ms, cursor_ms + cta_dur),
                     )
                 )
-                cursor_ms += c_dur + (70 if p_idx < len(story_parts) - 1 else 110)
+                cursor_ms += cta_dur + 120
 
-        # 3. Optional Engagement Hook CTA Card at the end
-        clean_cta = append_cta_comment.strip()
-        if clean_cta:
-            cta_spoken = self._expand_slang_vi(clean_cta) or clean_cta
-            cta_dur = _estimate_dur_ms(cta_spoken)
-            seq = len(lines)
-            lines.append(
-                NarrationLineDTO(
-                    seq_index=seq,
-                    rel_start_ms=cursor_ms,
-                    rel_end_ms=cursor_ms + cta_dur,
-                    original_text=clean_cta,
-                    vi_text=cta_spoken,
-                    callout_label="",
-                    voice_profile_override=bundle.op_voice_profile_id or None,
-                    speaker_handle=op_handle,
-                    speaker_avatar_path="" if anonymize_handles else (bundle.op_avatar_path or ""),
-                    display_card_text=clean_cta,
-                    likes_display="Ghim",
-                    card_image_path="",
-                    is_op_post=True,
-                    words=_distribute_words(cta_spoken, cursor_ms, cursor_ms + cta_dur),
+            part_title_prefix = f"[Phần {part_num}/{eff_parts}] " if eff_parts > 1 else ""
+            clips_out.append(
+                ClipSpecDTO(
+                    clip_id=f"{project_id}_part_{part_num:02d}",
+                    project_id=project_id,
+                    part_number=part_num,
+                    source_start_ms=0,
+                    source_end_ms=max(3000, cursor_ms),
+                    hook_banner_title=(f"{part_title_prefix}{bundle.topic_title}")[:120]
+                    or "Thảo luận nổi bật trên Threads",
+                    highlight_score=92.0,
+                    lines=lines,
+                    append_cta_outro=False,
                 )
             )
-            cursor_ms += cta_dur + 120
 
-        clip = ClipSpecDTO(
-            clip_id=f"{project_id}_part_01",
-            project_id=project_id,
-            part_number=1,
-            source_start_ms=0,
-            source_end_ms=max(3000, cursor_ms),
-            hook_banner_title=bundle.topic_title[:120] or "Thảo luận nổi bật trên Threads",
-            highlight_score=92.0,
-            lines=lines,
-            append_cta_outro=False,
-        )
         return CutPlanDTO(
             project_id=project_id,
             mode=ProjectMode.THREADS_TOPIC,
-            clips=[clip],
+            clips=clips_out,
         )
 
     async def translate_radar_items(
@@ -1968,6 +2011,196 @@ class GeminiContentBrainService(ILLMService):
             weakness_note=" ".join(issues),
             variants=variants,
             used_api_key=False,
+        )
+
+    async def generate_quiz_bundle(
+        self, req: QuizGenerateRequestDTO
+    ) -> ScrapedThreadBundleDTO:
+        """Generate an interactive 3-2-1 Countdown Quiz / Blind Test bundle for high comment engagement."""
+        topic = req.quiz_topic.strip()
+        q_count = max(1, min(8, int(req.question_count or 3)))
+        cd_sec = max(2, min(5, int(req.countdown_sec or 3)))
+
+        if self.api_key:
+            prompt = (
+                "Bạn là biên kịch chuyên tạo Video Đố Vui / Trắc Nghiệm Phản Xạ 3 Giây kéo hàng nghìn bình luận trên TikTok & YouTube Shorts.\n"
+                f"Chủ đề đố vui: {topic} (Nhóm: {req.quiz_category})\n"
+                f"Số câu hỏi cần tạo: ĐÚNG {q_count} câu (tăng dần độ thú vị/bất ngờ).\n"
+                f"Thời gian đếm ngược mỗi câu: {cd_sec} giây.\n"
+                "Yêu cầu:\n"
+                "- Mỗi câu hỏi ngắn gọn súc tích, có 3 đáp án A, B, C rõ ràng.\n"
+                "- Phần giải đáp nêu đáp án đúng kèm 1 câu giải thích cực thú vị dễ gây tranh luận.\n"
+                "Trả về JSON chuẩn:\n"
+                "{\n"
+                '  "topic_title": "Tiêu đề SEO hấp dẫn dưới 95 ký tự",\n'
+                '  "intro_hook": "Câu mở đầu thách đố người xem dưới 22 chữ",\n'
+                '  "questions": [\n'
+                '    {\n'
+                '      "question_card": "Câu 1: ...?\\nA. ...\\nB. ...\\nC. ...",\n'
+                '      "question_spoken": "Câu một: ... Đáp án A: ..., B: ..., hay C: ...?",\n'
+                '      "answer_card": "✅ ĐÁP ÁN ĐÚNG: B. ...\\n💡 Giải thích: ...",\n'
+                '      "answer_spoken": "Đáp án chính xác là B! Bởi vì ..."\n'
+                "    }\n"
+                "  ]\n"
+                "}"
+            )
+            try:
+                parsed = await self._call_gemini_json(prompt)
+                raw_qs = parsed.get("questions") or []
+                if isinstance(raw_qs, list) and raw_qs:
+                    cmts: List[ThreadCommentItemDTO] = []
+                    for idx, q_item in enumerate(raw_qs[:q_count], start=1):
+                        q_card = str(q_item.get("question_card") or "").strip()
+                        q_sp = str(q_item.get("question_spoken") or self._expand_slang_vi(q_card) or q_card).strip()
+                        a_card = str(q_item.get("answer_card") or "").strip()
+                        a_sp = str(q_item.get("answer_spoken") or self._expand_slang_vi(a_card) or a_card).strip()
+                        if not q_card or not a_card:
+                            continue
+                        cmts.append(
+                            ThreadCommentItemDTO(
+                                comment_id=f"quiz_q_{idx:02d}",
+                                author_handle=f"@Cau_Do_{idx}",
+                                display_name=f"Câu đố #{idx}",
+                                raw_text=q_card,
+                                display_text=q_card,
+                                spoken_vi_text=q_sp,
+                                likes_display=f"⏱ {cd_sec}s",
+                                voice_profile_id=req.host_voice_id,
+                                selected=True,
+                            )
+                        )
+                        cmts.append(
+                            ThreadCommentItemDTO(
+                                comment_id=f"quiz_a_{idx:02d}",
+                                author_handle=f"@Dap_An_{idx}",
+                                display_name=f"Đáp án #{idx}",
+                                raw_text=a_card,
+                                display_text=a_card,
+                                spoken_vi_text=a_sp,
+                                likes_display="Đáp án",
+                                voice_profile_id=req.answer_voice_id,
+                                selected=True,
+                            )
+                        )
+                    if cmts:
+                        intro_txt = str(
+                            parsed.get("intro_hook")
+                            or f"Thử thách {cd_sec} giây phản xạ về '{topic}' — Đố bạn trả lời đúng hết {len(cmts) // 2} câu!"
+                        ).strip()
+                        return ScrapedThreadBundleDTO(
+                            source_url="",
+                            platform="quiz_321",
+                            topic_title=str(parsed.get("topic_title") or f"Đố vui {cd_sec}s: {topic}")[:160],
+                            op_author_handle="@Thu_Thach_321",
+                            op_display_text=intro_txt,
+                            op_spoken_vi_text=self._expand_slang_vi(intro_txt) or intro_txt,
+                            op_likes_display=f"{len(cmts) // 2} câu đố",
+                            op_replies_display=f"{cd_sec}s/câu",
+                            op_voice_profile_id=req.host_voice_id,
+                            male_voice_id=req.answer_voice_id,
+                            female_voice_id=req.host_voice_id,
+                            comments=cmts,
+                            used_api_key=True,
+                            extraction_note=f"AI đã tạo bộ {len(cmts) // 2} câu đố kèm nhịp đếm ngược {cd_sec}-2-1!",
+                        )
+            except Exception:
+                if not self.allow_offline_fallback:
+                    raise
+
+        low_t = topic.lower()
+        if req.quiz_category.upper() == "MUSIC_EAR" or any(
+            k in low_t for k in ("đàn", "guitar", "violin", "nhạc", "âm")
+        ):
+            seed_qs = [
+                (
+                    "Câu 1: Chi tiết nào quyết định tới 70% độ vang ấm của một cây đàn Guitar / Violin gỗ tự nhiên?\nA. Màu sơn bóng bên ngoài\nB. Mặt Top gỗ thịt (Solid Wood)\nC. Bộ khóa lên dây kim loại",
+                    "Câu một: Chi tiết nào quyết định tới bảy mươi phần trăm độ vang ấm của một cây đàn gỗ tự nhiên? A: Màu sơn bóng, B: Mặt Top gỗ thịt nguyên tấm, hay C: Bộ khóa lên dây?",
+                    "✅ ĐÁP ÁN ĐÚNG: B. Mặt Top gỗ thịt (Solid Wood)\n💡 Mặt gỗ thịt nguyên tấm cộng hưởng trực tiếp với dao động dây đàn và càng chơi lâu tiếng càng mở!",
+                    "Đáp án chuẩn là B! Mặt Top gỗ thịt nguyên tấm cộng hưởng trực tiếp với dây đàn và càng chơi lâu âm càng mở.",
+                ),
+                (
+                    "Câu 2: Người mới tập đàn thường bỏ cuộc ở tuần thứ 2 vì lý do kinh điển nào nhất?\nA. Chưa thuộc hết nhạc lý\nB. Đàn chỉnh Action quá cao gây đau đầu ngón tay\nC. Tập mỗi ngày chỉ 15 phút",
+                    "Câu hai: Người mới tập đàn hay bỏ cuộc ở tuần thứ hai vì lý do nào nhất? A: Chưa thuộc nhạc lý, B: Dây đàn quá cao gây đau tay, hay C: Chỉ tập mười lăm phút mỗi tối?",
+                    "✅ ĐÁP ÁN ĐÚNG: B. Đàn để Action quá cao!\n💡 Chỉ cần căn chỉnh lại độ cao dây êm tay là tập 15–20 phút mỗi tối tiến bộ cực nhanh.",
+                    "Đáp án đúng là B! Đàn căn chỉnh độ cao dây êm tay sẽ giúp bạn vượt qua hai tuần đầu nhẹ nhàng hơn rất nhiều.",
+                ),
+                (
+                    "Câu 3: Khi bảo quản đàn gỗ vào mùa nồm ẩm miền Bắc, thói quen nào tốt nhất?\nA. Phơi đàn trực tiếp ngoài nắng gắt\nB. Để đàn trong bao/hộp kèm gói hút ẩm chuyên dụng\nC. Luôn tháo lỏng toàn bộ dây mỗi ngày",
+                    "Câu ba: Mùa nồm ẩm thì bảo quản đàn gỗ thế nào là chuẩn nhất? A: Phơi ngoài nắng gắt, B: Cất trong hộp kèm gói hút ẩm, hay C: Tháo lỏng hết dây mỗi ngày?",
+                    "✅ ĐÁP ÁN ĐÚNG: B. Để trong hộp kèm gói hút ẩm!\n💡 Giữ độ ẩm ổn định 45–55% giúp mặt gỗ không bị phồng rộp hay cong cần đàn.",
+                    "Chính xác là B! Giữ đàn trong hộp kèm gói hút ẩm giúp gỗ luôn ổn định và chuẩn âm.",
+                ),
+            ]
+        else:
+            seed_qs = [
+                (
+                    f"Câu 1 ({topic[:40]}): Trong đám đông khi cả nhóm cùng bật cười, ánh mắt đầu tiên của một người thường vô thức hướng về ai?\nA. Người vừa kể câu chuyện cười đó\nB. Người mà họ có tình cảm đặc biệt nhất\nC. Nhìn xuống điện thoại trên tay",
+                    "Câu một: Trong đám đông khi cả nhóm cùng bật cười, ánh mắt đầu tiên của một người vô thức hướng về ai? A: Người kể chuyện, B: Người mà họ thích nhất, hay C: Nhìn xuống điện thoại?",
+                    "✅ ĐÁP ÁN ĐÚNG: B. Người họ thương thầm!\n💡 Tâm lý học hành vi chứng minh con người luôn muốn chia sẻ khoảnh khắc vui đầu tiên với người mình để ý nhất.",
+                    "Đáp án chính xác là B! Theo tâm lý học, ta luôn vô thức nhìn về người mình để ý nhất ngay khi bật cười.",
+                ),
+                (
+                    "Câu 2: Dấu hiệu tinh tế nào cho thấy đối phương thực sự để tâm đến cuộc trò chuyện với bạn?\nA. Trả lời bằng những từ ngắn gọn 1 chữ\nB. Nhớ chính xác một chi tiết nhỏ bạn từng kể từ nhiều tuần trước\nC. Chỉ nhắn tin khi cần nhờ vả",
+                    "Câu hai: Dấu hiệu nào chứng tỏ người ấy thực sự để tâm đến bạn? A: Nhắn cụt một chữ, B: Nhớ rõ chi tiết nhỏ bạn từng kể từ lâu, hay C: Chỉ nhắn khi nhờ việc?",
+                    "✅ ĐÁP ÁN ĐÚNG: B. Nhớ chi tiết nhỏ xíu bạn từng nói!\n💡 Người bận mấy cũng sẽ nhớ rất kỹ sở thích nhỏ của người họ trân trọng.",
+                    "Đáp án đúng là B! Chỉ khi thật sự để tâm, người ta mới nhớ từng sở thích nhỏ bạn vô tình nhắc tới.",
+                ),
+                (
+                    "Câu 3: Khoảng thời gian nào trong ngày con người dễ nhắn ra những lời thật lòng nhất mà ban ngày hay giấu kín?\nA. 8 giờ sáng đầu tuần\nB. 12 giờ trưa giờ nghỉ\nC. Sau 11 giờ đêm khi không gian tĩnh lặng",
+                    "Câu ba: Khung giờ nào con người dễ nói thật lòng mình nhất? A: Tám giờ sáng, B: Mười hai giờ trưa, hay C: Sau mười một giờ đêm?",
+                    "✅ ĐÁP ÁN ĐÚNG: C. Sau 11 giờ đêm!\n💡 Khi cơ thể mệt nhẹ và xung quanh yên tĩnh, rào cản lý trí hạ xuống khiến cảm xúc thật dễ lên tiếng nhất.",
+                    "Chuẩn xác là C! Sau mười một giờ đêm là lúc cảm xúc thật lên tiếng rõ nhất.",
+                ),
+            ]
+
+        cmts_fb: List[ThreadCommentItemDTO] = []
+        for idx in range(q_count):
+            q_c, q_s, a_c, a_s = seed_qs[idx % len(seed_qs)]
+            if idx >= len(seed_qs):
+                q_c = re.sub(r"^Câu \d+", f"Câu {idx + 1}", q_c)
+            cmts_fb.append(
+                ThreadCommentItemDTO(
+                    comment_id=f"quiz_fb_q_{idx + 1:02d}",
+                    author_handle=f"@Cau_Do_{idx + 1}",
+                    display_name=f"Câu đố #{idx + 1}",
+                    raw_text=q_c,
+                    display_text=q_c,
+                    spoken_vi_text=q_s,
+                    likes_display=f"⏱ {cd_sec}s",
+                    voice_profile_id=req.host_voice_id,
+                    selected=True,
+                )
+            )
+            cmts_fb.append(
+                ThreadCommentItemDTO(
+                    comment_id=f"quiz_fb_a_{idx + 1:02d}",
+                    author_handle=f"@Dap_An_{idx + 1}",
+                    display_name=f"Đáp án #{idx + 1}",
+                    raw_text=a_c,
+                    display_text=a_c,
+                    spoken_vi_text=a_s,
+                    likes_display="Đáp án",
+                    voice_profile_id=req.answer_voice_id,
+                    selected=True,
+                )
+            )
+
+        intro_fb = f"Thử thách phản xạ {cd_sec} giây về '{topic[:65]}' — Đố bạn trả lời đúng được mấy câu?"
+        return ScrapedThreadBundleDTO(
+            source_url="",
+            platform="quiz_321",
+            topic_title=f"Đố vui {cd_sec}s: {topic[:110]}",
+            op_author_handle="@Thu_Thach_321",
+            op_display_text=intro_fb,
+            op_spoken_vi_text=self._expand_slang_vi(intro_fb) or intro_fb,
+            op_likes_display=f"{q_count} câu đố",
+            op_replies_display=f"{cd_sec}s/câu",
+            op_voice_profile_id=req.host_voice_id,
+            male_voice_id=req.answer_voice_id,
+            female_voice_id=req.host_voice_id,
+            comments=cmts_fb,
+            used_api_key=False,
+            extraction_note=f"Đã tạo bộ {q_count} câu đố phản xạ {cd_sec}-2-1 kèm giải thích đáp án!",
         )
 
 

@@ -35,6 +35,14 @@ const MODE_BADGE_MAP = {
   voices: 'Phòng Giọng Đọc',
 };
 
+const AMBIENCE_OPTIONS = [
+  { value: 'NONE', label: 'Tắt hiệu ứng (Mặc định — Nguyên bản)', short: '' },
+  { value: 'GOLDEN_BOKEH', label: '✨ Hạt bụi nắng vàng (Golden Bokeh)', short: '✨ Bokeh nắng' },
+  { value: 'NIGHT_RAIN', label: '🌧️ Mưa đêm phố thị (Night Rain)', short: '🌧️ Mưa đêm' },
+  { value: 'WARM_LIGHT_LEAK', label: '🌅 Vệt nắng chiều ấm (Light Leak)', short: '🌅 Nắng chiều' },
+  { value: 'VINTAGE_FILM_35MM', label: '🎞️ Phim nhựa cổ điển 35mm', short: '🎞️ Phim 35mm' },
+];
+
 export default function Canvas916Designer({
   layoutConfig,
   setLayoutConfig,
@@ -270,6 +278,20 @@ export default function Canvas916Designer({
   const subPosY = layoutConfig.subtitle_pos_y ?? 0.84;
   const subFontSize = layoutConfig.subtitle_font_size ?? 52;
   const previewSubPx = Math.max(9.5, Math.min(15.5, +(subFontSize * 0.22).toFixed(1)));
+  const ambienceMode = layoutConfig.ambience_overlay || 'NONE';
+  const ambienceMeta =
+    AMBIENCE_OPTIONS.find((a) => a.value === ambienceMode) || AMBIENCE_OPTIONS[0];
+  const storyBarEnabled = Boolean(layoutConfig.story_progress_bar_enabled);
+  const dynamicModeBadge = isThreadsMode
+    ? layoutConfig.threads_card_theme === 'MIDNIGHT_VINYL_LYRIC'
+      ? 'Threads • Đĩa Than'
+      : layoutConfig.threads_card_theme === 'QUIZ_COUNTDOWN_CARD'
+      ? 'Threads • Đố Vui 3-2-1'
+      : layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
+        layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
+      ? 'Threads • Chat'
+      : 'Threads & Bình Luận'
+    : MODE_BADGE_MAP[effMode] || MODE_BADGE_MAP[activeTab] || 'Studio';
   const gpus = systemStatus?.gpus || [];
   const storage = systemStatus?.storage || {};
 
@@ -289,9 +311,9 @@ export default function Canvas916Designer({
           <span style={{ fontWeight: 700, fontSize: 14.2, display: 'flex', alignItems: 'center', gap: 7 }}>
             <Smartphone size={16} strokeWidth={2} /> Mô phỏng khung xuất
           </span>
-          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span className="badge badge-info" style={{ fontSize: 11, padding: '2px 8px' }}>
-              {MODE_BADGE_MAP[effMode] || MODE_BADGE_MAP[activeTab] || 'Studio'}
+              {dynamicModeBadge}
             </span>
             <span className="badge" style={{ fontSize: 11, padding: '2px 8px' }}>
               {aspectInfo.res}
@@ -337,6 +359,88 @@ export default function Canvas916Designer({
               filter: isFull || isVelvetDark ? 'none' : 'blur(11px) brightness(0.45)',
             }}
           />
+
+          {/* OPT-IN TOP SEGMENTED STORY PROGRESS BAR PREVIEW */}
+          {storyBarEnabled && (
+            <div
+              title="Thanh tiến trình đốt truyện trên đỉnh đang BẬT"
+              style={{
+                position: 'absolute',
+                top: 9,
+                left: 11,
+                right: 11,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: 3,
+                zIndex: 14,
+                pointerEvents: 'none',
+              }}
+            >
+              {[1, 1, 0.55, 0, 0].map((fillFrac, sIdx) => (
+                <div
+                  key={sIdx}
+                  style={{
+                    height: 3.2,
+                    borderRadius: 99,
+                    background: 'rgba(255, 255, 255, 0.28)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {fillFrac > 0 && (
+                    <div
+                      style={{
+                        width: `${fillFrac * 100}%`,
+                        height: '100%',
+                        background: '#ffffff',
+                        borderRadius: 99,
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* OPT-IN CINEMATIC AMBIENCE OVERLAY PREVIEW */}
+          {ambienceMode !== 'NONE' && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                zIndex: 10,
+                background:
+                  ambienceMode === 'GOLDEN_BOKEH'
+                    ? 'radial-gradient(circle at 20% 22%, rgba(253,224,71,0.30) 0%, transparent 18%), radial-gradient(circle at 82% 18%, rgba(251,191,36,0.26) 0%, transparent 22%), radial-gradient(circle at 78% 76%, rgba(245,158,11,0.26) 0%, transparent 20%), radial-gradient(circle at 18% 72%, rgba(254,240,138,0.24) 0%, transparent 16%)'
+                    : ambienceMode === 'NIGHT_RAIN'
+                    ? 'repeating-linear-gradient(102deg, transparent 0px, transparent 18px, rgba(186,230,253,0.18) 18px, rgba(186,230,253,0.18) 19.5px)'
+                    : ambienceMode === 'WARM_LIGHT_LEAK'
+                    ? 'radial-gradient(circle at 0% 0%, rgba(251,146,60,0.38) 0%, transparent 46%), radial-gradient(circle at 100% 100%, rgba(244,63,94,0.30) 0%, transparent 44%)'
+                    : 'inset 0 0 28px rgba(0,0,0,0.65)',
+                boxShadow:
+                  ambienceMode === 'VINTAGE_FILM_35MM'
+                    ? 'inset 0 0 0 6px rgba(10,12,18,0.58), inset 0 0 24px rgba(245,208,144,0.18)'
+                    : 'none',
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  top: storyBarEnabled ? 16 : 8,
+                  right: 8,
+                  padding: '1.5px 6px',
+                  borderRadius: 99,
+                  background: 'rgba(15, 23, 42, 0.78)',
+                  border: '1px solid rgba(250, 204, 21, 0.55)',
+                  color: '#fef08a',
+                  fontSize: 7.5,
+                  fontWeight: 700,
+                }}
+              >
+                {ambienceMeta.short}
+              </span>
+            </div>
+          )}
 
           {/* Draggable Channel Logo */}
           {layoutConfig.logo_path && (
@@ -501,7 +605,111 @@ export default function Canvas916Designer({
                   background: `rgba(0, 0, 0, ${layoutConfig.threads_bg_dim ?? 0.28})`,
                 }}
               >
-                {layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
+                {layoutConfig.threads_card_theme === 'MIDNIGHT_VINYL_LYRIC' ? (
+                  <div
+                    style={{
+                      width: '100%',
+                      padding: '10px 10px 9px',
+                      borderRadius: 14,
+                      background: 'rgba(11, 15, 26, 0.94)',
+                      border: '1px solid rgba(56, 189, 248, 0.48)',
+                      color: '#f8fafc',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: 7.5, fontWeight: 700, color: '#38bdf8', letterSpacing: 0.6, marginBottom: 5 }}>
+                      MIDNIGHT VINYL • LIVE LYRICS
+                    </div>
+                    <div
+                      className="spin"
+                      style={{
+                        width: 58,
+                        height: 58,
+                        margin: '0 auto 6px',
+                        borderRadius: '50%',
+                        background:
+                          'radial-gradient(circle, #0f172a 0% 11%, #38bdf8 12% 33%, #111827 34% 68%, #1e293b 69% 72%, #0b0f19 73% 100%)',
+                        border: '1.5px solid rgba(148,163,184,0.45)',
+                        animationDuration: '4.5s',
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, height: 12, marginBottom: 6 }}>
+                      {[5, 9, 12, 7, 11, 6, 10, 12, 8, 5].map((bh, bi) => (
+                        <span
+                          key={bi}
+                          style={{
+                            width: 2.5,
+                            height: bh,
+                            borderRadius: 2,
+                            background: '#38bdf8',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 8.8, fontWeight: 700, lineHeight: 1.35 }}>
+                      Đĩa than xoay tròn &amp; lời nhạc sáng rõ
+                    </div>
+                    <div style={{ fontSize: 8, opacity: 0.5, marginTop: 2 }}>
+                      Câu tiếp theo mờ dịu chuẩn Spotify...
+                    </div>
+                  </div>
+                ) : layoutConfig.threads_card_theme === 'QUIZ_COUNTDOWN_CARD' ? (
+                  <div
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: 14,
+                      background: 'rgba(15, 23, 42, 0.95)',
+                      border: '1.5px solid rgba(56, 189, 248, 0.75)',
+                      color: '#f8fafc',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '1.5px 6px',
+                        borderRadius: 99,
+                        background: '#0284c7',
+                        fontSize: 7.2,
+                        fontWeight: 800,
+                        marginBottom: 5,
+                      }}
+                    >
+                      ⏱ ĐỐ VUI PHẢN XẠ • COMMENT ĐÁP ÁN
+                    </span>
+                    <div style={{ fontSize: 8.8, fontWeight: 700, lineHeight: 1.3, marginBottom: 5 }}>
+                      Câu 1: Tiếng đàn ấm dày này là gỗ gì?
+                    </div>
+                    <div style={{ display: 'grid', gap: 3, fontSize: 7.8, marginBottom: 6 }}>
+                      <div style={{ padding: '2.5px 6px', borderRadius: 6, background: '#1e293b', border: '1px solid rgba(148,163,184,0.3)' }}>
+                        A. Gỗ Thông nguyên tấm
+                      </div>
+                      <div style={{ padding: '2.5px 6px', borderRadius: 6, background: '#1e293b', border: '1px solid rgba(148,163,184,0.3)' }}>
+                        B. Gỗ ép công nghiệp
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        width: 24,
+                        height: 24,
+                        margin: '0 auto',
+                        borderRadius: '50%',
+                        border: '2.5px solid #f59e0b',
+                        color: '#fef08a',
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {layoutConfig.quiz_countdown_sec || 3}
+                    </div>
+                  </div>
+                ) : layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
                 layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT' ? (
                   <div
                     style={{
@@ -990,6 +1198,31 @@ export default function Canvas916Designer({
               Thẻ kết 2.5s
             </SwitchCard>
           )}
+        </div>
+
+        {/* OPT-IN CINEMATIC AMBIENCE & STORY PROGRESS BAR (DEFAULT OFF / NONE) */}
+        <div className="surface-box" style={{ padding: '9px 11px', marginBottom: 10 }}>
+          <label className="form-label" style={{ fontSize: 12, marginBottom: 5 }}>
+            ✨ Lớp phủ không khí điện ảnh (Mặc định Tắt)
+          </label>
+          <select
+            className="select"
+            style={{ fontSize: 12.5, minHeight: 35, padding: '5px 9px', marginBottom: 7 }}
+            value={ambienceMode}
+            onChange={(e) => update({ ambience_overlay: e.target.value })}
+          >
+            {AMBIENCE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <SwitchCard
+            checked={storyBarEnabled}
+            onChange={(val) => update({ story_progress_bar_enabled: val })}
+          >
+            Thanh tiến trình đốt truyện trên đỉnh (Mặc định Tắt)
+          </SwitchCard>
         </div>
 
         {/* SMART HUMAN-EYE EDITING DRAWER */}

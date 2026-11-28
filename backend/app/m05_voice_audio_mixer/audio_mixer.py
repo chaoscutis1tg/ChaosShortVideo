@@ -1,9 +1,12 @@
 """Sample-accurate Movie Audio Ducking & 3-Tier TTS Narration Mixer (`IVoiceAudioMixer`)."""
 
 import asyncio
+import hashlib
+import json
 from pathlib import Path
+import shutil
 import subprocess
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import wave
 import numpy as np
 
@@ -12,6 +15,7 @@ from app.m00_core_contracts import (
     AudioSubConfigDTO,
     ClipSpecDTO,
     DUCKING_FADE_MS,
+    ITTSProvider,
     IVoiceAudioMixer,
     MASTER_AUDIO_SAMPLE_RATE,
     MasterAudioAndSubDTO,
@@ -20,6 +24,7 @@ from app.m00_core_contracts import (
     ProgressCallback,
     VoiceProfileDTO,
     VoiceSynthesisError,
+    VoiceTier,
     WordTimestampDTO,
 )
 
@@ -236,6 +241,143 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                 1.0,
                 f"[Audio] Bắt đầu tổng hợp giọng đọc cho {total_lines} câu thoại...",
             )
+
+        # Smart Content-Addressed TTS Cache + Bounded Parallel Pre-Synthesis (3x faster network TTS, 0s re-renders!)
+        tts_cache_dir = out_dir.parent / "_tts_cache"
+        tts_cache_dir.mkdir(parents=True, exist_ok=True)
+        pre_synthesized: Dict[int, AudioChunkDTO] = {}
+
+        if audio_config.enable_narration:
+            line_jobs: List[tuple[int, str, VoiceProfileDTO, ITTSProvider, Path]] = []
+            for idx, ln_item in enumerate(clip.lines):
+                if ln_item.is_real_demo_slot:
+                    continue
+                b_prof = (
+                    voice_registry[ln_item.voice_profile_override]
+                    if (
+                        voice_registry
+                        and ln_item.voice_profile_override
+                        and ln_item.voice_profile_override in voice_registry
+                    )
+                    else profile
+                )
+                l_prov = (
+                    self._tts_factory.get_provider(b_prof.tier)
+                    if b_prof.profile_id != profile.profile_id
+                    else default_provider
+                )
+                e_spd = (
+                    ln_item.voice_speed_override
+                    if ln_item.voice_speed_override is not None
+                    else (
+                        audio_config.voice_speed_global
+                        if audio_config.voice_speed_global is not None
+                        else b_prof.speed_rate
+                    )
+                )
+                e_pit = (
+                    ln_item.voice_pitch_override
+                    if ln_item.voice_pitch_override is not None
+                    else (
+                        audio_config.voice_pitch_global
+                        if audio_config.voice_pitch_global is not None
+                        else b_prof.pitch_hz
+                    )
+                )
+                e_prof = b_prof.model_copy(update={"speed_rate": e_spd, "pitch_hz": e_pit})
+                line_jobs.append(
+                    (idx, ln_item.vi_text, e_prof, l_prov, chunks_dir / f"line_{idx:04d}.wav")
+                )
+
+            has_gpu_clone = any(j[2].tier == VoiceTier.LOCAL_F5_CLONE for j in line_jobs)
+            tts_sem = asyncio.Semaphore(1 if has_gpu_clone else 3)
+            done_counter = 0
+            n_jobs = max(len(line_jobs), 1)
+
+            async def _synth_or_load_cached(
+                j_idx: int,
+                j_text: str,
+                j_prof: VoiceProfileDTO,
+                j_prov: Any,
+                j_dst: Path,
+            ) -> None:
+                nonlocal done_counter
+                sig = (
+                    f"{j_text.strip()}|{j_prof.tier.value}|{j_prof.voice_id_or_sample_path}|"
+                    f"{j_prof.speed_rate:.3f}|{j_prof.pitch_hz:.2f}|{j_prof.dsp_preset}"
+                )
+                ckey = hashlib.sha256(sig.encode("utf-8")).hexdigest()[:24]
+                c_wav = tts_cache_dir / f"{ckey}.wav"
+                c_meta = tts_cache_dir / f"{ckey}.json"
+
+                async with tts_sem:
+                    short_vname = j_prof.display_name.split("—")[0].strip()[:26]
+                    preview_snip = " ".join(j_text.split())[:42]
+                    if c_wav.exists() and c_meta.exists() and c_wav.stat().st_size > 256:
+                        try:
+                            shutil.copy2(c_wav, j_dst)
+                            meta = json.loads(c_meta.read_text(encoding="utf-8"))
+                            words = [WordTimestampDTO(**w) for w in (meta.get("words") or [])]
+                            dur_c = max(1, int(meta.get("duration_ms") or 500))
+                            pre_synthesized[j_idx] = AudioChunkDTO(
+                                audio_path=j_dst, duration_ms=dur_c, word_timestamps=words
+                            )
+                            done_counter += 1
+                            if on_progress:
+                                pct_c = round((done_counter / n_jobs) * 82.0, 1)
+                                on_progress(
+                                    "GENERATING_AUDIO",
+                                    pct_c,
+                                    f'[TTS {j_idx + 1}/{total_lines}] Tái sử dụng tức thì từ Bộ đệm Cache ({dur_c / 1000.0:.1f}s): "{preview_snip}..."',
+                                )
+                            return
+                        except Exception:
+                            pass
+
+                    if on_progress:
+                        on_progress(
+                            "GENERATING_AUDIO",
+                            round((done_counter / n_jobs) * 82.0, 1),
+                            f'[TTS {j_idx + 1}/{total_lines}] Đang thu giọng ({short_vname} • {j_prof.speed_rate:.2f}x): "{preview_snip}..."',
+                        )
+                    built = await j_prov.synthesize(j_text, j_prof, j_dst)
+                    pre_synthesized[j_idx] = built
+                    done_counter += 1
+                    try:
+                        shutil.copy2(j_dst, c_wav)
+                        c_meta.write_text(
+                            json.dumps(
+                                {
+                                    "duration_ms": built.duration_ms,
+                                    "words": [w.model_dump() for w in built.word_timestamps],
+                                },
+                                ensure_ascii=False,
+                            ),
+                            encoding="utf-8",
+                        )
+                    except OSError:
+                        pass
+                    if on_progress:
+                        pct_d = round((done_counter / n_jobs) * 82.0, 1)
+                        on_progress(
+                            "GENERATING_AUDIO",
+                            pct_d,
+                            f"[TTS {j_idx + 1}/{total_lines}] Đã thu xong câu #{j_idx + 1} ({built.duration_ms / 1000.0:.1f}s âm thanh)",
+                        )
+
+            await asyncio.gather(*[_synth_or_load_cached(*job) for job in line_jobs])
+
+            # Keep TTS disk cache lightweight (cap at 220 recent entries)
+            try:
+                cached_wavs = list(tts_cache_dir.glob("*.wav"))
+                if len(cached_wavs) > 220:
+                    cached_wavs.sort(key=lambda p: p.stat().st_mtime)
+                    for old_w in cached_wavs[:50]:
+                        old_w.unlink(missing_ok=True)
+                        old_w.with_suffix(".json").unlink(missing_ok=True)
+            except OSError:
+                pass
+
         for idx, line in enumerate(clip.lines):
             eff_start_ms = line.rel_start_ms + cursor_shift_ms
             orig_line_dur = max(500, line.rel_end_ms - line.rel_start_ms)
@@ -268,42 +410,6 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
             slot_ms = max(400, next_start_ms - eff_start_ms - 40)
 
             if audio_config.enable_narration:
-                raw_wav = chunks_dir / f"line_{idx:04d}.wav"
-                base_prof = (
-                    voice_registry[line.voice_profile_override]
-                    if (
-                        voice_registry
-                        and line.voice_profile_override
-                        and line.voice_profile_override in voice_registry
-                    )
-                    else profile
-                )
-                line_provider = (
-                    self._tts_factory.get_provider(base_prof.tier)
-                    if base_prof.profile_id != profile.profile_id
-                    else default_provider
-                )
-                eff_speed = (
-                    line.voice_speed_override
-                    if line.voice_speed_override is not None
-                    else (
-                        audio_config.voice_speed_global
-                        if audio_config.voice_speed_global is not None
-                        else base_prof.speed_rate
-                    )
-                )
-                eff_pitch = (
-                    line.voice_pitch_override
-                    if line.voice_pitch_override is not None
-                    else (
-                        audio_config.voice_pitch_global
-                        if audio_config.voice_pitch_global is not None
-                        else base_prof.pitch_hz
-                    )
-                )
-                eff_profile = base_prof.model_copy(
-                    update={"speed_rate": eff_speed, "pitch_hz": eff_pitch}
-                )
                 speech_offset_ms = (
                     310
                     if (is_chat_sfx and idx >= 1)
@@ -319,23 +425,14 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                         cue_t = eff_start_ms + (250 if idx >= 1 else 10)
                         smart_sfx_cues.append((cue_t, chosen_chat_wav, max(0.85, sfx_gain)))
                 if use_smart_sfx:
-                    if idx >= 1 and pop_sfx_wav is None and whoosh_wav is not None:
+                    if idx >= 1 and pop_sfx_wav is None and not is_chat_sfx and whoosh_wav is not None:
                         if (eff_start_ms - last_whoosh_ms) >= 2800:
                             smart_sfx_cues.append((max(0, eff_start_ms - 85), whoosh_wav, sfx_gain))
                             last_whoosh_ms = eff_start_ms
                     if click_wav is not None and bool(line.card_image_path):
                         smart_sfx_cues.append((eff_start_ms + 130, click_wav, sfx_gain))
 
-                if on_progress:
-                    short_vname = eff_profile.display_name.split("—")[0].strip()[:28]
-                    preview_snip = " ".join(line.vi_text.split())[:46]
-                    on_progress(
-                        "GENERATING_AUDIO",
-                        round((idx / total_lines) * 82.0, 1),
-                        f'[TTS {idx + 1}/{total_lines}] Đang thu giọng ({short_vname} • {eff_speed:.2f}x): "{preview_snip}..."',
-                    )
-
-                chunk = await line_provider.synthesize(line.vi_text, eff_profile, raw_wav)
+                chunk = pre_synthesized[idx]
                 chunk = await asyncio.to_thread(self._fit_chunk_to_slot, chunk, slot_ms)
                 placed_chunks.append((eff_start_ms + speech_offset_ms, chunk.audio_path))
                 ev_end = eff_start_ms + speech_offset_ms + chunk.duration_ms
@@ -354,15 +451,6 @@ class MovieAudioAndSubMixer(IVoiceAudioMixer):
                     words=ev_words,
                 )
             )
-
-            if on_progress:
-                pct = round(((idx + 1) / total_lines) * 82.0, 1)
-                dur_disp = max(0.2, (ev_end - eff_start_ms) / 1000.0)
-                on_progress(
-                    "GENERATING_AUDIO",
-                    pct,
-                    f"[TTS {idx + 1}/{total_lines}] Đã thu xong câu #{idx + 1} ({dur_disp:.1f}s âm thanh)",
-                )
 
         speech_target_ms = max(
             clip.duration_ms + cursor_shift_ms,

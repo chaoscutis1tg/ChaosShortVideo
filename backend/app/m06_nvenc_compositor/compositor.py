@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from typing import List, Optional
+from typing import Any, List, Optional
 import wave
 import cv2
 import numpy as np
@@ -39,6 +39,23 @@ from .overlay_artist import StudioOverlayArtist
 
 FFMPEG_TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
 TRANSITION_FRAMES = 12  # 0.40s silky CapCut transition at 30fps
+_CACHED_FACE_CASCADE: Optional[Any] = None
+_FACE_CASCADE_CHECKED: bool = False
+
+
+def _get_face_cascade() -> Optional[Any]:
+    global _CACHED_FACE_CASCADE, _FACE_CASCADE_CHECKED
+    if _FACE_CASCADE_CHECKED:
+        return _CACHED_FACE_CASCADE
+    _FACE_CASCADE_CHECKED = True
+    try:
+        if hasattr(cv2, "data") and hasattr(cv2, "CascadeClassifier"):
+            cascade_file = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            if Path(cascade_file).exists():
+                _CACHED_FACE_CASCADE = cv2.CascadeClassifier(cascade_file)
+    except Exception:
+        _CACHED_FACE_CASCADE = None
+    return _CACHED_FACE_CASCADE
 
 
 def _parse_ffmpeg_progress_ms(line: str) -> Optional[int]:
@@ -81,9 +98,9 @@ def _detect_visual_focal_point(img_bgr: np.ndarray) -> tuple[float, float]:
         cv2.COLOR_BGR2GRAY,
     )
     try:
-        cascade_file = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        if Path(cascade_file).exists():
-            faces = cv2.CascadeClassifier(cascade_file).detectMultiScale(
+        cascade = _get_face_cascade()
+        if cascade is not None:
+            faces = cascade.detectMultiScale(
                 gray, scaleFactor=1.18, minNeighbors=4
             )
             if len(faces) > 0:
@@ -772,7 +789,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         v_enc = (
             ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET, "-cq", str(NVENC_CQ)]
             if use_nvenc
-            else ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16"]
+            else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19"]
         )
         cmd = [
             "ffmpeg",
@@ -1054,7 +1071,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
         v_enc = (
             ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET, "-cq", str(NVENC_CQ)]
             if use_nvenc
-            else ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "17"]
+            else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19"]
         )
         cmd = [
             "ffmpeg",
@@ -1107,8 +1124,12 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                 last_bg = cropped
             return last_bg
 
+        roi_cache: dict[Path, Any] = {}
+
         def _load_card_roi(path: Path):
-            """Load RGBA card and precompute non-zero alpha bounding box + uint16 premultiplied planes."""
+            """Load RGBA card once per unique file and cache uint16 premultiplied ROI planes."""
+            if path in roi_cache:
+                return roi_cache[path]
             raw_b = np.fromfile(str(path), dtype=np.uint8)
             bgra = cv2.imdecode(raw_b, cv2.IMREAD_UNCHANGED)
             if bgra is None:
@@ -1121,6 +1142,7 @@ class FFmpegNVENCCompositor(IVideoCompositor):
 
             nz_y, nz_x = np.where(bgra[:, :, 3] > 1)
             if nz_y.size == 0:
+                roi_cache[path] = None
                 return None
             y0, y1 = max(0, int(nz_y.min()) - 4), min(canvas_h, int(nz_y.max()) + 5)
             x0, x1 = max(0, int(nz_x.min()) - 4), min(canvas_w, int(nz_x.max()) + 5)
@@ -1128,34 +1150,40 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             a_u16 = roi_bgra[:, :, 3:4].astype(np.uint16)
             inv_a_u16 = 255 - a_u16
             premult_fg_u16 = roi_bgra[:, :, :3].astype(np.uint16) * a_u16
-            return (x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16)
+            res = (x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16)
+            roi_cache[path] = res
+            return res
 
-        def _blend_card_fast(
+        compose_buf = np.empty((canvas_h, canvas_w, 3), dtype=np.uint8)
+        fade_prev_buf = np.empty((canvas_h, canvas_w, 3), dtype=np.uint8)
+
+        def _blend_card_into(
+            dst_bgr: np.ndarray,
             bg_bgr: np.ndarray,
             card_info,
             pop_scale: float,
             opacity: float,
             dy_px: float = 0.0,
         ) -> np.ndarray:
+            """Zero-heap-allocation frame blender: copies `bg_bgr` into reusable `dst_bgr` and blends ROI in place."""
+            np.copyto(dst_bgr, bg_bgr)
             if card_info is None:
-                return bg_bgr
+                return dst_bgr
             x0, y0, x1, y1, roi_bgra, inv_a_u16, premult_fg_u16 = card_info
-            out = bg_bgr.copy()
 
             if abs(pop_scale - 1.0) <= 1e-3 and opacity >= 0.995 and abs(dy_px) < 0.4:
-                bg_roi = out[y0:y1, x0:x1].astype(np.uint16)
-                out[y0:y1, x0:x1] = ((bg_roi * inv_a_u16 + premult_fg_u16 + 127) // 255).astype(
-                    np.uint8
-                )
-                return out
+                bg_roi = dst_bgr[y0:y1, x0:x1].astype(np.uint16)
+                dst_bgr[y0:y1, x0:x1] = (
+                    (bg_roi * inv_a_u16 + premult_fg_u16 + 127) // 255
+                ).astype(np.uint8)
+                return dst_bgr
 
-            # Expand destination ROI slightly to accommodate Slide-Up (+dy) and Exit (-dy) without clipping
             pad_y = int(math.ceil(abs(dy_px))) + 14
             dy0 = max(0, y0 - pad_y)
             dy1 = min(canvas_h, y1 + pad_y)
             rw, rh = x1 - x0, dy1 - dy0
             if rw <= 2 or rh <= 2:
-                return out
+                return dst_bgr
 
             padded_rgba = np.zeros((rh, rw, 4), dtype=np.uint8)
             ins_y0 = y0 - dy0
@@ -1182,9 +1210,9 @@ class FFmpegNVENCCompositor(IVideoCompositor):
             a_dyn = (warped_roi[:, :, 3:4].astype(np.uint16) * op_u16) // 255
             inv_dyn = 255 - a_dyn
             fg_dyn = warped_roi[:, :, :3].astype(np.uint16) * a_dyn
-            bg_roi = out[dy0:dy1, x0:x1].astype(np.uint16)
-            out[dy0:dy1, x0:x1] = ((bg_roi * inv_dyn + fg_dyn + 127) // 255).astype(np.uint8)
-            return out
+            bg_roi = dst_bgr[dy0:dy1, x0:x1].astype(np.uint16)
+            dst_bgr[dy0:dy1, x0:x1] = ((bg_roi * inv_dyn + fg_dyn + 127) // 255).astype(np.uint8)
+            return dst_bgr
 
         entry_frames = 8  # ~0.27s Slide-up + soft spring entry
         exit_frames = 5  # ~0.16s gentle float-out exit
@@ -1257,31 +1285,29 @@ class FFmpegNVENCCompositor(IVideoCompositor):
                     if is_first_in_group and f_i < entry_frames:
                         p = (f_i + 1) / float(entry_frames)
                         inv = 1.0 - p
-                        # Slide up +28px -> 0px with subtle spring settle (0.935 -> 1.008 -> 1.00)
                         scale = 1.0 - 0.065 * (inv**3) + 0.012 * math.sin(math.pi * p)
                         dy_px = 28.0 * (inv**2.5)
                         opac = min(1.0, 0.22 + p * 1.15)
-                        composed = _blend_card_fast(bg_f, card_info, scale, opac, dy_px=dy_px)
+                        _blend_card_into(compose_buf, bg_f, card_info, scale, opac, dy_px=dy_px)
                     elif (
                         not is_first_in_group
                         and prev_card_info is not None
                         and f_i < hl_fade_frames
                     ):
-                        # Same comment card: keep geometry 100% locked while cross-fading active sentence
                         alpha = (f_i + 1) / float(hl_fade_frames + 1)
-                        frm_prev = _blend_card_fast(bg_f, prev_card_info, 1.0, 1.0, dy_px=0.0)
-                        frm_curr = _blend_card_fast(bg_f, card_info, 1.0, 1.0, dy_px=0.0)
-                        composed = cv2.addWeighted(frm_prev, 1.0 - alpha, frm_curr, alpha, 0.0)
+                        _blend_card_into(fade_prev_buf, bg_f, prev_card_info, 1.0, 1.0, dy_px=0.0)
+                        _blend_card_into(compose_buf, bg_f, card_info, 1.0, 1.0, dy_px=0.0)
+                        cv2.addWeighted(fade_prev_buf, 1.0 - alpha, compose_buf, alpha, 0.0, dst=compose_buf)
                     elif is_last_in_group and n_frames >= 16 and f_i >= (n_frames - exit_frames):
                         q = (f_i - (n_frames - exit_frames) + 1) / float(exit_frames + 1)
                         scale = 1.0 - 0.026 * q
                         dy_px = -14.0 * (q**1.5)
                         opac = max(0.16, 1.0 - 0.78 * (q**1.25))
-                        composed = _blend_card_fast(bg_f, card_info, scale, opac, dy_px=dy_px)
+                        _blend_card_into(compose_buf, bg_f, card_info, scale, opac, dy_px=dy_px)
                     else:
-                        composed = _blend_card_fast(bg_f, card_info, 1.0, 1.0, dy_px=0.0)
+                        _blend_card_into(compose_buf, bg_f, card_info, 1.0, 1.0, dy_px=0.0)
 
-                    proc.stdin.write(memoryview(np.ascontiguousarray(composed)))
+                    proc.stdin.write(memoryview(compose_buf))
                     written_frames += 1
                     _emit_threads_frame_progress(idx)
 
@@ -1339,6 +1365,71 @@ class FFmpegNVENCCompositor(IVideoCompositor):
     ) -> tuple[bool, str]:
         dur_sec = max(raw_dur_ms / 1000.0, 0.5)
         cfg = spec.layout_config
+
+        # Fast-Path Zero-Reencode Stream Copy: When `base_video` is already assembled at target
+        # dimensions/FPS (`is_topic_mode`) and no extra overlays, ASS subtitles, or color/speed
+        # filters are active, mux the H.264 stream directly (`-c:v copy`) in ~0.3s!
+        needs_second_video_pass = bool(
+            not is_topic_mode
+            or clip_start_sec > 0
+            or has_ass
+            or cta_ovr is not None
+            or cfg.anti_copyright_enabled
+            or cfg.show_top_banner
+            or (cfg.logo_path and cfg.logo_path.exists())
+            or cfg.sales_badge_enabled
+            or bool(cfg.qr_code_content.strip())
+        )
+        if not needs_second_video_pass:
+            if on_progress:
+                on_progress(
+                    "RENDERING_NVENC",
+                    25.0,
+                    f"[FFmpeg {encoder}] Đóng gói siêu tốc 0-copy Stream Mux (giữ nguyên 100% độ nét gốc)...",
+                )
+            fast_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-nostdin",
+                "-i",
+                str(base_video),
+                "-t",
+                f"{dur_sec:.3f}",
+                "-i",
+                str(spec.audio_sub.master_audio_wav_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-shortest",
+                str(out_mp4),
+            ]
+            fast_proc = subprocess.run(
+                fast_cmd,
+                cwd=str(work_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if fast_proc.returncode == 0 and out_mp4.exists() and out_mp4.stat().st_size > 1024:
+                if on_progress:
+                    on_progress(
+                        "RENDERING_NVENC",
+                        96.0,
+                        f"[FFmpeg {encoder}] Đã đóng gói MP4 siêu tốc ({dur_sec:.1f}s)!",
+                    )
+                return True, ""
 
         cmd: List[str] = ["ffmpeg", "-y", "-hide_banner", "-nostdin"]
         if clip_start_sec > 0:

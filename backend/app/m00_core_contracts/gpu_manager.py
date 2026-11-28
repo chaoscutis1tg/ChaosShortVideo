@@ -36,6 +36,8 @@ class GPUResourceManager:
                 cls._instance._preferred_device = os.getenv("STUDIO_GPU_DEVICE", "auto").strip()
                 cls._instance._wmi_cache_ts = 0.0
                 cls._instance._wmi_cached_cards: List[Dict[str, Any]] = []
+                cls._instance._gpu_cache_ts = 0.0
+                cls._instance._gpu_cached_adapters: List[GPUAdapterInfoDTO] = []
                 cls.register_nvidia_cuda_dlls()
         return cls._instance
 
@@ -105,6 +107,7 @@ class GPUResourceManager:
         cleaned = (device_id or "auto").strip().lower()
         self._preferred_device = cleaned
         self._nvenc_checked = False
+        self._gpu_cache_ts = 0.0
         os.environ["STUDIO_GPU_DEVICE"] = cleaned
         return self._preferred_device
 
@@ -114,8 +117,11 @@ class GPUResourceManager:
         self.is_nvenc_available()
         return self._nvenc_note
 
-    def list_gpu_adapters(self) -> List[GPUAdapterInfoDTO]:
-        """Scan all installed graphics cards (NVIDIA via `nvidia-smi` + AMD/Intel via WMI)."""
+    def list_gpu_adapters(self, max_age_sec: float = 4.5) -> List[GPUAdapterInfoDTO]:
+        """Scan installed GPUs with short 4.5s telemetry cache so UI polling never spawns excess processes."""
+        now_m = time.monotonic()
+        if max_age_sec > 0 and self._gpu_cached_adapters and (now_m - self._gpu_cache_ts) < max_age_sec:
+            return list(self._gpu_cached_adapters)
         adapters: List[GPUAdapterInfoDTO] = []
         seen_names_lower: set[str] = set()
         nvenc_ok = self.is_nvenc_available()
@@ -203,6 +209,8 @@ class GPUResourceManager:
                 )
             )
 
+        self._gpu_cached_adapters = list(adapters)
+        self._gpu_cache_ts = now_m
         return adapters
 
     def _query_windows_video_controllers_cached(self) -> List[Dict[str, Any]]:

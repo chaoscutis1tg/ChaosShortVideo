@@ -393,34 +393,37 @@ export default function ThreadsStudioForm({
   }, [femaleVoiceId, maleVoiceId, opSpeakerGender, multiVoiceCast]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        THREADS_DRAFT_KEY,
-        JSON.stringify({
-          parentGroupId,
-          postUrl,
-          rawPastedText,
-          maxComments,
-          filterVibe,
-          commentLengthMode,
-          expandSlang,
-          multiVoiceCast,
-          femaleVoiceId,
-          maleVoiceId,
-          opSpeakerGender,
-          voiceSpeed,
-          bundle,
-          appendCtaComment,
-          selectedBgPath,
-          selectedBgPreviewUrl,
-          enablePopSfx,
-          subtitleStyle,
-          bgmPresetId,
-        })
-      );
-    } catch {
-      // ignore quota
-    }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          THREADS_DRAFT_KEY,
+          JSON.stringify({
+            parentGroupId,
+            postUrl,
+            rawPastedText,
+            maxComments,
+            filterVibe,
+            commentLengthMode,
+            expandSlang,
+            multiVoiceCast,
+            femaleVoiceId,
+            maleVoiceId,
+            opSpeakerGender,
+            voiceSpeed,
+            bundle,
+            appendCtaComment,
+            selectedBgPath,
+            selectedBgPreviewUrl,
+            enablePopSfx,
+            subtitleStyle,
+            bgmPresetId,
+          })
+        );
+      } catch {
+        // ignore quota
+      }
+    }, 450);
+    return () => clearTimeout(t);
   }, [
     parentGroupId,
     postUrl,

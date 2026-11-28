@@ -26,6 +26,7 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter
@@ -530,6 +531,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         version="3.0.0",
         lifespan=_lifespan,
     )
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -583,8 +585,13 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             return audio_cfg.model_copy(update={"bgm_path": resolved})
         return audio_cfg
 
+    _lan_cache: Dict[str, Any] = {"ts": 0.0, "urls": []}
+
     def _discover_lan_urls(port: int = 8000) -> List[str]:
-        """Return reachable LAN URLs (e.g. http://192.168.1.200:8000) excluding WSL/loopback."""
+        """Return reachable LAN URLs (cached for 60s to avoid per-poll socket/DNS syscalls)."""
+        now_m = time.monotonic()
+        if _lan_cache["urls"] and (now_m - float(_lan_cache["ts"])) < 60.0:
+            return list(_lan_cache["urls"])
         candidates: List[str] = []
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -601,10 +608,12 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                     candidates.append(ip)
         except OSError:
             pass
-        return [f"http://{ip}:{port}" for ip in candidates]
+        urls = [f"http://{ip}:{port}" for ip in candidates]
+        _lan_cache["ts"] = now_m
+        _lan_cache["urls"] = urls
+        return urls
 
-    @app.get("/api/system/status")
-    async def get_system_status() -> Dict[str, Any]:
+    def _collect_system_status_sync() -> Dict[str, Any]:
         gpus = [g.model_dump() for g in gpu_mgr.list_gpu_adapters()]
         nvenc_ok = gpu_mgr.is_nvenc_available()
         return {
@@ -627,6 +636,10 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 "vbee": bool(settings.vbee_api_key and settings.vbee_app_id),
             },
         }
+
+    @app.get("/api/system/status")
+    async def get_system_status() -> Dict[str, Any]:
+        return await asyncio.to_thread(_collect_system_status_sync)
 
     @app.post("/api/system/gpu-select")
     async def select_gpu_device(req: GPUSelectRequest) -> Dict[str, Any]:
@@ -2372,9 +2385,9 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
     @app.get("/api/projects")
     async def get_all_projects() -> List[Dict[str, Any]]:
-        projs = repo.list_projects()
+        projs = await asyncio.to_thread(repo.list_projects, False)
         for p in projs:
-            p["live_progress"] = hub.get_latest(p["id"])
+            p["live_progress"] = hub.get_latest(p["id"], include_logs=False)
         return projs
 
     @app.get("/api/projects/{project_id}")

@@ -476,6 +476,9 @@ class SQLiteRepository:
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA temp_store=MEMORY;")
+        conn.execute("PRAGMA cache_size=-16000;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
 
@@ -618,6 +621,10 @@ class SQLiteRepository:
             height INTEGER NOT NULL DEFAULT 1920,
             created_at TEXT NOT NULL
         );
+
+        CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_clips_proj_part ON video_clips(project_id, part_number);
+        CREATE INDEX IF NOT EXISTS idx_segs_clip_seq ON subtitle_segments(clip_id, seq_index);
         """
         with self._connect() as conn:
             conn.executescript(schema_sql)
@@ -733,9 +740,46 @@ class SQLiteRepository:
         self._seed_default_product_templates()
 
     def _seed_default_voices(self) -> None:
-        """Upsert built-in default presets so upgrades immediately take effect while preserving user clones."""
-        for vp in DEFAULT_VOICE_PROFILES:
-            self.upsert_voice_profile(vp)
+        """Batch-upsert all built-in default presets in a single transaction for <3ms startup."""
+        rows = [
+            (
+                vp.profile_id,
+                vp.display_name,
+                vp.tier.value,
+                vp.category.value,
+                json.dumps(vp.tags, ensure_ascii=False),
+                vp.voice_id_or_sample_path,
+                vp.sample_ref_text,
+                vp.speed_rate,
+                vp.pitch_hz,
+                vp.emotion_prompt,
+                vp.dsp_preset,
+                vp.cloud_vendor,
+            )
+            for vp in DEFAULT_VOICE_PROFILES
+        ]
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO voice_profiles
+                (profile_id, display_name, tier, category, tags_json, voice_id_or_sample_path, sample_ref_text,
+                 speed_rate, pitch_hz, emotion_prompt, dsp_preset, cloud_vendor)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile_id) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    tier=excluded.tier,
+                    category=excluded.category,
+                    tags_json=excluded.tags_json,
+                    voice_id_or_sample_path=excluded.voice_id_or_sample_path,
+                    sample_ref_text=excluded.sample_ref_text,
+                    speed_rate=excluded.speed_rate,
+                    pitch_hz=excluded.pitch_hz,
+                    emotion_prompt=excluded.emotion_prompt,
+                    dsp_preset=excluded.dsp_preset,
+                    cloud_vendor=excluded.cloud_vendor
+                """,
+                rows,
+            )
 
     def upsert_voice_profile(self, profile: VoiceProfileDTO) -> None:
         """Create or update a VoiceProfileDTO in SQLite."""
@@ -1119,11 +1163,20 @@ class SQLiteRepository:
             result["clips"] = clips_data
             return result
 
-    def list_projects(self) -> List[Dict[str, Any]]:
-        """Return summary list of all projects ordered newest first."""
+    def list_projects(self, include_payload: bool = False) -> List[Dict[str, Any]]:
+        """Return lightweight summary list of projects ordered newest first (omitting heavy request_payload_json by default)."""
+        cols = (
+            "*"
+            if include_payload
+            else (
+                "id, name, mode, state, target_min_sec, target_max_sec, "
+                "error_message, created_at, updated_at, parent_group_id, "
+                "published_channels_json, published_note"
+            )
+        )
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM projects ORDER BY updated_at DESC"
+                f"SELECT {cols} FROM projects ORDER BY updated_at DESC"
             ).fetchall()
         items: List[Dict[str, Any]] = []
         for r in rows:

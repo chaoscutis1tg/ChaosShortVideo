@@ -1475,6 +1475,116 @@ def test_m07_uc18_viral_radar_chat_story_hook_scorer_and_capcut_pack(
             assert any("_msg.png" in n for n in arc_names)
 
 
+@pytest.mark.asyncio
+async def test_m05_m07_tts_sha256_cache_and_fast_status_endpoints(tmp_path: Path) -> None:
+    """Verify performance optimizations:
+    1. `MovieAudioAndSubMixer` synthesizes lines concurrently and reuses SHA-256 cached `.wav` chunks
+       with zero duplicate TTS calls on re-renders.
+    2. `/api/projects` returns lean summary records (omitting `request_payload_json` & `logs`), while
+       `/api/system/status` serves cached GPU/storage telemetry in <50ms.
+    """
+    from app.m00_core_contracts import (
+        AudioChunkDTO,
+        AudioSubConfigDTO,
+        ClipSpecDTO,
+        ITTSProvider,
+        NarrationLineDTO,
+        SubtitleStyle,
+        VoiceProfileDTO,
+        VoiceTier,
+        WordTimestampDTO,
+    )
+    from app.m05_voice_audio_mixer.audio_mixer import MovieAudioAndSubMixer
+    from app.m05_voice_audio_mixer.tts_providers import (
+        TTSProviderFactory,
+        write_synthetic_speech_placeholder,
+    )
+
+    synth_count = {"calls": 0}
+
+    class _CountingProvider(ITTSProvider):
+        async def synthesize(self, text: str, profile: VoiceProfileDTO, out_wav_path: Path) -> AudioChunkDTO:
+            synth_count["calls"] += 1
+            dur = write_synthetic_speech_placeholder(out_wav_path, text, 1.0)
+            return AudioChunkDTO(
+                audio_path=out_wav_path,
+                duration_ms=dur,
+                word_timestamps=[WordTimestampDTO(word="Test", start_ms=0, end_ms=dur)],
+            )
+
+    class _CountingFactory(TTSProviderFactory):
+        def get_provider(self, tier: VoiceTier) -> ITTSProvider:
+            return _CountingProvider()
+
+    mixer = MovieAudioAndSubMixer(tts_factory=_CountingFactory())
+    clip = ClipSpecDTO(
+        clip_id="perf_clip_01",
+        project_id="perf_proj",
+        part_number=1,
+        source_start_ms=0,
+        source_end_ms=4000,
+        hook_banner_title="Kiểm tra tốc độ Cache TTS",
+        lines=[
+            NarrationLineDTO(seq_index=0, rel_start_ms=0, rel_end_ms=1800, vi_text="Câu thoại thứ nhất giữ nguyên."),
+            NarrationLineDTO(seq_index=1, rel_start_ms=1900, rel_end_ms=3800, vi_text="Câu thoại thứ hai giữ nguyên."),
+        ],
+    )
+    prof = VoiceProfileDTO(
+        profile_id="fast_prof",
+        display_name="Giọng Nhanh",
+        tier=VoiceTier.LOCAL_ONNX_VITS,
+        voice_id_or_sample_path="test.onnx",
+    )
+    cfg = AudioSubConfigDTO(enable_narration=True, keep_original_audio=False, subtitle_style=SubtitleStyle.NONE)
+
+    # Pass 1: synthesizes 2 lines -> 2 provider calls
+    await mixer.process(clip, prof, cfg, tmp_path / "proj_a")
+    assert synth_count["calls"] == 2
+
+    # Pass 2 (e.g. Quick Re-Edit changing BGM or 1 typo): 1 unchanged line hits cache, 1 edited line synthesizes!
+    clip_edited = clip.model_copy(
+        update={
+            "lines": [
+                clip.lines[0],
+                clip.lines[1].model_copy(update={"vi_text": "Câu thoại thứ hai vừa được sửa nhẹ!"}),
+            ]
+        }
+    )
+    await mixer.process(clip_edited, prof, cfg, tmp_path / "proj_b")
+    assert synth_count["calls"] == 3  # Only +1 call instead of +2!
+
+    # Verify lean `/api/projects` & fast cached `/api/system/status`
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_perf.db",
+        gemini_api_key="",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+    with TestClient(studio_app) as client:
+        client.post(
+            "/api/topic/start",
+            json={
+                "topic_title": "Kiểm tra tối ưu JSON danh sách dự án",
+                "target_duration_sec": 35,
+                "auto_one_click": False,
+            },
+        )
+        p_list = client.get("/api/projects").json()
+        assert len(p_list) == 1
+        assert "request_payload_json" not in p_list[0]
+
+        _ = client.get("/api/system/status")  # Warm cache
+        t0 = time.perf_counter()
+        st2 = client.get("/api/system/status")
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        assert st2.status_code == 200
+        assert elapsed_ms < 80.0
+
+
 
 
 

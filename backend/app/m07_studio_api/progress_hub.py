@@ -43,12 +43,15 @@ class WebSocketProgressHub:
         items = list(buf)
         return items[-limit:] if len(items) > limit else items
 
-    def get_latest(self, project_id: str) -> Optional[Dict[str, Any]]:
+    def get_latest(self, project_id: str, include_logs: bool = True) -> Optional[Dict[str, Any]]:
         snap = self._latest_state.get(project_id)
         if snap is None:
             return None
         out = dict(snap)
-        out["logs"] = self.get_logs(project_id, limit=80)
+        if include_logs:
+            out["logs"] = self.get_logs(project_id, limit=80)
+        else:
+            out.pop("logs", None)
         return out
 
     def clear_project(self, project_id: str) -> None:

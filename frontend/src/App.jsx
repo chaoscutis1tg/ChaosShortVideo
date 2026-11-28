@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import {
   Bell,
   BellOff,
@@ -30,14 +30,17 @@ import {
   formatSecondsVi,
   STAGE_LABELS,
 } from './modules/m00_core_contracts/constants';
-import MovieStudioForm from './modules/m01_m04_movie_studio/MovieStudioForm';
 import TopicStudioForm from './modules/m03_topic_studio/TopicStudioForm';
-import VoiceCloneLab from './modules/m05_voice_lab/VoiceCloneLab';
 import Canvas916Designer from './modules/m06_canvas_916/Canvas916Designer';
-import ProjectWorkspaceView from './modules/m07_review_and_seo/ProjectWorkspaceView';
-import SettingsModal from './modules/m07_review_and_seo/SettingsModal';
-import ProductStudioForm from './modules/m08_product_studio/ProductStudioForm';
-import ThreadsStudioForm from './modules/m09_threads_studio/ThreadsStudioForm';
+
+const MovieStudioForm = lazy(() => import('./modules/m01_m04_movie_studio/MovieStudioForm'));
+const VoiceCloneLab = lazy(() => import('./modules/m05_voice_lab/VoiceCloneLab'));
+const ProjectWorkspaceView = lazy(() =>
+  import('./modules/m07_review_and_seo/ProjectWorkspaceView')
+);
+const SettingsModal = lazy(() => import('./modules/m07_review_and_seo/SettingsModal'));
+const ProductStudioForm = lazy(() => import('./modules/m08_product_studio/ProductStudioForm'));
+const ThreadsStudioForm = lazy(() => import('./modules/m09_threads_studio/ThreadsStudioForm'));
 
 const ACTIVE_STATES = [
   'QUEUED',
@@ -93,6 +96,7 @@ function fireDesktopNotification(title, body) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('topic');
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['topic']));
   const [theme, setTheme] = useState(() => localStorage.getItem('chaos_theme') || 'dark');
   const [systemStatus, setSystemStatus] = useState(null);
   const [voices, setVoices] = useState([]);
@@ -292,6 +296,7 @@ export default function App() {
 
   const handleTabSwitch = (nextTab) => {
     setActiveTab(nextTab);
+    setVisitedTabs((prev) => (prev.has(nextTab) ? prev : new Set([...prev, nextTab])));
     setInspectorManualOverride(null);
     if (nextTab === 'workspace') {
       refreshGroupsAndProjects();
@@ -301,6 +306,7 @@ export default function App() {
   const handleProjectStarted = async (projectId, initialState) => {
     setActiveProjectId(projectId);
     setActiveTab('workspace');
+    setVisitedTabs((prev) => (prev.has('workspace') ? prev : new Set([...prev, 'workspace'])));
     setInspectorManualOverride(null);
     await refreshAllData(false);
     if (initialState === 'QUEUED') {
@@ -711,7 +717,7 @@ export default function App() {
           )}
         </aside>
 
-        {/* CENTER INDEPENDENT SCROLL WORKSPACE (Forms Stay Mounted -> Zero Data Loss!) */}
+        {/* CENTER INDEPENDENT SCROLL WORKSPACE (Lazy-loaded on first visit, then kept mounted!) */}
         <main className="studio-center-scroll">
           <div style={{ display: activeTab === 'topic' ? 'block' : 'none' }}>
             <TopicStudioForm
@@ -727,80 +733,94 @@ export default function App() {
             />
           </div>
 
-          <div style={{ display: activeTab === 'threads' ? 'block' : 'none' }}>
-            <ThreadsStudioForm
-              voices={voices}
-              bgmPresets={bgmPresets}
-              layoutConfig={layoutConfig}
-              setLayoutConfig={setLayoutConfig}
-              projectGroups={projectGroups}
-              onGroupsChanged={refreshGroupsAndProjects}
-              onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
-              onProjectStarted={handleProjectStarted}
-              notify={notify}
-              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
-              onOpenApiSettings={() => setShowSettings(true)}
-            />
-          </div>
+          <Suspense
+            fallback={
+              <div className="card" style={{ padding: 24, fontSize: 13.5 }}>
+                Đang mở không gian làm việc...
+              </div>
+            }
+          >
+            {visitedTabs.has('threads') && (
+              <div style={{ display: activeTab === 'threads' ? 'block' : 'none' }}>
+                <ThreadsStudioForm
+                  voices={voices}
+                  bgmPresets={bgmPresets}
+                  layoutConfig={layoutConfig}
+                  setLayoutConfig={setLayoutConfig}
+                  projectGroups={projectGroups}
+                  onGroupsChanged={refreshGroupsAndProjects}
+                  onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
+                  onProjectStarted={handleProjectStarted}
+                  notify={notify}
+                  apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+                  onOpenApiSettings={() => setShowSettings(true)}
+                />
+              </div>
+            )}
 
-          <div style={{ display: activeTab === 'product' ? 'block' : 'none' }}>
-            <ProductStudioForm
-              voices={voices}
-              bgmPresets={bgmPresets}
-              layoutConfig={layoutConfig}
-              setLayoutConfig={setLayoutConfig}
-              projectGroups={projectGroups}
-              onGroupsChanged={refreshGroupsAndProjects}
-              onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
-              onProjectStarted={handleProjectStarted}
-              notify={notify}
-              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
-              onOpenApiSettings={() => setShowSettings(true)}
-            />
-          </div>
+            {visitedTabs.has('product') && (
+              <div style={{ display: activeTab === 'product' ? 'block' : 'none' }}>
+                <ProductStudioForm
+                  voices={voices}
+                  bgmPresets={bgmPresets}
+                  layoutConfig={layoutConfig}
+                  setLayoutConfig={setLayoutConfig}
+                  projectGroups={projectGroups}
+                  onGroupsChanged={refreshGroupsAndProjects}
+                  onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
+                  onProjectStarted={handleProjectStarted}
+                  notify={notify}
+                  apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+                  onOpenApiSettings={() => setShowSettings(true)}
+                />
+              </div>
+            )}
 
-          <div style={{ display: activeTab === 'movie' ? 'block' : 'none' }}>
-            <MovieStudioForm
-              voices={voices}
-              bgmPresets={bgmPresets}
-              layoutConfig={layoutConfig}
-              projectGroups={projectGroups}
-              onGroupsChanged={refreshGroupsAndProjects}
-              onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
-              onProjectStarted={handleProjectStarted}
-              notify={notify}
-            />
-          </div>
+            {visitedTabs.has('movie') && (
+              <div style={{ display: activeTab === 'movie' ? 'block' : 'none' }}>
+                <MovieStudioForm
+                  voices={voices}
+                  bgmPresets={bgmPresets}
+                  layoutConfig={layoutConfig}
+                  projectGroups={projectGroups}
+                  onGroupsChanged={refreshGroupsAndProjects}
+                  onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
+                  onProjectStarted={handleProjectStarted}
+                  notify={notify}
+                />
+              </div>
+            )}
 
-          {activeTab === 'voices' && (
-            <VoiceCloneLab
-              voices={voices}
-              onVoicesChanged={() => refreshAllData(false)}
-              notify={notify}
-            />
-          )}
+            {activeTab === 'voices' && (
+              <VoiceCloneLab
+                voices={voices}
+                onVoicesChanged={() => refreshAllData(false)}
+                notify={notify}
+              />
+            )}
 
-          {activeTab === 'workspace' && (
-            <ProjectWorkspaceView
-              activeProjectId={activeProjectId}
-              projects={projects}
-              projectGroups={projectGroups}
-              activeGroupId={activeGroupId}
-              onSelectGroup={setActiveGroupId}
-              onGroupsChanged={refreshGroupsAndProjects}
-              onSelectProject={setActiveProjectId}
-              onProjectsRefresh={refreshGroupsAndProjects}
-              voices={voices}
-              bgmPresets={bgmPresets}
-              layoutConfig={layoutConfig}
-              setLayoutConfig={setLayoutConfig}
-              onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
-              onQuickEditStateChange={(isOpen, projMode) =>
-                setWorkspaceEditingMode(isOpen ? projMode : null)
-              }
-              notify={notify}
-            />
-          )}
+            {activeTab === 'workspace' && (
+              <ProjectWorkspaceView
+                activeProjectId={activeProjectId}
+                projects={projects}
+                projectGroups={projectGroups}
+                activeGroupId={activeGroupId}
+                onSelectGroup={setActiveGroupId}
+                onGroupsChanged={refreshGroupsAndProjects}
+                onSelectProject={setActiveProjectId}
+                onProjectsRefresh={refreshGroupsAndProjects}
+                voices={voices}
+                bgmPresets={bgmPresets}
+                layoutConfig={layoutConfig}
+                setLayoutConfig={setLayoutConfig}
+                onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
+                onQuickEditStateChange={(isOpen, projMode) =>
+                  setWorkspaceEditingMode(isOpen ? projMode : null)
+                }
+                notify={notify}
+              />
+            )}
+          </Suspense>
         </main>
 
         {/* SMART CONTEXT-AWARE RIGHT DESKTOP INSPECTOR */}
@@ -992,13 +1012,15 @@ export default function App() {
       )}
 
       {showSettings && (
-        <SettingsModal
-          systemStatus={systemStatus}
-          onClose={() => setShowSettings(false)}
-          onUpdated={setSystemStatus}
-          onBackupRestored={() => refreshAllData(false)}
-          notify={notify}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            systemStatus={systemStatus}
+            onClose={() => setShowSettings(false)}
+            onUpdated={setSystemStatus}
+            onBackupRestored={() => refreshAllData(false)}
+            notify={notify}
+          />
+        </Suspense>
       )}
 
       {toastMsg && (

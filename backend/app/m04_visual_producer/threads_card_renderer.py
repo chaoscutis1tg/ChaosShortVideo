@@ -556,7 +556,7 @@ class ThreadsCardVisualRenderer:
         )
 
         canvas.alpha_composite(framed_win, dest=(win_x, win_y))
-        canvas.save(out_png, format="PNG")
+        canvas.save(out_png, format="PNG", compress_level=1)
         return out_png
 
     @classmethod
@@ -895,7 +895,7 @@ class ThreadsCardVisualRenderer:
         _draw_repost_icon(cd, bx_reply + 52, bar_y + 3, 28, txt_muted)
 
         canvas = Image.alpha_composite(canvas, card_layer)
-        canvas.save(out_png, format="PNG")
+        canvas.save(out_png, format="PNG", compress_level=1)
         return out_png
 
     @classmethod

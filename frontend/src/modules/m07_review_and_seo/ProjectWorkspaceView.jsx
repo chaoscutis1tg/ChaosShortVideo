@@ -83,6 +83,45 @@ function estimateSpokenSeconds(text, speedRate = 1.02) {
   return Math.max(1.1, words / (2.85 * safeSpeed));
 }
 
+const LiveElapsedReadout = React.memo(function LiveElapsedReadout({
+  baseElapsedSec,
+  baseEtaSec,
+  anchorRef,
+  isRunning,
+}) {
+  const [offsetSec, setOffsetSec] = useState(0);
+
+  useEffect(() => {
+    setOffsetSec(0);
+    if (!isRunning) return undefined;
+    const t = setInterval(() => {
+      const diff = Math.max(0, Math.floor((Date.now() - (anchorRef.current || Date.now())) / 1000));
+      setOffsetSec(diff);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [baseElapsedSec, baseEtaSec, isRunning]);
+
+  const realElapsed = (baseElapsedSec || 0) + (isRunning ? offsetSec : 0);
+  const realEta =
+    baseEtaSec !== null && baseEtaSec !== undefined
+      ? Math.max(1, baseEtaSec - (isRunning ? offsetSec : 0))
+      : null;
+
+  return (
+    <>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <Clock size={13} /> Đã chạy: <strong>{formatSecondsVi(realElapsed)}</strong>
+      </span>
+      <span style={{ color: 'var(--success-text)' }}>
+        Ước tính còn:{' '}
+        <strong>
+          {realEta !== null ? `~${formatSecondsVi(realEta)}` : 'Đang đo tốc độ thực...'}
+        </strong>
+      </span>
+    </>
+  );
+});
+
 export default function ProjectWorkspaceView({
   activeProjectId,
   projects,
@@ -131,7 +170,6 @@ export default function ProjectWorkspaceView({
   const [pubNoteDraft, setPubNoteDraft] = useState('');
   const [savingPubStatus, setSavingPubStatus] = useState(false);
   const [consoleExpanded, setConsoleExpanded] = useState(true);
-  const [liveTickOffsetSec, setLiveTickOffsetSec] = useState(0);
   const progressAnchorMonoRef = useRef(Date.now());
   const consoleBodyRef = useRef(null);
 
@@ -263,7 +301,6 @@ export default function ProjectWorkspaceView({
       }
       if (d.live_progress) {
         progressAnchorMonoRef.current = Date.now();
-        setLiveTickOffsetSec(0);
       }
       setLiveProgress(d.live_progress || null);
 
@@ -308,40 +345,46 @@ export default function ProjectWorkspaceView({
     }
     loadDetail(activeProjectId, true);
 
+    let wsConnected = false;
     const ws = studioApi.connectProgressSocket(activeProjectId, (ev) => {
+      wsConnected = true;
       progressAnchorMonoRef.current = Date.now();
-      setLiveTickOffsetSec(0);
       setLiveProgress(ev);
       if (['AWAITING_REVIEW', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(ev.stage)) {
         loadDetail(activeProjectId, ev.stage === 'AWAITING_REVIEW');
       }
     });
+    ws.onopen = () => {
+      wsConnected = true;
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+    };
+
+    const fallbackPoll = setInterval(() => {
+      if (!document.hidden && !wsConnected) {
+        loadDetail(activeProjectId, false);
+      }
+    }, 5000);
 
     return () => {
+      clearInterval(fallbackPoll);
       ws.close();
     };
   }, [activeProjectId]);
 
-  // Idle-Aware Smart Polling + Smooth 1-Second Real Elapsed Timer & Auto-Scroll Console
+  // Lightweight state-sync fallback only every 9s while running (WebSocket handles sub-second progress!)
   useEffect(() => {
     if (!activeProjectId || !detail || !RUNNING_STATES.includes(detail.state)) {
-      setLiveTickOffsetSec(0);
       return undefined;
     }
     const pollTimer = setInterval(() => {
       if (!document.hidden) {
         loadDetail(activeProjectId, false);
       }
-    }, 2500);
-    const secTicker = setInterval(() => {
-      if (detail.is_active_in_memory && detail.state !== 'PAUSED' && detail.state !== 'QUEUED') {
-        const diff = Math.max(0, Math.floor((Date.now() - progressAnchorMonoRef.current) / 1000));
-        setLiveTickOffsetSec(diff);
-      }
-    }, 1000);
+    }, 9000);
     return () => {
       clearInterval(pollTimer);
-      clearInterval(secTicker);
     };
   }, [activeProjectId, detail?.state, detail?.is_active_in_memory]);
 
@@ -1446,12 +1489,6 @@ export default function ProjectWorkspaceView({
                 detail.state === 'QUEUED' ||
                 (liveProgress?.logs?.length > 0 && detail.state === 'FAILED')) && (() => {
                 const consoleLogs = Array.isArray(liveProgress?.logs) ? liveProgress.logs : [];
-                const realElapsedSec =
-                  (liveProgress?.elapsed_sec || 0) + (isRunning ? liveTickOffsetSec : 0);
-                const realEtaSec =
-                  liveProgress?.eta_sec !== null && liveProgress?.eta_sec !== undefined
-                    ? Math.max(1, liveProgress.eta_sec - (isRunning ? liveTickOffsetSec : 0))
-                    : null;
                 const curStage = liveProgress?.stage || detail.state;
                 const pipelinePhases = [
                   { key: 'PREP', label: '1. Kịch bản & Nguồn', match: ['INGESTING', 'TRANSCRIBING_GPU', 'AI_ANALYZING'] },
@@ -1576,16 +1613,12 @@ export default function ProjectWorkspaceView({
                         {liveProgress?.step_label && (
                           <span className="badge badge-info">{liveProgress.step_label}</span>
                         )}
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <Clock size={13} /> Đã chạy:{' '}
-                          <strong>{formatSecondsVi(realElapsedSec)}</strong>
-                        </span>
-                        <span style={{ color: 'var(--success-text)' }}>
-                          Ước tính còn:{' '}
-                          <strong>
-                            {realEtaSec !== null ? `~${formatSecondsVi(realEtaSec)}` : 'Đang đo tốc độ thực...'}
-                          </strong>
-                        </span>
+                        <LiveElapsedReadout
+                          baseElapsedSec={liveProgress?.elapsed_sec || 0}
+                          baseEtaSec={liveProgress?.eta_sec ?? null}
+                          anchorRef={progressAnchorMonoRef}
+                          isRunning={isRunning}
+                        />
                         <strong style={{ color: 'var(--brand-text)', fontSize: 14 }}>
                           {Number(pctVal).toFixed(1)}%
                         </strong>

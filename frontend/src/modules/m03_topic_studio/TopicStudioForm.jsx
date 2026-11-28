@@ -179,26 +179,29 @@ export default function TopicStudioForm({
     });
   };
 
-  // Auto-save form draft to localStorage so F5 / reload never loses user input
+  // Debounced auto-save form draft (450ms) so typing never blocks the UI thread
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        TOPIC_DRAFT_KEY,
-        JSON.stringify({
-          topicTitle,
-          shortBrief,
-          keyPoints,
-          parentGroupId,
-          visualMode,
-          subtitleStyle,
-          durationSec,
-          partCount,
-          tone,
-        })
-      );
-    } catch {
-      // ignore storage quota
-    }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          TOPIC_DRAFT_KEY,
+          JSON.stringify({
+            topicTitle,
+            shortBrief,
+            keyPoints,
+            parentGroupId,
+            visualMode,
+            subtitleStyle,
+            durationSec,
+            partCount,
+            tone,
+          })
+        );
+      } catch {
+        // ignore storage quota
+      }
+    }, 450);
+    return () => clearTimeout(t);
   }, [
     topicTitle,
     shortBrief,

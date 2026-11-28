@@ -159,6 +159,8 @@ class JobExecutionManager:
         self._queue: Deque[Tuple[str, ProjectMode, bool, Callable[[], Coroutine[Any, Any, Any]]]] = deque()
         self._active_pid: Optional[str] = None
         self._lock = threading.Lock()
+        self._storage_cache_ts: float = 0.0
+        self._storage_cache_val: Optional[Dict[str, Any]] = None
 
     def is_in_memory_active_or_paused(self, project_id: str) -> bool:
         return project_id in self._runtimes or any(q[0] == project_id for q in self._queue)
@@ -424,17 +426,29 @@ class JobExecutionManager:
         self.hub.publish_sync(project_id, JobState.CANCELLED.value, 0.0, "⏹️ Đã hủy dự án.")
         return True
 
-    def inspect_storage(self) -> Dict[str, Any]:
-        """Compute disk free space and workspace folder sizes in MB/GB."""
+    def inspect_storage(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Compute disk free space and workspace folder sizes in MB/GB (cached for 20s to avoid rglob thrashing)."""
+        now_m = time.monotonic()
+        if (
+            not force_refresh
+            and self._storage_cache_val is not None
+            and (now_m - self._storage_cache_ts) < 20.0
+        ):
+            return dict(self._storage_cache_val)
         usage = shutil.disk_usage(str(self.settings.workspace_root))
-        work_bytes = self._folder_size_bytes(self.settings.work_dir, exclude_files={"studio.db", "studio.db-wal", "studio.db-shm"})
+        work_bytes = self._folder_size_bytes(
+            self.settings.work_dir, exclude_files={"studio.db", "studio.db-wal", "studio.db-shm"}
+        )
         out_bytes = self._folder_size_bytes(self.settings.outputs_dir)
-        return {
+        val = {
             "disk_free_gb": round(usage.free / (1024**3), 1),
             "disk_total_gb": round(usage.total / (1024**3), 1),
             "work_temp_mb": round(work_bytes / (1024**2), 1),
             "outputs_mb": round(out_bytes / (1024**2), 1),
         }
+        self._storage_cache_val = val
+        self._storage_cache_ts = now_m
+        return dict(val)
 
     def cleanup_temp_files(self) -> Dict[str, Any]:
         """Safely purge temporary folders of finished/failed/cancelled projects while keeping all MP4 outputs."""
@@ -443,7 +457,7 @@ class JobExecutionManager:
         )
         protected_pids: set[str] = set(self._runtimes.keys()) | {q[0] for q in self._queue}
         protected_upload_files: set[Path] = set()
-        for p in self.repo.list_projects():
+        for p in self.repo.list_projects(include_payload=True):
             if p["state"] in (
                 JobState.QUEUED.value,
                 JobState.INGESTING.value,
@@ -502,6 +516,8 @@ class JobExecutionManager:
                                 except OSError:
                                     pass
                     continue
+                if child.name == "_tts_cache":
+                    continue
                 if child.name not in protected_pids:
                     shutil.rmtree(child, ignore_errors=True)
                     removed_folders += 1
@@ -513,7 +529,7 @@ class JobExecutionManager:
         return {
             "freed_mb": freed_mb,
             "removed_folders": removed_folders,
-            "storage": self.inspect_storage(),
+            "storage": self.inspect_storage(force_refresh=True),
         }
 
     @staticmethod

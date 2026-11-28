@@ -1,17 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Download,
   FolderPlus,
   FolderTree,
   Globe,
+  Layers,
   Loader2,
+  Mic,
   Music,
   Play,
   Plus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Square,
   UploadCloud,
   Volume2,
@@ -20,7 +28,7 @@ import {
 import { studioApi } from './apiClient';
 import { stripLeadingEmoji } from './constants';
 
-export const GROUP_COLOR_PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+export const GROUP_COLOR_PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
 
 /**
  * Shared parameter validation helpers across all Studio forms.
@@ -68,7 +76,227 @@ export function scrollToFirstValidationError(containerRef) {
         el.focus({ preventScroll: true });
       }
     }
-  }, 40);
+  }, 55);
+}
+
+/**
+ * Unified Production Page Header across all 6 Studio pages.
+ */
+export function StudioPageHeader({ icon: Icon, title, subtitle, badges = [], actions = null }) {
+  return (
+    <div className="page-header">
+      <div className="page-header-left">
+        {Icon && (
+          <div className="page-icon-box">
+            <Icon size={20} strokeWidth={2} />
+          </div>
+        )}
+        <div style={{ minWidth: 0 }}>
+          <h1 className="page-title">{title}</h1>
+          {subtitle && <p className="page-subtitle">{subtitle}</p>}
+        </div>
+      </div>
+
+      {(badges.length > 0 || actions) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {badges.filter(Boolean).map((b, idx) => (
+            <span key={idx} className={`badge ${b.cls || ''}`}>
+              {b.icon && <b.icon size={12} />}
+              {b.label}
+            </span>
+          ))}
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Guided 3-Step Interactive Workflow Bar for all Creation Studios.
+ * Keeps screen clean & focused on 1 step at a time, with 1-click toggle to view all steps if desired.
+ */
+export function StudioStepNav({
+  steps = [],
+  activeStep = 1,
+  onStepChange,
+  showAllSteps = false,
+  onToggleShowAll = null,
+}) {
+  return (
+    <div className="studio-step-bar">
+      <div className="studio-step-tabs">
+        {steps.map((st, idx) => {
+          const stepNum = idx + 1;
+          const isActive = !showAllSteps && activeStep === stepNum;
+          const isCompleted = Boolean(st.done) || (!showAllSteps && stepNum < activeStep);
+          return (
+            <button
+              key={stepNum}
+              type="button"
+              className={`studio-step-tab ${isActive ? 'active' : ''} ${
+                isCompleted && !isActive ? 'completed' : ''
+              }`}
+              onClick={() => {
+                if (showAllSteps && onToggleShowAll) {
+                  onToggleShowAll(false);
+                }
+                if (onStepChange) onStepChange(stepNum);
+              }}
+            >
+              <span className="studio-step-index">
+                {isCompleted && !isActive ? <Check size={14} strokeWidth={2.5} /> : stepNum}
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="studio-step-label">{st.title}</div>
+                {st.meta && <div className="studio-step-meta">{st.meta}</div>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {onToggleShowAll && (
+        <div style={{ display: 'flex', alignItems: 'center', paddingRight: 4 }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${showAllSteps ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => onToggleShowAll(!showAllSteps)}
+            title="Chuyển đổi giữa chế độ hướng dẫn từng bước gọn gàng và xem toàn bộ trên 1 trang"
+          >
+            <Layers size={14} />
+            <span>{showAllSteps ? 'Đang mở tất cả bước' : 'Xem gộp 1 trang'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Clean Collapsible Advanced Options Drawer (keeps primary screens calm & decluttered).
+ */
+export function StudioCollapsible({
+  title,
+  subtitle = '',
+  badge = '',
+  defaultOpen = false,
+  icon: Icon = SlidersHorizontal,
+  children,
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="studio-collapsible">
+      <button
+        type="button"
+        className="studio-collapsible-header"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          {Icon && <Icon size={16} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />}
+          <div style={{ minWidth: 0 }}>
+            <div className="text-sm fw-600">{title}</div>
+            {subtitle && <div className="text-xs text-muted">{subtitle}</div>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {badge && <span className="badge badge-info">{badge}</span>}
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </button>
+      {open && <div className="studio-collapsible-body fade-slide-in">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Unified Sticky Step & Export Footer across all 4 Creation Studios.
+ */
+export function StudioStepFooter({
+  activeStep = 1,
+  totalSteps = 3,
+  showAllSteps = false,
+  onStepChange = null,
+  nextStepLabel = 'Tiếp tục bước tiếp theo',
+  hintText = 'Tự động lưu nháp • Ctrl + Enter để chạy ngay',
+  extraLeft = null,
+  secondaryAction = null,
+  primaryAction = null,
+}) {
+  const isLastStep = showAllSteps || activeStep >= totalSteps;
+
+  return (
+    <div className="sticky-action-bar">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {!showAllSteps && activeStep > 1 && onStepChange && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => onStepChange(activeStep - 1)}
+          >
+            <ArrowLeft size={14} /> Bước {activeStep - 1}
+          </button>
+        )}
+        <span className="text-xs text-muted">{hintText}</span>
+        {extraLeft}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
+        {!isLastStep && onStepChange ? (
+          <>
+            {primaryAction && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={primaryAction.disabled}
+                onClick={primaryAction.onClick}
+                title="Chạy xuất luôn với cấu hình mặc định của các bước sau"
+              >
+                {primaryAction.icon}
+                <span>Xuất nhanh ngay</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ minWidth: 210 }}
+              onClick={() => onStepChange(activeStep + 1)}
+            >
+              <span>{nextStepLabel}</span>
+              <ArrowRight size={16} />
+            </button>
+          </>
+        ) : (
+          <>
+            {secondaryAction && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={secondaryAction.disabled}
+                onClick={secondaryAction.onClick}
+              >
+                {secondaryAction.icon}
+                <span>{secondaryAction.label}</span>
+              </button>
+            )}
+            {primaryAction && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minWidth: 230 }}
+                disabled={primaryAction.disabled}
+                onClick={primaryAction.onClick}
+              >
+                {primaryAction.icon}
+                <span>{primaryAction.label}</span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -128,14 +356,12 @@ export function StudioLoadingBanner({
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <Loader2 size={18} className="spin" style={{ color: 'var(--brand-text)' }} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>
-              {title}
-            </div>
+            <div className="text-sm fw-700 text-main">{title}</div>
             {subtitle && (
-              <div className="text-sub" style={{ fontSize: 12.1, marginTop: 1 }}>
+              <div className="text-xs text-sub" style={{ marginTop: 2 }}>
                 {subtitle}
               </div>
             )}
@@ -195,7 +421,7 @@ export function ParentGroupSelector({
   onChange,
   onGroupsChanged,
   notify,
-  label = 'Thuộc Dự Án Cha (Quản lý theo Series / Chiến dịch / Bộ sưu tập)',
+  label = 'Nhóm Dự Án Cha (Series / Chiến dịch)',
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -228,7 +454,7 @@ export function ParentGroupSelector({
   };
 
   return (
-    <div className="surface-box" style={{ marginBottom: 13 }}>
+    <div className="surface-box" style={{ marginBottom: 14 }}>
       <div
         style={{
           display: 'flex',
@@ -236,29 +462,28 @@ export function ParentGroupSelector({
           alignItems: 'center',
           gap: 8,
           flexWrap: 'wrap',
-          marginBottom: 7,
+          marginBottom: 8,
         }}
       >
         <label
           className="form-label"
-          style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 7 }}
         >
-          <FolderTree size={14} style={{ color: 'var(--brand-text)' }} />
+          <FolderTree size={15} style={{ color: 'var(--brand-text)' }} />
           <span>{label}</span>
         </label>
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          style={{ padding: '3px 10px', minHeight: 29, fontSize: 11.8 }}
           onClick={() => setCreating((p) => !p)}
         >
           {creating ? (
             <>
-              <X size={12} /> Đóng
+              <X size={13} /> Đóng
             </>
           ) : (
             <>
-              <FolderPlus size={12} /> + Tạo Dự Án Cha mới
+              <FolderPlus size={13} /> Tạo nhóm mới
             </>
           )}
         </button>
@@ -268,8 +493,8 @@ export function ParentGroupSelector({
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             className="input"
-            style={{ flex: 1, minWidth: 210, minHeight: 36, padding: '6px 11px' }}
-            placeholder="VD: Series Học Guitar Cơ Bản / Chiến dịch Violin Mùa Tựu Trường..."
+            style={{ flex: 1, minWidth: 210 }}
+            placeholder="VD: Series Học Guitar Cơ Bản / Bộ sưu tập Violin..."
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
@@ -279,7 +504,7 @@ export function ParentGroupSelector({
               }
             }}
           />
-          <div style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+          <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             {GROUP_COLOR_PALETTE.map((hex) => (
               <button
                 key={hex}
@@ -287,8 +512,8 @@ export function ParentGroupSelector({
                 onClick={() => setNewColor(hex)}
                 title="Chọn màu đánh dấu Dự Án Cha"
                 style={{
-                  width: 20,
-                  height: 20,
+                  width: 22,
+                  height: 22,
                   borderRadius: 999,
                   background: hex,
                   border: newColor === hex ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.25)',
@@ -301,21 +526,20 @@ export function ParentGroupSelector({
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            style={{ minHeight: 36 }}
+            style={{ minHeight: 38 }}
             disabled={saving}
             onClick={handleQuickCreate}
           >
-            <Plus size={13} /> {saving ? 'Đang lưu...' : 'Tạo & Chọn'}
+            <Plus size={14} /> {saving ? 'Đang lưu...' : 'Tạo & Chọn'}
           </button>
         </div>
       ) : (
         <select
           className="select"
-          style={{ minHeight: 38, padding: '7px 11px' }}
           value={value || ''}
           onChange={(e) => onChange && onChange(e.target.value)}
         >
-          <option value="">-- Dự án độc lập (Không nằm trong Dự Án Cha) --</option>
+          <option value="">Dự án độc lập (Không gắn nhóm Series)</option>
           {projectGroups.map((grp) => (
             <option key={grp.group_id} value={grp.group_id}>
               Dự Án Cha: {grp.name} ({grp.project_count || 0} dự án con)
@@ -371,7 +595,7 @@ export function SwitchCard({ checked, onChange, children, icon: Icon = null }) {
         onChange={(e) => onChange(e.target.checked)}
       />
       {Icon && <Icon size={15} style={{ flexShrink: 0, color: 'var(--brand-text)' }} />}
-      <span style={{ lineHeight: 1.35 }}>{children}</span>
+      <span style={{ lineHeight: 1.4 }}>{children}</span>
     </label>
   );
 }
@@ -423,22 +647,22 @@ export function MediaDropzone({
             size={26}
             strokeWidth={2}
             className="spin"
-            style={{ color: 'var(--brand-text)', margin: '0 auto 7px', display: 'block' }}
+            style={{ color: 'var(--brand-text)', margin: '0 auto 8px', display: 'block' }}
           />
         ) : (
           <CustomIcon
             size={26}
             strokeWidth={1.85}
             style={{
-              color: error ? '#ef4444' : 'var(--brand-text)',
-              margin: '0 auto 7px',
+              color: error ? 'var(--danger-text)' : 'var(--brand-text)',
+              margin: '0 auto 8px',
               display: 'block',
             }}
           />
         )}
-        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{title}</div>
+        <div className="text-sm fw-600 text-main">{title}</div>
         {hint && (
-          <div className="text-sub" style={{ fontSize: 12.5, marginTop: 4 }}>
+          <div className="text-xs text-sub" style={{ marginTop: 4 }}>
             {hint}
           </div>
         )}
@@ -484,6 +708,7 @@ export function InlineVoiceSelector({
   voicePitch = null,
   onPitchChange = null,
   defaultCategory = 'ALL',
+  onOpenVoiceLab = null,
   notify,
 }) {
   const [loading, setLoading] = useState(false);
@@ -545,29 +770,41 @@ export function InlineVoiceSelector({
 
   return (
     <div className="selector-card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <label className="form-label" style={{ marginBottom: 0 }}>
           {label}
         </label>
-        <button
-          type="button"
-          className={`btn btn-sm ${playing ? 'btn-primary' : 'btn-secondary'}`}
-          disabled={loading}
-          onClick={handleTogglePreview}
-          title="Nghe thử giọng đọc với tốc độ & độ trầm hiện tại"
-        >
-          {loading ? (
-            <Loader2 size={14} />
-          ) : playing ? (
-            <>
-              <Square size={13} /> Dừng nghe
-            </>
-          ) : (
-            <>
-              <Volume2 size={14} /> Nghe thử giọng
-            </>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {onOpenVoiceLab && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onOpenVoiceLab}
+              title="Mở Phòng Giọng Đọc để nghe thử toàn bộ kho giọng hoặc tách giọng YouTube mới"
+            >
+              <Mic size={13} /> Kho giọng
+            </button>
           )}
-        </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${playing ? 'btn-primary' : 'btn-secondary'}`}
+            disabled={loading}
+            onClick={handleTogglePreview}
+            title="Nghe thử giọng đọc với tốc độ & độ trầm hiện tại"
+          >
+            {loading ? (
+              <Loader2 size={14} />
+            ) : playing ? (
+              <>
+                <Square size={13} /> Dừng nghe
+              </>
+            ) : (
+              <>
+                <Volume2 size={14} /> Nghe thử
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Quick Platform / Purpose Filter Pills */}
@@ -582,18 +819,8 @@ export function InlineVoiceSelector({
             <button
               key={cat.id}
               type="button"
+              className={`filter-pill ${active ? 'active' : ''}`}
               onClick={() => handleSelectCategory(cat.id)}
-              style={{
-                padding: '4px 9px',
-                fontSize: 11.5,
-                fontWeight: active ? 700 : 500,
-                borderRadius: 999,
-                cursor: 'pointer',
-                border: active ? '1px solid var(--brand)' : '1px solid var(--border)',
-                background: active ? 'var(--brand-soft)' : 'transparent',
-                color: active ? 'var(--brand-text)' : 'var(--text-secondary)',
-                transition: 'all 0.15s ease',
-              }}
             >
               {cat.label} ({count})
             </button>
@@ -638,20 +865,18 @@ export function InlineVoiceSelector({
       </select>
 
       {selectedVoiceObj && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {Array.isArray(selectedVoiceObj.tags) && selectedVoiceObj.tags.length > 0 && (
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {selectedVoiceObj.tags.map((tg, i) => (
-                <span key={i} className="badge badge-info" style={{ fontSize: 10.6, padding: '2px 7px' }}>
+                <span key={i} className="badge badge-info">
                   {tg}
                 </span>
               ))}
             </div>
           )}
           {selectedVoiceObj.emotion_prompt && (
-            <div className="text-muted" style={{ fontSize: 11.8, lineHeight: 1.35 }}>
-              Phong cách: {selectedVoiceObj.emotion_prompt}
-            </div>
+            <div className="text-xs text-muted">{selectedVoiceObj.emotion_prompt}</div>
           )}
         </div>
       )}
@@ -662,15 +887,15 @@ export function InlineVoiceSelector({
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             gap: 12,
-            paddingTop: 4,
+            paddingTop: 8,
             borderTop: '1px solid var(--border)',
           }}
         >
           {onSpeedChange && (
             <div>
               <div
-                className="text-sub"
-                style={{ fontSize: 11.8, display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}
+                className="text-xs text-sub"
+                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
               >
                 <span>Tốc độ đọc</span>
                 <strong>{Number(effSpeed).toFixed(2)}x</strong>
@@ -690,8 +915,8 @@ export function InlineVoiceSelector({
           {onPitchChange && (
             <div>
               <div
-                className="text-sub"
-                style={{ fontSize: 11.8, display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}
+                className="text-xs text-sub"
+                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
               >
                 <span>Độ trầm ấm</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -717,7 +942,7 @@ export function InlineVoiceSelector({
                           display: 'inline-flex',
                         }}
                       >
-                        <RotateCcw size={11} />
+                        <RotateCcw size={12} />
                       </button>
                     )}
                 </span>
@@ -937,7 +1162,7 @@ export function InlineBgmSelector({
             }}
             title="Tìm & tải thêm nhạc Lofi CC0 1.0 hoàn toàn miễn bản quyền từ trên mạng"
           >
-            <Globe size={13} /> + Kho Lofi Online (CC0)
+            <Globe size={13} /> Kho Lofi CC0
           </button>
 
           <label
@@ -945,7 +1170,7 @@ export function InlineBgmSelector({
             style={{ cursor: 'pointer' }}
             title="Tải tệp nhạc nền .mp3 / .wav riêng từ máy tính hoặc điện thoại"
           >
-            {uploadingBgm ? <Loader2 size={13} className="spin" /> : <UploadCloud size={13} />} Tải tệp
+            {uploadingBgm ? <Loader2 size={13} className="spin" /> : <UploadCloud size={13} />} Tải MP3
             <input
               type="file"
               accept="audio/*,.mp3,.wav,.m4a,.flac"
@@ -1005,43 +1230,33 @@ export function InlineBgmSelector({
             flexWrap: 'wrap',
           }}
         >
-          <span className="text-muted" style={{ fontSize: 11.6, lineHeight: 1.35, flex: 1 }}>
+          <span className="text-xs text-muted" style={{ flex: 1 }}>
             {selectedObj.description}
           </span>
           {selectedObj.mood_category === 'LOFI' && (
-            <span className="badge badge-ok" style={{ fontSize: 10.2, padding: '1px 7px' }}>
-              CC0 Sạch Bản Quyền
-            </span>
+            <span className="badge badge-ok">CC0 Sạch Bản Quyền</span>
           )}
         </div>
       )}
 
       {/* INLINE ONLINE CC0 LOFI FINDER & 1-CLICK IMPORTER */}
       {showOnlineFinder && (
-        <div
-          className="surface-box fade-slide-in"
-          style={{
-            padding: '10px 11px',
-            borderColor: 'var(--brand)',
-            background: 'var(--bg-step)',
-          }}
-        >
+        <div className="studio-callout studio-callout-brand fade-slide-in">
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               gap: 6,
-              marginBottom: 7,
+              marginBottom: 8,
             }}
           >
-            <strong style={{ fontSize: 12.4, color: 'var(--brand-text)' }}>
-              Kho Nhạc Lofi Trực Tuyến Chuẩn CC0 1.0 (Đăng TikTok / YouTube Shorts 100% không dính bản quyền)
+            <strong className="text-xs text-brand">
+              Kho Nhạc Lofi Trực Tuyến Chuẩn CC0 1.0 (Miễn phí bản quyền 100%)
             </strong>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              style={{ padding: '2px 7px', minHeight: 24 }}
               onClick={() => {
                 stopPlayer();
                 setShowOnlineFinder(false);
@@ -1051,13 +1266,12 @@ export function InlineBgmSelector({
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
             {ONLINE_LOFI_QUICK_TAGS.map((tg) => (
               <button
                 key={tg}
                 type="button"
-                className={`btn btn-sm ${onlineQuery === tg ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '2px 8px', minHeight: 25, fontSize: 11.2 }}
+                className={`filter-pill ${onlineQuery === tg ? 'active' : ''}`}
                 disabled={searchingOnline}
                 onClick={() => handleSearchOnlineLofi(tg)}
               >
@@ -1068,8 +1282,8 @@ export function InlineBgmSelector({
 
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             <input
-              className="input"
-              style={{ flex: 1, minHeight: 33, padding: '4px 9px', fontSize: 12.4 }}
+              className="input input-sm"
+              style={{ flex: 1 }}
               placeholder="Tìm thêm chủ đề nhạc CC0 (VD: lofi night, chill beat, piano...)"
               value={onlineQuery}
               onChange={(e) => setOnlineQuery(e.target.value)}
@@ -1083,7 +1297,6 @@ export function InlineBgmSelector({
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              style={{ minHeight: 33 }}
               disabled={searchingOnline}
               onClick={() => handleSearchOnlineLofi()}
             >
@@ -1092,8 +1305,8 @@ export function InlineBgmSelector({
           </div>
 
           {searchingOnline ? (
-            <div className="text-sub" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 2px' }}>
-              <Loader2 size={14} className="spin" /> Đang tìm các bản Lofi CC0 miễn bản quyền trên mạng...
+            <div className="text-xs text-sub" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 2px' }}>
+              <Loader2 size={14} className="spin" /> Đang tìm các bản Lofi CC0 miễn bản quyền...
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 6, maxHeight: 195, overflowY: 'auto', paddingRight: 2 }}>
@@ -1108,17 +1321,16 @@ export function InlineBgmSelector({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: 8,
-                      padding: '6px 8px',
-                      borderRadius: 7,
+                      padding: '8px 10px',
+                      borderRadius: 8,
                       background: 'var(--bg-panel)',
                       border: '1px solid var(--border)',
                     }}
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div
+                        className="text-xs fw-600 text-main"
                         style={{
-                          fontSize: 12.3,
-                          fontWeight: 700,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -1127,15 +1339,14 @@ export function InlineBgmSelector({
                       >
                         {tr.title}
                       </div>
-                      <div className="text-muted" style={{ fontSize: 11 }}>
-                        {tr.creator} • {tr.duration_sec}s • CC0 Public Domain
+                      <div className="text-xs text-muted">
+                        {tr.creator} • {tr.duration_sec}s • CC0
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
                       <button
                         type="button"
                         className={`btn btn-sm ${isPrev ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ padding: '2px 8px', minHeight: 27, fontSize: 11.2 }}
                         onClick={() => handleToggleOnlinePreview(tr.preview_url)}
                       >
                         {isPrev ? <Square size={11} /> : <Play size={11} />}{' '}
@@ -1144,12 +1355,11 @@ export function InlineBgmSelector({
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        style={{ padding: '2px 8px', minHeight: 27, fontSize: 11.2 }}
                         disabled={Boolean(importingUrl)}
                         onClick={() => handleImportOnlineTrack(tr)}
                       >
                         {isImp ? <Loader2 size={11} className="spin" /> : <Download size={11} />}{' '}
-                        {isImp ? 'Đang lưu...' : 'Lưu & Chọn'}
+                        {isImp ? 'Đang lưu...' : 'Chọn'}
                       </button>
                     </div>
                   </div>
@@ -1161,10 +1371,10 @@ export function InlineBgmSelector({
       )}
 
       {hasActiveBgm && onVolumeChange && (
-        <div style={{ paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+        <div style={{ paddingTop: 8, borderTop: '1px solid var(--border)' }}>
           <div
-            className="text-sub"
-            style={{ fontSize: 11.8, display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}
+            className="text-xs text-sub"
+            style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
           >
             <span>Âm lượng nhạc nền lót dưới giọng đọc</span>
             <strong>{Math.round(bgmVolume * 100)}%</strong>

@@ -3,12 +3,14 @@ import {
   Edit3,
   FileText,
   Film,
+  FolderTree,
   Languages,
   Link2,
   Loader2,
   Mic,
   Play,
   Search,
+  SlidersHorizontal,
   Subtitles,
   Upload,
   VolumeX,
@@ -24,7 +26,11 @@ import {
   ModeChoiceGrid,
   ParentGroupSelector,
   scrollToFirstValidationError,
+  StudioCollapsible,
   StudioLoadingBanner,
+  StudioPageHeader,
+  StudioStepFooter,
+  StudioStepNav,
 } from '../m00_core_contracts/StudioWidgets';
 
 const MOVIE_DRAFT_KEY = 'chaos_draft_movie_v1';
@@ -73,11 +79,15 @@ export default function MovieStudioForm({
   onGroupsChanged,
   onPreviewFrameReady,
   onProjectStarted,
+  onNavigateTab,
+  showAllSteps = false,
+  onToggleShowAllSteps,
   notify,
 }) {
   const savedDraft = loadMovieDraft();
   const rootRef = useRef(null);
 
+  const [activeStep, setActiveStep] = useState(1);
   const [projectName, setProjectName] = useState(savedDraft.projectName || '');
   const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
   const [pathOrUrl, setPathOrUrl] = useState(savedDraft.pathOrUrl || '');
@@ -86,7 +96,6 @@ export default function MovieStudioForm({
   const [probedInfo, setProbedInfo] = useState(null);
   const [probingUrl, setProbingUrl] = useState(false);
 
-  // Step 2
   const [outputAudioSubMode, setOutputAudioSubMode] = useState(
     savedDraft.outputAudioSubMode || 'VIET_DUB_AND_SUB'
   );
@@ -103,7 +112,6 @@ export default function MovieStudioForm({
   const [customBgmPath, setCustomBgmPath] = useState(null);
   const [bgmVolume, setBgmVolume] = useState(0.06);
 
-  // Step 3 (Visible & Clear!)
   const [sourceLang, setSourceLang] = useState(savedDraft.sourceLang || 'auto');
   const [externalSrtPath, setExternalSrtPath] = useState('');
   const [cutStrategy, setCutStrategy] = useState(savedDraft.cutStrategy || 'SEQUENTIAL_PARTS');
@@ -187,6 +195,7 @@ export default function MovieStudioForm({
     if (!isValidHttpUrl(candidate)) {
       if (!silentInvalid) {
         const msg = 'Vui lòng dán đường dẫn video trực tuyến hợp lệ (bắt đầu bằng https://...).';
+        setActiveStep(1);
         setErrors((prev) => ({ ...prev, pathOrUrl: msg }));
         scrollToFirstValidationError(rootRef);
         notify(msg);
@@ -297,6 +306,8 @@ export default function MovieStudioForm({
 
     if (Object.keys(nextErrs).length > 0) {
       setErrors(nextErrs);
+      if (nextErrs.pathOrUrl || nextErrs.videoUpload || nextErrs.projectName) setActiveStep(1);
+      else if (nextErrs.cutRange) setActiveStep(3);
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
       return;
@@ -370,345 +381,388 @@ export default function MovieStudioForm({
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
+  const stepItems = [
+    {
+      title: 'Nguồn Video & Bộ phim',
+      meta: pathOrUrl.trim() ? (projectName.trim() || 'Đã chọn nguồn video').slice(0, 30) : 'Dán link hoặc tải tệp',
+      done: Boolean(pathOrUrl.trim()),
+    },
+    {
+      title: 'Lồng tiếng & Nhạc nền',
+      meta: AUDIO_SUB_CHOICES.find((c) => c.value === outputAudioSubMode)?.title || outputAudioSubMode,
+      done: activeStep > 2,
+    },
+    {
+      title: 'Chia tập & Xuất bản',
+      meta: `${minSec}s – ${maxSec}s / phần`,
+      done: false,
+    },
+  ];
+
+  const showStep1 = showAllSteps || activeStep === 1;
+  const showStep2 = showAllSteps || activeStep === 2;
+  const showStep3 = showAllSteps || activeStep === 3;
+
   return (
     <div ref={rootRef} className="card">
-      <div className="page-header">
-        <div>
-          <div className="page-title">
-            <Film size={20} strokeWidth={2} /> Cắt & Dịch Video Dài Sang Khung Dọc
-          </div>
-          <div className="page-subtitle">
-            Tự động tải video từ link hoặc máy tính, tách lời thoại bằng GPU, dịch chuẩn ngữ cảnh sang tiếng Việt và chia tập thông minh
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <span className="badge badge-info">Độ dài cắt: {minSec}s – {maxSec}s</span>
-          <span className="badge badge-ok">
-            Auto-Ducking Rạp Phim {Math.round(duckingRatio * 100)}%
-          </span>
-        </div>
-      </div>
+      <StudioPageHeader
+        icon={Film}
+        title="Cắt & Dịch Video Dài Sang Khung Dọc"
+        subtitle="Tải video từ liên kết hoặc thiết bị, tách lời thoại bằng GPU, dịch ngữ cảnh sang tiếng Việt và chia tập thông minh"
+        badges={[
+          { label: `${minSec}s – ${maxSec}s / phần`, cls: 'badge-info' },
+          { label: `Dìm âm gốc ${Math.round(duckingRatio * 100)}%`, cls: 'badge-ok' },
+        ]}
+      />
 
-      {/* STEP 1 */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">1</span>
-          <div>
-            <div className="step-title">Nguồn video đầu vào & tên bộ phim</div>
-            <div className="step-desc">
-              Dán liên kết (Bilibili, YouTube, TikTok...) hoặc kéo thả tệp video có sẵn từ máy tính / điện thoại
+      <StudioStepNav
+        steps={stepItems}
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
+        showAllSteps={showAllSteps}
+        onToggleShowAll={onToggleShowAllSteps}
+      />
+
+      {/* ==================== BƯỚC 1: NGUỒN VIDEO & BỘ PHIM ==================== */}
+      {showStep1 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">1</span>
+            <div>
+              <div className="step-title">Nguồn video đầu vào &amp; Tên bộ phim</div>
+              <div className="step-desc">
+                Dán liên kết trực tuyến (YouTube, Bilibili, TikTok...) hoặc kéo thả tệp video có sẵn từ máy tính / điện thoại
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="form-group">
-          <label className="form-label">Liên kết video trực tuyến</label>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-              <input
-                className={`input ${errors.pathOrUrl ? 'input-error' : ''}`}
-                placeholder="Dán liên kết video (https://...) vào đây..."
-                value={pathOrUrl}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setPathOrUrl(v);
-                  clearError('pathOrUrl');
-                  if (v.includes('http://') || v.includes('https://')) {
-                    setSourceType('VIDEO_URL');
-                  }
+          <div className="form-group">
+            <label className="form-label">Liên kết video trực tuyến</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                <input
+                  className={`input ${errors.pathOrUrl ? 'input-error' : ''}`}
+                  placeholder="Dán liên kết video (https://...) vào đây..."
+                  value={pathOrUrl}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPathOrUrl(v);
+                    clearError('pathOrUrl');
+                    if (v.includes('http://') || v.includes('https://')) {
+                      setSourceType('VIDEO_URL');
+                    }
+                  }}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData('text');
+                    if (pasted && (pasted.includes('http://') || pasted.includes('https://'))) {
+                      setTimeout(() => handleProbeUrl(pasted, true), 80);
+                    }
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={probingUrl}
+                onClick={() => handleProbeUrl(pathOrUrl, false)}
+              >
+                {probingUrl ? <Loader2 size={15} className="spin" /> : <Search size={15} />}
+                <span>{probingUrl ? 'Đang kiểm tra...' : 'Kiểm tra link'}</span>
+              </button>
+            </div>
+            <FieldError message={errors.pathOrUrl} />
+
+            <StudioLoadingBanner
+              loading={probingUrl}
+              title="Đang kết nối & kiểm tra siêu dữ liệu liên kết video..."
+              subtitle="Hệ thống đang đọc tiêu đề, thời lượng và ảnh thu nhỏ của video gốc"
+              steps={['Phân giải đường dẫn video', 'Đọc thông tin luồng phát']}
+              stepIntervalMs={2200}
+            />
+
+            {probedInfo && (
+              <div
+                className="studio-callout studio-callout-success fade-slide-in"
+                style={{
+                  marginTop: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
                 }}
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData('text');
-                  if (pasted && (pasted.includes('http://') || pasted.includes('https://'))) {
-                    setTimeout(() => handleProbeUrl(pasted, true), 80);
-                  }
+              >
+                <Link2 size={16} style={{ color: 'var(--success-text)', flexShrink: 0 }} />
+                <span className="text-sm">
+                  <strong>{probedInfo.title}</strong>
+                  {probedInfo.duration_sec > 0 &&
+                    ` • Thời lượng ${Math.floor(probedInfo.duration_sec / 60)}p ${
+                      probedInfo.duration_sec % 60
+                    }s`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <MediaDropzone
+            accept="video/*"
+            disabled={uploading}
+            loading={uploading}
+            error={errors.videoUpload}
+            icon={Upload}
+            title={
+              uploading
+                ? 'Đang tải tệp video gốc lên máy chủ...'
+                : 'Hoặc kéo thả tệp video (.mp4, .mkv, .mov) trực tiếp từ thiết bị'
+            }
+            hint="Tự động kiểm tra khung hình & tách luồng âm thanh stereo gốc"
+            onFilesSelected={handleFilesSelected}
+          />
+
+          {localVideoPreviewUrl && (
+            <div className="fade-slide-in" style={{ marginTop: 14 }}>
+              <video
+                controls
+                src={localVideoPreviewUrl}
+                style={{
+                  width: '100%',
+                  maxHeight: 220,
+                  borderRadius: 10,
+                  background: '#000',
+                  border: '1px solid var(--border)',
                 }}
               />
             </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={probingUrl}
-              onClick={() => handleProbeUrl(pathOrUrl, false)}
-            >
-              {probingUrl ? <Loader2 size={15} className="spin" /> : <Search size={15} />}{' '}
-              {probingUrl ? 'Đang kiểm tra...' : 'Kiểm tra link'}
-            </button>
-          </div>
-          <FieldError message={errors.pathOrUrl} />
-
-          <StudioLoadingBanner
-            loading={probingUrl}
-            title="Đang kết nối & kiểm tra siêu dữ liệu liên kết video..."
-            subtitle="Hệ thống đang đọc tiêu đề, thời lượng và ảnh thu nhỏ của video gốc"
-            steps={['Phân giải đường dẫn video', 'Đọc thông tin luồng phát']}
-            stepIntervalMs={2200}
-          />
-
-          {probedInfo && (
-            <div
-              className="surface-box fade-slide-in"
-              style={{
-                marginTop: 9,
-                borderColor: 'rgba(16, 185, 129, 0.45)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <Link2 size={16} style={{ color: 'var(--success-text)', flexShrink: 0 }} />
-              <span style={{ fontSize: 13.2 }}>
-                <strong>{probedInfo.title}</strong>
-                {probedInfo.duration_sec > 0 &&
-                  ` • Thời lượng ${Math.floor(probedInfo.duration_sec / 60)}p ${probedInfo.duration_sec % 60}s`}
-              </span>
-            </div>
           )}
-        </div>
 
-        <MediaDropzone
-          accept="video/*"
-          disabled={uploading}
-          loading={uploading}
-          error={errors.videoUpload}
-          icon={Upload}
-          title={
-            uploading
-              ? 'Đang tải tệp video gốc lên máy chủ...'
-              : 'Hoặc kéo thả tệp video (.mp4, .mkv, .mov) trực tiếp từ máy tính / điện thoại'
-          }
-          hint="Tự động kiểm tra khung hình & tách luồng âm thanh stereo gốc"
-          onFilesSelected={handleFilesSelected}
-        />
-
-        {localVideoPreviewUrl && (
-          <div className="fade-slide-in" style={{ marginTop: 12 }}>
-            <video
-              controls
-              src={localVideoPreviewUrl}
-              style={{
-                width: '100%',
-                maxHeight: 220,
-                borderRadius: 9,
-                background: '#000',
-                border: '1px solid var(--border)',
+          <div className="form-group" style={{ marginTop: 16, marginBottom: 0 }}>
+            <label className="form-label">Tiêu đề hiển thị trên đầu các phần video</label>
+            <input
+              className={`input ${errors.projectName ? 'input-error' : ''}`}
+              placeholder="Tự động lấy theo tên video hoặc tự nhập (VD: Tổng Tài Trở Lại)"
+              value={projectName}
+              onChange={(e) => {
+                setProjectName(e.target.value);
+                clearError('projectName');
               }}
             />
+            <FieldError message={errors.projectName} />
           </div>
-        )}
 
-        <div className="form-group" style={{ marginTop: 13 }}>
-          <label className="form-label">Tiêu đề hiển thị trên đầu các phần video</label>
-          <input
-            className={`input ${errors.projectName ? 'input-error' : ''}`}
-            placeholder="Tự động lấy theo tên video hoặc tự nhập (VD: Tổng Tài Trở Lại)"
-            value={projectName}
-            onChange={(e) => {
-              setProjectName(e.target.value);
-              clearError('projectName');
-            }}
-          />
-          <FieldError message={errors.projectName} />
-        </div>
-
-        <ParentGroupSelector
-          projectGroups={projectGroups}
-          value={parentGroupId}
-          onChange={setParentGroupId}
-          onGroupsChanged={onGroupsChanged}
-          notify={notify}
-          label="Thuộc Dự Án Cha (Gom các tập cùng Bộ phim / Series review)"
-        />
-      </div>
-
-      {/* STEP 2 */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">2</span>
-          <div>
-            <div className="step-title">Hình thức lồng tiếng, chọn giọng thuyết minh & nhạc nền</div>
-            <div className="step-desc">
-              Chọn 1 trong 4 kiểu xuất âm thanh; nghe thử trực tiếp chất giọng trước khi bấm chạy
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <ModeChoiceGrid
-            options={AUDIO_SUB_CHOICES}
-            value={outputAudioSubMode}
-            onChange={setOutputAudioSubMode}
-          />
-        </div>
-
-        <div className="form-grid">
-          {(outputAudioSubMode === 'VIET_DUB_AND_SUB' ||
-            outputAudioSubMode === 'VIET_DUB_NO_SUB') && (
-            <InlineVoiceSelector
-              voices={voices}
-              voiceId={voiceId}
-              onChange={setVoiceId}
-              voiceSpeed={voiceSpeed}
-              onSpeedChange={setVoiceSpeed}
-              voicePitch={voicePitch}
-              onPitchChange={setVoicePitch}
-              defaultCategory="MOVIE_DUB"
-              label="Giọng đọc thuyết minh phim (Chuẩn Chiếu Rạp USLT / Phim Bộ)"
-              sampleText="Nhưng khi chính phủ chịu lắng nghe khoa học, thì nó đã quá muộn rồi. Đại dịch đã khiến xã hội ngưng lại đột ngột."
+          <StudioCollapsible
+            icon={FolderTree}
+            title="Quản lý theo Nhóm Dự Án Cha (Bộ phim / Series)"
+            subtitle="Gom các tập cùng một bộ phim vào chung thư mục dễ quản lý"
+            badge={parentGroupId ? 'Đã chọn nhóm' : ''}
+          >
+            <ParentGroupSelector
+              projectGroups={projectGroups}
+              value={parentGroupId}
+              onChange={setParentGroupId}
+              onGroupsChanged={onGroupsChanged}
               notify={notify}
             />
-          )}
-
-          <InlineBgmSelector
-            bgmPresets={bgmPresets}
-            bgmPresetId={bgmPresetId}
-            onSelectPreset={setBgmPresetId}
-            bgmVolume={bgmVolume}
-            onVolumeChange={setBgmVolume}
-            customBgmPath={customBgmPath}
-            onCustomBgmChange={setCustomBgmPath}
-            notify={notify}
-            label="Nhạc nền lót thêm (Tùy chọn)"
-          />
+          </StudioCollapsible>
         </div>
-      </div>
+      )}
 
-      {/* STEP 3: CLEAR VISIBLE CUTTING & SUBTITLE SETTINGS */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">3</span>
-          <div>
-            <div className="step-title">Cấu hình chia tập, ngôn ngữ gốc & phụ đề rời</div>
-            <div className="step-desc">
-              Hệ thống tự ngắt đúng dấu câu, không cắt cụt lời nhân vật giữa chừng
-            </div>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">Chiến lược chia đoạn video</label>
-            <select
-              className="select"
-              value={cutStrategy}
-              onChange={(e) => setCutStrategy(e.target.value)}
-            >
-              <option value="SEQUENTIAL_PARTS">Chia nối tiếp cả tập thành Phần 1, 2, 3...</option>
-              <option value="VIRAL_HIGHLIGHTS">Chỉ lọc trích xuất các đoạn cao trào nhất</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              Khoảng thời lượng mỗi phần: <strong>{minSec} giây – {maxSec} giây</strong>
-            </label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="number"
-                className={`input ${errors.cutRange ? 'input-error' : ''}`}
-                min={20}
-                max={170}
-                value={minSec}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setMinSec(v);
-                  const errMsg = validateCutDurationPair(v, maxSec);
-                  setErrors((prev) => {
-                    const copy = { ...prev };
-                    if (errMsg) copy.cutRange = errMsg;
-                    else delete copy.cutRange;
-                    return copy;
-                  });
-                }}
-              />
-              <span className="text-sub" style={{ fontWeight: 600 }}>
-                đến
-              </span>
-              <input
-                type="number"
-                className={`input ${errors.cutRange ? 'input-error' : ''}`}
-                min={30}
-                max={180}
-                value={maxSec}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setMaxSec(v);
-                  const errMsg = validateCutDurationPair(minSec, v);
-                  setErrors((prev) => {
-                    const copy = { ...prev };
-                    if (errMsg) copy.cutRange = errMsg;
-                    else delete copy.cutRange;
-                    return copy;
-                  });
-                }}
-              />
-            </div>
-            <FieldError message={errors.cutRange} />
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">Ngôn ngữ gốc của phim</label>
-            <select
-              className="select"
-              value={sourceLang}
-              onChange={(e) => setSourceLang(e.target.value)}
-            >
-              <option value="auto">Tự động nhận diện ngôn ngữ (Khuyên dùng)</option>
-              <option value="zh">Tiếng Trung</option>
-              <option value="ko">Tiếng Hàn</option>
-              <option value="en">Tiếng Anh</option>
-              <option value="vi">Tiếng Việt (Giữ nguyên không dịch)</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Kiểu chữ phụ đề tiếng Việt</label>
-            <select
-              className="select"
-              value={subtitleStyle === 'NONE' ? 'CINEMA' : subtitleStyle}
-              onChange={(e) => setSubtitleStyle(e.target.value)}
-            >
-              <option value="CINEMA">Phụ đề câu gọn chuẩn điện ảnh</option>
-              <option value="KARAOKE_CAPCUT">Chữ chạy nổi bật từng từ</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Đính kèm phụ đề rời .SRT (nếu có sẵn sẽ bỏ qua quét âm thanh)</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                placeholder="Mặc định để trống để GPU tự nghe lời thoại"
-                value={externalSrtPath}
-                onChange={(e) => setExternalSrtPath(e.target.value)}
-              />
-              <label className="btn btn-secondary" style={{ whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                <FileText size={14} /> Chọn .SRT
-                <input type="file" accept=".srt,.vtt" hidden onChange={handleSrtUpload} />
-              </label>
+      {/* ==================== BƯỚC 2: LỒNG TIẾNG & NHẠC NỀN ==================== */}
+      {showStep2 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">2</span>
+            <div>
+              <div className="step-title">Hình thức lồng tiếng, Giọng thuyết minh &amp; Nhạc nền</div>
+              <div className="step-desc">
+                Chọn 1 trong 4 kiểu xuất âm thanh; nghe thử trực tiếp chất giọng trước khi chạy
+              </div>
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">
-              Âm lượng tiếng phim gốc khi nhân vật thuyết minh nói: <strong>{Math.round(duckingRatio * 100)}%</strong>
-            </label>
-            <input
-              type="range"
-              min="0.05"
-              max="0.50"
-              step="0.02"
-              style={{ width: '100%', marginTop: 10 }}
-              value={duckingRatio}
-              onChange={(e) => setDuckingRatio(parseFloat(e.target.value))}
+          <div style={{ marginBottom: 16 }}>
+            <ModeChoiceGrid
+              options={AUDIO_SUB_CHOICES}
+              value={outputAudioSubMode}
+              onChange={setOutputAudioSubMode}
+            />
+          </div>
+
+          <div className="form-grid">
+            {(outputAudioSubMode === 'VIET_DUB_AND_SUB' ||
+              outputAudioSubMode === 'VIET_DUB_NO_SUB') && (
+              <InlineVoiceSelector
+                voices={voices}
+                voiceId={voiceId}
+                onChange={setVoiceId}
+                voiceSpeed={voiceSpeed}
+                onSpeedChange={setVoiceSpeed}
+                voicePitch={voicePitch}
+                onPitchChange={setVoicePitch}
+                defaultCategory="MOVIE_DUB"
+                onOpenVoiceLab={onNavigateTab ? () => onNavigateTab('voices') : null}
+                label="Giọng đọc thuyết minh phim"
+                sampleText="Nhưng khi chính phủ chịu lắng nghe khoa học, thì nó đã quá muộn rồi. Đại dịch đã khiến xã hội ngưng lại đột ngột."
+                notify={notify}
+              />
+            )}
+
+            <InlineBgmSelector
+              bgmPresets={bgmPresets}
+              bgmPresetId={bgmPresetId}
+              onSelectPreset={setBgmPresetId}
+              bgmVolume={bgmVolume}
+              onVolumeChange={setBgmVolume}
+              customBgmPath={customBgmPath}
+              onCustomBgmChange={setCustomBgmPath}
+              notify={notify}
+              label="Nhạc nền lót thêm (Tùy chọn)"
             />
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ==================== BƯỚC 3: CHIA TẬP & XUẤT BẢN ==================== */}
+      {showStep3 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">3</span>
+            <div>
+              <div className="step-title">Chiến lược chia tập, Ngôn ngữ gốc &amp; Phụ đề</div>
+              <div className="step-desc">
+                Hệ thống tự ngắt đúng dấu câu, không cắt cụt lời nhân vật giữa chừng
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Chiến lược chia đoạn video</label>
+              <select
+                className="select"
+                value={cutStrategy}
+                onChange={(e) => setCutStrategy(e.target.value)}
+              >
+                <option value="SEQUENTIAL_PARTS">Chia nối tiếp cả tập thành Phần 1, 2, 3...</option>
+                <option value="VIRAL_HIGHLIGHTS">Chỉ lọc trích xuất các đoạn cao trào nhất</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Khoảng thời lượng mỗi phần: <strong>{minSec} giây – {maxSec} giây</strong>
+              </label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number"
+                  className={`input ${errors.cutRange ? 'input-error' : ''}`}
+                  min={20}
+                  max={170}
+                  value={minSec}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMinSec(v);
+                    const errMsg = validateCutDurationPair(v, maxSec);
+                    setErrors((prev) => {
+                      const copy = { ...prev };
+                      if (errMsg) copy.cutRange = errMsg;
+                      else delete copy.cutRange;
+                      return copy;
+                    });
+                  }}
+                />
+                <span className="text-xs text-sub fw-600">đến</span>
+                <input
+                  type="number"
+                  className={`input ${errors.cutRange ? 'input-error' : ''}`}
+                  min={30}
+                  max={180}
+                  value={maxSec}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMaxSec(v);
+                    const errMsg = validateCutDurationPair(minSec, v);
+                    setErrors((prev) => {
+                      const copy = { ...prev };
+                      if (errMsg) copy.cutRange = errMsg;
+                      else delete copy.cutRange;
+                      return copy;
+                    });
+                  }}
+                />
+              </div>
+              <FieldError message={errors.cutRange} />
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Ngôn ngữ gốc của phim</label>
+              <select
+                className="select"
+                value={sourceLang}
+                onChange={(e) => setSourceLang(e.target.value)}
+              >
+                <option value="auto">Tự động nhận diện ngôn ngữ (Khuyên dùng)</option>
+                <option value="zh">Tiếng Trung</option>
+                <option value="ko">Tiếng Hàn</option>
+                <option value="en">Tiếng Anh</option>
+                <option value="vi">Tiếng Việt (Giữ nguyên không dịch)</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Kiểu chữ phụ đề tiếng Việt</label>
+              <select
+                className="select"
+                value={subtitleStyle === 'NONE' ? 'CINEMA' : subtitleStyle}
+                onChange={(e) => setSubtitleStyle(e.target.value)}
+              >
+                <option value="CINEMA">Phụ đề câu gọn chuẩn điện ảnh</option>
+                <option value="KARAOKE_CAPCUT">Chữ chạy nổi bật từng từ</option>
+              </select>
+            </div>
+          </div>
+
+          <StudioCollapsible
+            icon={SlidersHorizontal}
+            title="Tùy chỉnh nâng cao (Phụ đề rời .SRT & Độ dìm âm nền phim gốc)"
+            subtitle="Đính kèm sẵn tệp .SRT nếu muốn bỏ qua bước quét âm thanh GPU, hoặc chỉnh mức dìm tiếng phim gốc"
+            badge={externalSrtPath ? 'Đã đính kèm .SRT' : ''}
+          >
+            <div className="form-grid">
+              <div>
+                <label className="form-label">Tệp phụ đề rời .SRT (Tùy chọn)</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="input"
+                    placeholder="Mặc định để trống để GPU tự nghe lời thoại"
+                    value={externalSrtPath}
+                    onChange={(e) => setExternalSrtPath(e.target.value)}
+                  />
+                  <label className="btn btn-secondary" style={{ whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                    <FileText size={14} /> Chọn .SRT
+                    <input type="file" accept=".srt,.vtt" hidden onChange={handleSrtUpload} />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">
+                  Âm lượng tiếng phim gốc khi thuyết minh đọc:{' '}
+                  <strong>{Math.round(duckingRatio * 100)}%</strong>
+                </label>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="0.50"
+                  step="0.02"
+                  style={{ width: '100%', marginTop: 10 }}
+                  value={duckingRatio}
+                  onChange={(e) => setDuckingRatio(parseFloat(e.target.value))}
+                />
+              </div>
+            </div>
+          </StudioCollapsible>
+        </div>
+      )}
 
       <StudioLoadingBanner
         loading={submitting}
@@ -721,32 +775,28 @@ export default function MovieStudioForm({
         stepIntervalMs={1800}
       />
 
-      {/* STICKY ACTIONS */}
-      <div className="sticky-action-bar">
-        <span className="text-sub" style={{ fontSize: 12.2 }}>
-          Tự động lưu nháp • Bấm <strong>Ctrl + Enter</strong> để cắt &amp; thuyết minh ngay
-        </span>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ minHeight: 42 }}
-            disabled={submitting || uploading || probingUrl}
-            onClick={() => submitMovie(false)}
-          >
-            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
-            Xem và chỉnh lời dịch trước khi xuất
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
-            disabled={submitting || uploading || probingUrl}
-            onClick={() => submitMovie(true)}
-          >
-            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
-            {submitting ? 'Đang khởi tạo...' : 'Bắt đầu cắt & thuyết minh tự động'}
-          </button>
-        </div>
-      </div>
+      <StudioStepFooter
+        activeStep={activeStep}
+        totalSteps={3}
+        showAllSteps={showAllSteps}
+        onStepChange={setActiveStep}
+        nextStepLabel={
+          activeStep === 1 ? 'Tiếp tục: Lồng tiếng & Nhạc' : 'Tiếp tục: Chia tập & Xuất'
+        }
+        hintText="Tự động lưu nháp • Bấm Ctrl + Enter để cắt & thuyết minh ngay"
+        secondaryAction={{
+          label: 'Duyệt lời dịch trước',
+          icon: submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />,
+          disabled: submitting || uploading || probingUrl,
+          onClick: () => submitMovie(false),
+        }}
+        primaryAction={{
+          label: submitting ? 'Đang khởi tạo...' : 'Bắt đầu cắt & thuyết minh tự động',
+          icon: submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />,
+          disabled: submitting || uploading || probingUrl,
+          onClick: () => submitMovie(true),
+        }}
+      />
     </div>
   );
 }

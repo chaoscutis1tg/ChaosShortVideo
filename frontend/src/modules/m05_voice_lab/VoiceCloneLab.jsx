@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Film,
   Headphones,
   Link2,
@@ -8,6 +9,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  SlidersHorizontal,
   Upload,
   Volume2,
 } from 'lucide-react';
@@ -19,24 +21,26 @@ import {
   isValidHttpUrl,
   MediaDropzone,
   scrollToFirstValidationError,
+  StudioCollapsible,
   StudioLoadingBanner,
+  StudioPageHeader,
 } from '../m00_core_contracts/StudioWidgets';
 
 const SAMPLE_PRESETS = [
   {
-    label: 'Phim chiếu rạp Mỹ (Tín Hiệu Vô Hình)',
+    label: 'Phim chiếu rạp Mỹ',
     text: 'Nhưng khi chính phủ chịu lắng nghe khoa học, thì nó đã quá muộn rồi. Đại dịch đã khiến xã hội ngưng lại đột ngột.',
   },
   {
-    label: 'Hook Short TikTok 3 giây',
+    label: 'Hook Short TikTok 3s',
     text: 'Khoan lướt qua! Ba sai lầm mà chín mươi phần trăm người mới đều mắc phải ngay trong tuần đầu tiên mà không hề nhận ra.',
   },
   {
-    label: 'Khoa học & Bí ẩn YouTube Shorts',
+    label: 'Khoa học YouTube Shorts',
     text: 'Không ai ngờ rằng, sâu dưới lớp băng vĩnh cửu hàng vạn năm tuổi, các nhà khoa học vừa phát hiện một tín hiệu cổ xưa đầy bí ẩn.',
   },
   {
-    label: 'Nghệ nhân chia sẻ đàn Violin',
+    label: 'Nghệ nhân tư vấn Violin',
     text: 'Điểm chạm cảm xúc đầu tiên của cây đàn này nằm ở mặt top gỗ thịt tự nhiên nguyên tấm, cho âm vang dày và ấm ngay từ nốt kéo đầu tiên.',
   },
 ];
@@ -67,7 +71,8 @@ function resolveVoiceCategoryBadge(v) {
   return CATEGORY_BADGES[v.category] || { label: 'Thuyết minh Phim', cls: 'badge-info' };
 }
 
-export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
+export default function VoiceCloneLab({ voices, onVoicesChanged, onBackToStudio, notify }) {
+  const [activeSection, setActiveSection] = useState('LIBRARY');
   const [sampleText, setSampleText] = useState(SAMPLE_PRESETS[0].text);
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [testSpeed, setTestSpeed] = useState(null);
@@ -76,10 +81,8 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
   const [activeVoiceName, setActiveVoiceName] = useState('');
   const [loadingPreviewId, setLoadingPreviewId] = useState('');
 
-  // Clone Mode ('YOUTUBE' | 'UPLOAD')
   const [cloneSourceMode, setCloneSourceMode] = useState('YOUTUBE');
 
-  // YouTube Clone state
   const [ytUrl, setYtUrl] = useState('');
   const [ytVoiceName, setYtVoiceName] = useState('');
   const [ytStartSec, setYtStartSec] = useState(5);
@@ -90,7 +93,6 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
   const [ytRefText, setYtRefText] = useState('');
   const [cloningYoutube, setCloningYoutube] = useState(false);
 
-  // Local Upload Clone state
   const [cloneName, setCloneName] = useState('');
   const [cloneRefText, setCloneRefText] = useState('');
   const [cloneSpeed, setCloneSpeed] = useState(1.04);
@@ -131,7 +133,9 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
       const ptc = testPitch !== null ? testPitch : voiceObj.pitch_hz;
       const res = await studioApi.previewVoice(voiceObj.profile_id, sampleText, spd, ptc);
       setActiveVoiceName(
-        `${stripLeadingEmoji(voiceObj.display_name)} (${spd.toFixed(2)}x, độ trầm ${ptc > 0 ? `+${ptc}` : ptc})`
+        `${stripLeadingEmoji(voiceObj.display_name)} (${spd.toFixed(2)}x, độ trầm ${
+          ptc > 0 ? `+${ptc}` : ptc
+        })`
       );
       setPreviewAudioUrl(`${res.audio_url}?t=${Date.now()}`);
     } catch (err) {
@@ -191,6 +195,7 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
       setYtVoiceName('');
       setYtRefText('');
       await onVoicesChanged();
+      setActiveSection('LIBRARY');
       setActiveFilter('CLONED_ONLY');
       if (created?.sample_audio_url) {
         setActiveVoiceName(`Mẫu gốc vừa tách: ${created.display_name}`);
@@ -241,6 +246,7 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
       setCloneRefText('');
       setCloneFile(null);
       await onVoicesChanged();
+      setActiveSection('LIBRARY');
       setActiveFilter('CLONED_ONLY');
       notify('Đã phân tích âm sắc và lưu hồ sơ giọng đọc mới thành công.');
     } catch (err) {
@@ -251,302 +257,302 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
   };
 
   return (
-    <div>
-      <div className="card">
-        <div className="page-header">
-          <div>
-            <div className="page-title">
-              <Volume2 size={20} strokeWidth={2} /> Kho {voices.length} Giọng Đọc Phân Nhóm Theo Nền Tảng
-            </div>
-            <div className="page-subtitle">
-              Phân loại rõ ràng cho Short TikTok, YouTube Shorts, Thuyết minh Phim Chiếu Rạp (USLT) và Tư vấn Bán hàng
-            </div>
-          </div>
-          <span className="badge badge-info">{voices.length} hồ sơ giọng</span>
-        </div>
+    <div className="card" ref={cloneCardRef}>
+      <StudioPageHeader
+        icon={Volume2}
+        title={`Phòng Giọng Đọc & Nhân Bản Âm Sắc (${voices.length} giọng)`}
+        subtitle="Nghe thử, so sánh chất giọng theo từng nền tảng (TikTok, Shorts, Phim rạp, Bán hàng) hoặc tách giọng từ YouTube"
+        badges={[{ label: `${voices.length} hồ sơ giọng`, cls: 'badge-info' }]}
+        actions={
+          onBackToStudio ? (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onBackToStudio}>
+              <ArrowLeft size={14} /> Quay lại xưởng dựng
+            </button>
+          ) : null
+        }
+      />
 
-        {/* STEP 1: AUDITION BOX */}
-        <div className="step-box">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginBottom: 8,
-            }}
+      {/* CLEAN 2-SECTION SEGMENTED BAR */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          marginBottom: 20,
+        }}
+      >
+        <div className="studio-segmented">
+          <button
+            type="button"
+            className={`studio-seg-btn ${activeSection === 'LIBRARY' ? 'active' : ''}`}
+            onClick={() => setActiveSection('LIBRARY')}
           >
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Câu văn mẫu để nghe thử & so sánh chất giọng:
-            </label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {SAMPLE_PRESETS.map((sp, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setSampleText(sp.text)}
-                >
-                  {sp.label}
-                </button>
-              ))}
-            </div>
-          </div>
+            <Volume2 size={15} /> Kho giọng &amp; Nghe thử ({voices.length})
+          </button>
+          <button
+            type="button"
+            className={`studio-seg-btn ${activeSection === 'CLONE' ? 'active' : ''}`}
+            onClick={() => setActiveSection('CLONE')}
+          >
+            <Mic size={15} /> Tách &amp; Nhân bản giọng mới
+          </button>
+        </div>
+      </div>
 
-          <textarea
-            className="textarea"
-            style={{ minHeight: 68, marginBottom: 12 }}
-            value={sampleText}
-            onChange={(e) => setSampleText(e.target.value)}
-          />
-
-          <div className="surface-box">
+      {activeSection === 'LIBRARY' ? (
+        <div className="fade-slide-in">
+          {/* AUDITION BOX */}
+          <div className="step-box">
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 8,
+                gap: 8,
                 flexWrap: 'wrap',
-                gap: 6,
+                marginBottom: 8,
               }}
             >
-              <strong style={{ fontSize: 13 }}>
-                Tinh chỉnh Tốc độ & Độ trầm ấm khi bấm Nghe thử (Để mặc định sẽ theo chuẩn riêng từng giọng)
-              </strong>
-              {(testSpeed !== null || testPitch !== null) && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    setTestSpeed(null);
-                    setTestPitch(null);
-                  }}
-                >
-                  <RotateCcw size={12} /> Trả về mặc định từng giọng
-                </button>
-              )}
+              <label className="form-label" style={{ marginBottom: 0 }}>
+                Câu văn mẫu để nghe thử &amp; so sánh chất giọng
+              </label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {SAMPLE_PRESETS.map((sp, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="filter-pill"
+                    onClick={() => setSampleText(sp.text)}
+                  >
+                    {sp.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="form-grid">
-              <div>
-                <div className="text-sub" style={{ fontSize: 12.2, marginBottom: 3 }}>
-                  Tốc độ đọc thử:{' '}
-                  <strong>{testSpeed !== null ? `${testSpeed.toFixed(2)}x` : 'Theo từng giọng'}</strong>
+            <textarea
+              className="textarea"
+              style={{ minHeight: 70 }}
+              value={sampleText}
+              onChange={(e) => setSampleText(e.target.value)}
+            />
+
+            <StudioCollapsible
+              icon={SlidersHorizontal}
+              title="Tinh chỉnh Tốc độ & Độ trầm ấm khi nghe thử"
+              subtitle="Để mặc định sẽ phát theo thông số chuẩn riêng của từng giọng"
+              badge={testSpeed !== null || testPitch !== null ? 'Đang tùy chỉnh' : ''}
+            >
+              <div className="form-grid">
+                <div>
+                  <div className="text-xs text-sub" style={{ marginBottom: 4 }}>
+                    Tốc độ đọc thử:{' '}
+                    <strong>
+                      {testSpeed !== null ? `${testSpeed.toFixed(2)}x` : 'Theo từng giọng'}
+                    </strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.80"
+                    max="1.35"
+                    step="0.02"
+                    style={{ width: '100%' }}
+                    value={testSpeed ?? 1.04}
+                    onChange={(e) => setTestSpeed(parseFloat(e.target.value))}
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="0.80"
-                  max="1.35"
-                  step="0.02"
-                  style={{ width: '100%' }}
-                  value={testSpeed ?? 1.04}
-                  onChange={(e) => setTestSpeed(parseFloat(e.target.value))}
-                />
-              </div>
-              <div>
-                <div className="text-sub" style={{ fontSize: 12.2, marginBottom: 3 }}>
-                  Độ trầm ấm thử:{' '}
-                  <strong>
-                    {testPitch !== null
-                      ? `${testPitch > 0 ? `+${testPitch}` : testPitch} (Âm = trầm dày, Dương = thanh sáng)`
-                      : 'Theo từng giọng'}
-                  </strong>
+                <div>
+                  <div className="text-xs text-sub" style={{ marginBottom: 4 }}>
+                    Độ trầm ấm thử:{' '}
+                    <strong>
+                      {testPitch !== null
+                        ? `${testPitch > 0 ? `+${testPitch}` : testPitch}`
+                        : 'Theo từng giọng'}
+                    </strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="-6.0"
+                    max="6.0"
+                    step="0.2"
+                    style={{ width: '100%' }}
+                    value={testPitch ?? 0.0}
+                    onChange={(e) => setTestPitch(parseFloat(e.target.value))}
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="-6.0"
-                  max="6.0"
-                  step="0.2"
-                  style={{ width: '100%' }}
-                  value={testPitch ?? 0.0}
-                  onChange={(e) => setTestPitch(parseFloat(e.target.value))}
-                />
               </div>
-            </div>
+              {(testSpeed !== null || testPitch !== null) && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setTestSpeed(null);
+                      setTestPitch(null);
+                    }}
+                  >
+                    <RotateCcw size={12} /> Trả về mặc định từng giọng
+                  </button>
+                </div>
+              )}
+            </StudioCollapsible>
+
+            {previewAudioUrl && (
+              <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginTop: 14 }}>
+                <div className="text-sm fw-600" style={{ marginBottom: 6 }}>
+                  Đang phát: {activeVoiceName}
+                </div>
+                <audio controls autoPlay src={previewAudioUrl} style={{ width: '100%', height: 38 }} />
+              </div>
+            )}
           </div>
 
-          {previewAudioUrl && (
-            <div
-              className="surface-box"
-              style={{
-                marginTop: 12,
-                borderColor: 'var(--brand)',
-                background: 'var(--brand-soft)',
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                Đang phát: {activeVoiceName}
-              </div>
-              <audio controls autoPlay src={previewAudioUrl} style={{ width: '100%', height: 38 }} />
-            </div>
-          )}
-        </div>
+          {/* PLATFORM CATEGORY FILTER BAR */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              marginBottom: 16,
+            }}
+          >
+            {LAB_FILTER_TABS.map((tab) => {
+              const count = voices.filter((v) => matchesFilter(v, tab.id)).length;
+              const active = activeFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`filter-pill ${active ? 'active' : ''}`}
+                  onClick={() => setActiveFilter(tab.id)}
+                >
+                  {tab.label} ({count})
+                </button>
+              );
+            })}
+          </div>
 
-        {/* PLATFORM CATEGORY FILTER BAR */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: 'wrap',
-            marginBottom: 14,
-            paddingBottom: 10,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          {LAB_FILTER_TABS.map((tab) => {
-            const count = voices.filter((v) => matchesFilter(v, tab.id)).length;
-            const active = activeFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setActiveFilter(tab.id)}
-              >
-                {tab.label} ({count})
-              </button>
-            );
-          })}
-        </div>
+          {/* VOICE CARDS GRID */}
+          <div className="voice-library-grid">
+            {filteredVoices.map((v) => {
+              const cat = resolveVoiceCategoryBadge(v);
+              const fullTitle = stripLeadingEmoji(v.display_name);
+              const [shortName, roleDesc] = fullTitle.includes('—')
+                ? fullTitle.split('—').map((s) => s.trim())
+                : [fullTitle, ''];
 
-        {/* 2-COLUMN CLEAR VOICE GRID */}
-        <div className="voice-library-grid">
-          {filteredVoices.map((v) => {
-            const cat = resolveVoiceCategoryBadge(v);
-            const fullTitle = stripLeadingEmoji(v.display_name);
-            const [shortName, roleDesc] = fullTitle.includes('—')
-              ? fullTitle.split('—').map((s) => s.trim())
-              : [fullTitle, ''];
+              return (
+                <div key={v.profile_id} className="voice-card-item">
+                  <div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <strong className="text-md">{shortName}</strong>
+                      <span className={`badge ${cat.cls}`}>{cat.label}</span>
+                    </div>
+                    {roleDesc && (
+                      <div className="text-xs fw-600 text-brand" style={{ marginBottom: 6 }}>
+                        {roleDesc}
+                      </div>
+                    )}
+                    {Array.isArray(v.tags) && v.tags.length > 0 && (
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                        {v.tags.map((tg, idx) => (
+                          <span key={idx} className="badge">
+                            {tg}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="text-xs text-sub">{v.emotion_prompt}</div>
+                  </div>
 
-            return (
-              <div key={v.profile_id} className="voice-card-item">
-                <div>
                   <div
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'flex-start',
+                      alignItems: 'center',
+                      paddingTop: 10,
+                      borderTop: '1px solid var(--border)',
                       gap: 8,
-                      marginBottom: 5,
+                      flexWrap: 'wrap',
                     }}
                   >
-                    <strong style={{ fontSize: 14.5 }}>{shortName}</strong>
-                    <span className={`badge ${cat.cls}`} style={{ fontSize: 11 }}>
-                      {cat.label}
+                    <span className="text-xs text-muted">
+                      Chuẩn: <strong>{v.speed_rate}x</strong> • Độ trầm:{' '}
+                      <strong>{v.pitch_hz > 0 ? `+${v.pitch_hz}` : v.pitch_hz}</strong>
                     </span>
-                  </div>
-                  {roleDesc && (
-                    <div
-                      style={{
-                        fontSize: 12.8,
-                        fontWeight: 600,
-                        color: 'var(--brand-text)',
-                        marginBottom: 5,
-                      }}
-                    >
-                      {roleDesc}
-                    </div>
-                  )}
-                  {Array.isArray(v.tags) && v.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
-                      {v.tags.map((tg, idx) => (
-                        <span
-                          key={idx}
-                          className="badge"
-                          style={{ fontSize: 10.5, padding: '2px 7px' }}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {v.sample_audio_url && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handlePlayOriginalSample(v)}
                         >
-                          {tg}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="text-sub" style={{ fontSize: 12.2, lineHeight: 1.4 }}>
-                    {v.emotion_prompt}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingTop: 9,
-                    borderTop: '1px solid var(--border)',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span className="text-muted" style={{ fontSize: 11.8 }}>
-                    Chuẩn: <strong>{v.speed_rate}x</strong> • Độ trầm:{' '}
-                    <strong>{v.pitch_hz > 0 ? `+${v.pitch_hz}` : v.pitch_hz}</strong>
-                  </span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {v.sample_audio_url && (
+                          <Headphones size={13} /> Mẫu gốc
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm"
-                        title="Nghe đoạn giọng gốc trích xuất từ phim/tệp mẫu"
-                        onClick={() => handlePlayOriginalSample(v)}
+                        className="btn btn-primary btn-sm"
+                        disabled={loadingPreviewId === v.profile_id}
+                        onClick={() => handlePreview(v)}
                       >
-                        <Headphones size={13} /> Mẫu gốc
+                        {loadingPreviewId === v.profile_id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Play size={13} />
+                        )}
+                        <span>{loadingPreviewId === v.profile_id ? 'Đang tạo...' : 'Nghe thử'}</span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={loadingPreviewId === v.profile_id}
-                      onClick={() => handlePreview(v)}
-                    >
-                      {loadingPreviewId === v.profile_id ? (
-                        <Loader2 size={13} className="spin" />
-                      ) : (
-                        <Play size={13} />
-                      )}{' '}
-                      {loadingPreviewId === v.profile_id ? 'Đang tạo...' : 'Nghe thử'}
-                    </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* VOICE CLONE STUDIO CARD (YOUTUBE URL + LOCAL UPLOAD) */}
-      <div className="card" ref={cloneCardRef}>
-        <div className="page-header">
-          <div>
-            <div className="page-title">
-              <Mic size={20} strokeWidth={2} /> Tách & Nhái Giọng Thuyết Minh Từ Phim YouTube Hoặc Tệp Thu Âm
-            </div>
-            <div className="page-subtitle">
-              Dán thẳng link phim YouTube yêu thích (hệ thống tự cắt đoạn, khử nhiễu nền & quét giọng bằng GPU RTX 3060) hoặc tải lên tệp thu âm riêng
-            </div>
+              );
+            })}
           </div>
         </div>
+      ) : (
+        <div className="step-box fade-slide-in" style={{ marginBottom: 0 }}>
+          <div className="step-header">
+            <span className="step-num">
+              <Mic size={14} />
+            </span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">Tách &amp; Nhân bản giọng đọc từ YouTube hoặc Tệp thu âm</div>
+              <div className="step-desc">
+                Hệ thống tự cắt đoạn mẫu 6–22 giây, khử nhiễu phòng thu và nhận diện lời thoại bằng GPU
+              </div>
+            </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className={`btn ${cloneSourceMode === 'YOUTUBE' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setCloneSourceMode('YOUTUBE')}
-          >
-            <Link2 size={15} /> Tách & Nhái Giọng Từ Link YouTube
-          </button>
-          <button
-            type="button"
-            className={`btn ${cloneSourceMode === 'UPLOAD' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setCloneSourceMode('UPLOAD')}
-          >
-            <Upload size={15} /> Tải Lên Tệp Ghi Âm Có Sẵn (.mp3, .wav, .mp4)
-          </button>
-        </div>
+            <div className="studio-segmented">
+              <button
+                type="button"
+                className={`studio-seg-btn ${cloneSourceMode === 'YOUTUBE' ? 'active' : ''}`}
+                onClick={() => setCloneSourceMode('YOUTUBE')}
+              >
+                <Link2 size={14} /> Từ Link YouTube
+              </button>
+              <button
+                type="button"
+                className={`studio-seg-btn ${cloneSourceMode === 'UPLOAD' ? 'active' : ''}`}
+                onClick={() => setCloneSourceMode('UPLOAD')}
+              >
+                <Upload size={14} /> Tải tệp ghi âm
+              </button>
+            </div>
+          </div>
 
-        {cloneSourceMode === 'YOUTUBE' ? (
-          <form onSubmit={handleYoutubeCloneSubmit}>
-            <div className="step-box" style={{ marginBottom: 14 }}>
+          {cloneSourceMode === 'YOUTUBE' ? (
+            <form onSubmit={handleYoutubeCloneSubmit}>
               <div
                 style={{
                   display: 'flex',
@@ -554,15 +560,15 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                   alignItems: 'center',
                   gap: 8,
                   flexWrap: 'wrap',
-                  marginBottom: 8,
+                  marginBottom: 6,
                 }}
               >
                 <label className="form-label" style={{ marginBottom: 0 }}>
-                  Liên kết video YouTube có giọng thuyết minh bạn muốn lấy mẫu
+                  Liên kết video YouTube có giọng thuyết minh mẫu
                 </label>
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
+                  className="filter-pill"
                   onClick={() => {
                     setYtUrl('https://www.youtube.com/watch?v=3s-dbpC0PRc');
                     setYtVoiceName('Nữ Thuyết Minh Tín Hiệu Vô Hình');
@@ -572,14 +578,14 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                     setYtDialect('nam');
                   }}
                 >
-                  <Film size={13} /> Điền nhanh phim mẫu Tín Hiệu Vô Hình
+                  <Film size={12} /> Điền nhanh mẫu thử
                 </button>
               </div>
 
               <div className="form-group">
                 <input
                   className={`input ${errors.ytUrl ? 'input-error' : ''}`}
-                  placeholder="VD: https://www.youtube.com/watch?v=3s-dbpC0PRc"
+                  placeholder="VD: https://www.youtube.com/watch?v=..."
                   value={ytUrl}
                   onChange={(e) => {
                     setYtUrl(e.target.value);
@@ -610,17 +616,17 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                     value={ytCategory}
                     onChange={(e) => setYtCategory(e.target.value)}
                   >
-                    <option value="MOVIE_DUB">Lồng tiếng & Thuyết minh Phim</option>
+                    <option value="MOVIE_DUB">Lồng tiếng &amp; Thuyết minh Phim</option>
                     <option value="TIKTOK_SHORT">Chuyên Short TikTok</option>
                     <option value="YOUTUBE_SHORT">Chuyên YouTube Shorts</option>
-                    <option value="ECOMMERCE_SALES">Tư vấn Bán hàng & Showroom</option>
+                    <option value="ECOMMERCE_SALES">Tư vấn Bán hàng &amp; Showroom</option>
                   </select>
                 </div>
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Cắt mẫu từ giây thứ (chọn đoạn đang có lời thuyết minh)</label>
+                  <label className="form-label">Giây bắt đầu cắt mẫu &amp; Độ dài (6 – 22 giây)</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input
                       type="number"
@@ -633,13 +639,13 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                         clearError('ytTiming');
                       }}
                     />
-                    <span className="text-sub" style={{ whiteSpace: 'nowrap' }}>
-                      Độ dài (giây):
+                    <span className="text-xs text-sub" style={{ whiteSpace: 'nowrap' }}>
+                      Độ dài (s):
                     </span>
                     <input
                       type="number"
                       className={`input ${errors.ytTiming ? 'input-error' : ''}`}
-                      style={{ width: 92 }}
+                      style={{ width: 96 }}
                       min={6}
                       max={22}
                       value={ytDurationSec}
@@ -654,7 +660,7 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
 
                 <div className="form-group">
                   <label className="form-label">
-                    Phương ngữ & tốc độ mặc định ({Number(ytSpeed).toFixed(2)}x)
+                    Phương ngữ &amp; tốc độ mặc định ({Number(ytSpeed).toFixed(2)}x)
                   </label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <select
@@ -679,41 +685,41 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                 </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div className="form-group">
                 <label className="form-label">
-                  Câu thoại mẫu (Tùy chọn — Để trống GPU Faster-Whisper sẽ tự nghe và điền giúp bạn)
+                  Câu thoại mẫu (Để trống GPU Faster-Whisper tự nghe và điền)
                 </label>
                 <input
                   className="input"
-                  placeholder="Để trống để hệ thống tự động nhận diện lời thoại tiếng Việt trong đoạn cắt..."
+                  placeholder="Để trống để hệ thống tự động nhận diện lời thoại tiếng Việt..."
                   value={ytRefText}
                   onChange={(e) => setYtRefText(e.target.value)}
                 />
               </div>
-            </div>
 
-            <StudioLoadingBanner
-              loading={cloningYoutube}
-              title="Đang tải đoạn mẫu YouTube, khử nhiễu nền & nhận diện giọng đọc trên GPU..."
-              subtitle="Quá trình thường mất 10 – 20 giây để tạo hồ sơ âm sắc chuẩn phòng thu"
-              steps={[
-                'Tải & cắt đoạn âm thanh từ YouTube',
-                'Khử nhiễu nền & chuẩn hóa âm lượng',
-                'Nhận diện lời thoại bằng GPU Faster-Whisper',
-              ]}
-              stepIntervalMs={3200}
-            />
+              <StudioLoadingBanner
+                loading={cloningYoutube}
+                title="Đang tải đoạn mẫu YouTube, khử nhiễu nền & nhận diện giọng đọc trên GPU..."
+                subtitle="Quá trình thường mất 10 – 20 giây để tạo hồ sơ âm sắc chuẩn phòng thu"
+                steps={[
+                  'Tải & cắt đoạn âm thanh từ YouTube',
+                  'Khử nhiễu nền & chuẩn hóa âm lượng',
+                  'Nhận diện lời thoại bằng GPU Faster-Whisper',
+                ]}
+                stepIntervalMs={3200}
+              />
 
-            <button type="submit" className="btn btn-primary" disabled={cloningYoutube}>
-              {cloningYoutube ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}{' '}
-              {cloningYoutube
-                ? 'Đang tải đoạn mẫu YouTube, lọc nhiễu & phân tích giọng trên GPU...'
-                : 'Tự động tách mẫu YouTube & Lưu vào kho giọng'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleCreateClone}>
-            <div className="step-box" style={{ marginBottom: 14 }}>
+              <button type="submit" className="btn btn-primary" disabled={cloningYoutube}>
+                {cloningYoutube ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
+                <span>
+                  {cloningYoutube
+                    ? 'Đang phân tích giọng trên GPU...'
+                    : 'Tách mẫu YouTube & Lưu vào kho giọng'}
+                </span>
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleCreateClone}>
               <div className="form-grid">
                 <div className="form-group">
                   <label className="form-label">Đặt tên gợi nhớ cho giọng đọc</label>
@@ -729,7 +735,7 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                   <FieldError message={errors.cloneName} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Xếp vào nhóm & vùng miền</label>
+                  <label className="form-label">Xếp vào nhóm &amp; vùng miền</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <select
                       className="select"
@@ -789,33 +795,37 @@ export default function VoiceCloneLab({ voices, onVoicesChanged, notify }) {
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div className="form-group">
                 <label className="form-label">
-                  Câu nói trong tệp mẫu (Tùy chọn — Để trống hệ thống tự nhận diện bằng GPU)
+                  Câu nói trong tệp mẫu (Để trống hệ thống tự nhận diện bằng GPU)
                 </label>
                 <input
                   className="input"
-                  placeholder="Để trống để GPU tự động chép lời, hoặc nhập nguyên văn câu mẫu..."
+                  placeholder="Để trống để GPU tự động chép lời..."
                   value={cloneRefText}
                   onChange={(e) => setCloneRefText(e.target.value)}
                 />
               </div>
-            </div>
 
-            <StudioLoadingBanner
-              loading={savingClone}
-              title="Đang xử lý âm sắc & phân tích lời thoại tệp ghi âm mẫu..."
-              steps={['Khử nhiễu & chuẩn hóa tệp mẫu', 'Nhận diện lời thoại & lưu vào kho giọng']}
-              stepIntervalMs={2500}
-            />
+              <StudioLoadingBanner
+                loading={savingClone}
+                title="Đang khử nhiễu tệp thu âm & huấn luyện hồ sơ giọng đọc mới..."
+                subtitle="Tạo hồ sơ giọng đọc cá nhân hóa trên máy chủ cục bộ"
+                steps={[
+                  'Chuẩn hóa âm thanh 24kHz sạch tạp âm',
+                  'Nhận diện lời mẫu & trích xuất đặc trưng giọng',
+                ]}
+                stepIntervalMs={2600}
+              />
 
-            <button type="submit" className="btn btn-primary" disabled={savingClone}>
-              {savingClone ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}{' '}
-              {savingClone ? 'Đang xử lý & phân tích mẫu giọng...' : 'Lưu giọng đọc mới vào thư viện'}
-            </button>
-          </form>
-        )}
-      </div>
+              <button type="submit" className="btn btn-primary" disabled={savingClone}>
+                {savingClone ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
+                <span>{savingClone ? 'Đang lưu hồ sơ giọng...' : 'Lưu hồ sơ giọng thu mẫu'}</span>
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
 }

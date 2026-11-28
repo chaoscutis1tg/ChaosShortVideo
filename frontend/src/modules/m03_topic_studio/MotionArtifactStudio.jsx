@@ -18,7 +18,7 @@ import { studioApi } from '../m00_core_contracts/apiClient';
 export const MOTION_THEME_OPTIONS = [
   {
     value: 'APPLE_GLASS_DARK',
-    label: '✨ Apple Glass Tối Sang Trọng (Đa năng)',
+    label: 'Apple Glass Tối Sang Trọng (Đa năng)',
     bg: 'linear-gradient(165deg, #0b0f1a 0%, #161f32 100%)',
     accent: '#38bdf8',
     cardBg: 'rgba(22, 31, 48, 0.9)',
@@ -28,7 +28,7 @@ export const MOTION_THEME_OPTIONS = [
   },
   {
     value: 'DAN_KOE_MINIMAL',
-    label: '◼️ Dan Koe Đen-Trắng Tối Giản (Tư duy / Kể chuyện)',
+    label: 'Dan Koe Đen-Trắng Tối Giản (Tư duy / Kể chuyện)',
     bg: 'linear-gradient(165deg, #060608 0%, #111115 100%)',
     accent: '#fafafa',
     cardBg: 'rgba(18, 18, 22, 0.94)',
@@ -38,7 +38,7 @@ export const MOTION_THEME_OPTIONS = [
   },
   {
     value: 'WARM_ARTISAN_GOLD',
-    label: '🎻 Nghệ Nhân Vàng & Gỗ Ấm (Nhạc cụ / Bán hàng)',
+    label: 'Nghệ Nhân Vàng & Gỗ Ấm (Nhạc cụ / Bán hàng)',
     bg: 'linear-gradient(165deg, #140f0c 0%, #261b13 100%)',
     accent: '#f5bc52',
     cardBg: 'rgba(31, 23, 17, 0.92)',
@@ -48,7 +48,7 @@ export const MOTION_THEME_OPTIONS = [
   },
   {
     value: 'NEON_TECH_INFOGRAPHIC',
-    label: '📊 Infographic Xanh Cyan (Khoa học / Số liệu)',
+    label: 'Infographic Xanh Cyan (Khoa học / Số liệu)',
     bg: 'linear-gradient(165deg, #06101a 0%, #0a202e 100%)',
     accent: '#22d3ee',
     cardBg: 'rgba(11, 29, 44, 0.92)',
@@ -111,7 +111,6 @@ export default function MotionArtifactStudio({
   const themeObj =
     MOTION_THEME_OPTIONS.find((t) => t.value === motionTheme) || MOTION_THEME_OPTIONS[0];
 
-  // Smooth 0 -> 100% animation progress whenever scene or replay changes
   useEffect(() => {
     setProgressTick(8);
     const t1 = setTimeout(() => setProgressTick(55), 90);
@@ -122,7 +121,6 @@ export default function MotionArtifactStudio({
     };
   }, [safeIdx, animKey, motionTheme, spec.template]);
 
-  // Sequential Auto-Play across all storyboard scenes
   useEffect(() => {
     if (!autoPlaying || scenes.length <= 1) return undefined;
     const timer = setTimeout(() => {
@@ -203,10 +201,9 @@ export default function MotionArtifactStudio({
       className="surface-box fade-slide-in"
       style={{
         marginTop: 12,
-        marginBottom: 14,
-        borderColor: 'var(--brand)',
-        background: 'var(--bg-panel)',
-        padding: 14,
+        marginBottom: 16,
+        borderColor: 'var(--brand-border)',
+        padding: 16,
       }}
     >
       <div
@@ -214,17 +211,17 @@ export default function MotionArtifactStudio({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: 8,
+          gap: 10,
           flexWrap: 'wrap',
-          marginBottom: 12,
+          marginBottom: 14,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-ok" style={{ fontSize: 11.5 }}>
-            <CheckCircle2 size={12} /> Motion Artifacts Studio • {usedBrainLabel}
+          <span className="badge badge-ok">
+            <CheckCircle2 size={12} /> Motion Artifacts • {usedBrainLabel}
           </span>
-          <strong style={{ fontSize: 13.6 }}>
-            Xem trực tiếp hoạt ảnh {scenes.length} phân cảnh &amp; gõ lệnh sửa từng cảnh trước khi xuất MP4
+          <strong className="text-sm">
+            Xem trước {scenes.length} phân cảnh &amp; gõ lệnh sửa trực tiếp trước khi xuất MP4
           </strong>
         </div>
 
@@ -250,7 +247,7 @@ export default function MotionArtifactStudio({
       </div>
 
       {/* SCENE TIMELINE STRIP */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 14 }}>
         {scenes.map((sc, idx) => {
           const isAct = idx === safeIdx;
           const tplId = sc.motion_spec?.template || 'KINETIC_HOOK';
@@ -269,20 +266,20 @@ export default function MotionArtifactStudio({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'flex-start',
-                padding: '6px 10px',
+                padding: '7px 12px',
                 height: 'auto',
-                minWidth: 138,
+                minWidth: 148,
                 textAlign: 'left',
               }}
             >
-              <span style={{ fontSize: 11, fontWeight: 800 }}>
+              <span className="text-xs fw-700">
                 Cảnh {idx + 1} • {tplObj.label}
               </span>
               <span
+                className="text-xs"
                 style={{
-                  fontSize: 10.8,
-                  opacity: 0.82,
-                  maxWidth: 145,
+                  opacity: 0.84,
+                  maxWidth: 152,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -299,8 +296,8 @@ export default function MotionArtifactStudio({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(240px, 276px) minmax(0, 1fr)',
-          gap: 14,
+          gridTemplateColumns: 'minmax(240px, 272px) minmax(0, 1fr)',
+          gap: 16,
           alignItems: 'start',
         }}
       >
@@ -315,7 +312,7 @@ export default function MotionArtifactStudio({
             overflow: 'hidden',
             background: themeObj.bg,
             border: `2px solid ${themeObj.border}`,
-            boxShadow: '0 14px 32px rgba(0, 0, 0, 0.45)',
+            boxShadow: 'var(--shadow-elevated)',
             padding: '20px 14px',
             display: 'flex',
             flexDirection: 'column',
@@ -323,7 +320,6 @@ export default function MotionArtifactStudio({
             color: themeObj.text,
           }}
         >
-          {/* Blueprint Vector Grid */}
           <div
             style={{
               position: 'absolute',
@@ -335,16 +331,15 @@ export default function MotionArtifactStudio({
             }}
           />
 
-          {/* Top Pill Badge */}
           <div style={{ position: 'relative', textAlign: 'center', marginBottom: 12 }}>
             <span
               style={{
                 display: 'inline-block',
                 padding: '3px 10px',
                 borderRadius: 99,
-                fontSize: 9.2,
-                fontWeight: 800,
-                letterSpacing: 0.6,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: 0.5,
                 color: themeObj.accent,
                 border: `1px solid ${themeObj.accent}`,
                 background: 'rgba(255,255,255,0.05)',
@@ -354,11 +349,10 @@ export default function MotionArtifactStudio({
             </span>
           </div>
 
-          {/* Animated Scene Body */}
           <div style={{ position: 'relative', zIndex: 2 }}>
             {spec.template === 'STAT_COUNTER' ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 12, lineHeight: 1.35 }}>
+                <div className="text-xs fw-700" style={{ marginBottom: 12 }}>
                   {spec.headline || curScene.vi_text.slice(0, 65)}
                 </div>
                 <div
@@ -371,8 +365,8 @@ export default function MotionArtifactStudio({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 25,
-                    fontWeight: 900,
+                    fontSize: 24,
+                    fontWeight: 700,
                     color: themeObj.accent,
                     boxShadow: `0 0 24px ${themeObj.border}`,
                     transition: 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
@@ -389,7 +383,7 @@ export default function MotionArtifactStudio({
                     borderRadius: 10,
                     background: themeObj.cardBg,
                     border: `1px solid ${themeObj.border}`,
-                    fontSize: 10.5,
+                    fontSize: 11,
                     color: themeObj.sub,
                     lineHeight: 1.4,
                   }}
@@ -399,7 +393,7 @@ export default function MotionArtifactStudio({
               </div>
             ) : spec.template === 'BAR_CHART' ? (
               <div>
-                <div style={{ fontSize: 12.2, fontWeight: 800, textAlign: 'center', marginBottom: 10 }}>
+                <div className="text-xs fw-700" style={{ textAlign: 'center', marginBottom: 10 }}>
                   {spec.headline || curScene.vi_text.slice(0, 60)}
                 </div>
                 <div
@@ -414,13 +408,28 @@ export default function MotionArtifactStudio({
                 >
                   {parsedBars.map((b, bIdx) => (
                     <div key={bIdx}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, marginBottom: 3 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          marginBottom: 3,
+                        }}
+                      >
                         <span>{b.label.slice(0, 24)}</span>
                         <span style={{ color: themeObj.accent }}>
                           {Math.round((b.val * progressTick) / 100)}%
                         </span>
                       </div>
-                      <div style={{ height: 8, borderRadius: 99, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: 8,
+                          borderRadius: 99,
+                          background: 'rgba(255,255,255,0.12)',
+                          overflow: 'hidden',
+                        }}
+                      >
                         <div
                           style={{
                             width: `${(b.val * progressTick) / 100}%`,
@@ -437,7 +446,7 @@ export default function MotionArtifactStudio({
               </div>
             ) : spec.template === 'VERSUS_SPLIT' ? (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 800, textAlign: 'center', marginBottom: 10 }}>
+                <div className="text-xs fw-700" style={{ textAlign: 'center', marginBottom: 10 }}>
                   {spec.headline || curScene.vi_text.slice(0, 58)}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -447,17 +456,22 @@ export default function MotionArtifactStudio({
                       borderRadius: 10,
                       background: themeObj.cardBg,
                       border: '1.5px solid #34d399',
-                      fontSize: 9.5,
+                      fontSize: 10,
                     }}
                   >
-                    <div style={{ fontWeight: 800, color: '#34d399', marginBottom: 5 }}>
+                    <div style={{ fontWeight: 700, color: '#34d399', marginBottom: 5 }}>
                       ✓ {(spec.left_title || 'Chuẩn').slice(0, 14)}
                     </div>
-                    {(spec.left_points?.length ? spec.left_points : ['Âm vang dày ấm', 'Bền bỉ lâu dài']).slice(0, 3).map((pt, i) => (
-                      <div key={i} style={{ marginBottom: 4, lineHeight: 1.3 }}>
-                        • {pt.slice(0, 34)}
-                      </div>
-                    ))}
+                    {(spec.left_points?.length
+                      ? spec.left_points
+                      : ['Âm vang dày ấm', 'Bền bỉ lâu dài']
+                    )
+                      .slice(0, 3)
+                      .map((pt, i) => (
+                        <div key={i} style={{ marginBottom: 4, lineHeight: 1.3 }}>
+                          • {pt.slice(0, 34)}
+                        </div>
+                      ))}
                   </div>
                   <div
                     style={{
@@ -465,28 +479,36 @@ export default function MotionArtifactStudio({
                       borderRadius: 10,
                       background: themeObj.cardBg,
                       border: '1px solid rgba(251, 113, 133, 0.65)',
-                      fontSize: 9.5,
+                      fontSize: 10,
                       color: themeObj.sub,
                     }}
                   >
-                    <div style={{ fontWeight: 800, color: '#fb7185', marginBottom: 5 }}>
+                    <div style={{ fontWeight: 700, color: '#fb7185', marginBottom: 5 }}>
                       ✕ {(spec.right_title || 'Cũ').slice(0, 14)}
                     </div>
-                    {(spec.right_points?.length ? spec.right_points : ['Âm mỏng ít ngân', 'Dễ mỏi tay']).slice(0, 3).map((pt, i) => (
-                      <div key={i} style={{ marginBottom: 4, lineHeight: 1.3 }}>
-                        • {pt.slice(0, 34)}
-                      </div>
-                    ))}
+                    {(spec.right_points?.length
+                      ? spec.right_points
+                      : ['Âm mỏng ít ngân', 'Dễ mỏi tay']
+                    )
+                      .slice(0, 3)
+                      .map((pt, i) => (
+                        <div key={i} style={{ marginBottom: 4, lineHeight: 1.3 }}>
+                          • {pt.slice(0, 34)}
+                        </div>
+                      ))}
                   </div>
                 </div>
               </div>
             ) : spec.template === 'STEP_FLOW' || spec.template === 'SPEC_SPOTLIGHT' ? (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 800, textAlign: 'center', marginBottom: 10 }}>
+                <div className="text-xs fw-700" style={{ textAlign: 'center', marginBottom: 10 }}>
                   {spec.headline || curScene.vi_text.slice(0, 58)}
                 </div>
                 <div style={{ display: 'grid', gap: 6 }}>
-                  {(spec.items?.length ? spec.items : ['Bước 1: Nền tảng chuẩn', 'Bước 2: Luyện nhịp đều', 'Bước 3: Làm chủ cảm xúc'])
+                  {(spec.items?.length
+                    ? spec.items
+                    : ['Bước 1: Nền tảng chuẩn', 'Bước 2: Luyện nhịp đều', 'Bước 3: Làm chủ cảm xúc']
+                  )
                     .slice(0, 4)
                     .map((it, rIdx) => (
                       <div
@@ -499,7 +521,7 @@ export default function MotionArtifactStudio({
                           borderRadius: 10,
                           background: themeObj.cardBg,
                           border: `1px solid ${rIdx === 0 ? themeObj.accent : themeObj.border}`,
-                          fontSize: 10.2,
+                          fontSize: 11,
                           fontWeight: 600,
                           transform: progressTick > 20 ? 'translateY(0)' : 'translateY(10px)',
                           opacity: progressTick > 15 ? 1 : 0.2,
@@ -513,8 +535,8 @@ export default function MotionArtifactStudio({
                             borderRadius: '50%',
                             background: themeObj.accent,
                             color: '#090d16',
-                            fontSize: 9,
-                            fontWeight: 900,
+                            fontSize: 10,
+                            fontWeight: 700,
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -529,13 +551,10 @@ export default function MotionArtifactStudio({
                 </div>
               </div>
             ) : (
-              /* KINETIC_HOOK */
               <div style={{ textAlign: 'center', padding: '8px 4px' }}>
                 <div
+                  className="text-md fw-700"
                   style={{
-                    fontSize: 15.5,
-                    fontWeight: 900,
-                    lineHeight: 1.38,
                     marginBottom: 10,
                     transform: progressTick > 20 ? 'scale(1)' : 'scale(0.9)',
                     transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)',
@@ -544,7 +563,7 @@ export default function MotionArtifactStudio({
                   {(spec.headline || curScene.vi_text).slice(0, 96)}
                 </div>
                 {spec.subheadline && (
-                  <div style={{ fontSize: 10.5, color: themeObj.sub, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11, color: themeObj.sub, lineHeight: 1.4 }}>
                     {spec.subheadline.slice(0, 90)}
                   </div>
                 )}
@@ -554,12 +573,10 @@ export default function MotionArtifactStudio({
         </div>
 
         {/* RIGHT: SCENE INSPECTOR + CLAUDE ARTIFACT NATURAL LANGUAGE PROMPT BAR */}
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div style={{ display: 'grid', gap: 12 }}>
           <div className="form-grid" style={{ marginBottom: 0 }}>
             <div>
-              <label className="form-label" style={{ fontSize: 12 }}>
-                Bảng màu thiết kế toàn video (Đồng bộ 9:16)
-              </label>
+              <label className="form-label">Bảng màu thiết kế toàn video</label>
               <select
                 className="select"
                 value={motionTheme}
@@ -573,9 +590,7 @@ export default function MotionArtifactStudio({
               </select>
             </div>
             <div>
-              <label className="form-label" style={{ fontSize: 12 }}>
-                Nhãn tiêu điểm trên đỉnh cảnh {safeIdx + 1}
-              </label>
+              <label className="form-label">Nhãn tiêu điểm trên đỉnh cảnh {safeIdx + 1}</label>
               <input
                 className="input"
                 value={spec.badge_text || ''}
@@ -586,9 +601,7 @@ export default function MotionArtifactStudio({
           </div>
 
           <div>
-            <label className="form-label" style={{ fontSize: 12, marginBottom: 5 }}>
-              Kiểu bố cục hoạt ảnh của Cảnh {safeIdx + 1} (Bấm đổi tức thì):
-            </label>
+            <label className="form-label">Kiểu bố cục hoạt ảnh của Cảnh {safeIdx + 1}</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {TEMPLATE_META.map((tm) => {
                 const Icon = tm.icon;
@@ -597,8 +610,7 @@ export default function MotionArtifactStudio({
                   <button
                     key={tm.id}
                     type="button"
-                    className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ fontSize: 11.6 }}
+                    className={`filter-pill ${active ? 'active' : ''}`}
                     onClick={() => patchSpec(safeIdx, { template: tm.id })}
                   >
                     <Icon size={13} /> {tm.label}
@@ -609,22 +621,15 @@ export default function MotionArtifactStudio({
           </div>
 
           {/* CLAUDE ARTIFACT NATURAL LANGUAGE REFINER */}
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: 'rgba(14, 165, 233, 0.07)',
-              border: '1px solid var(--brand-border)',
-            }}
-          >
-            <label className="form-label" style={{ fontSize: 12.2, marginBottom: 5 }}>
-              <Sparkles size={13} style={{ verticalAlign: '-2px', marginRight: 5, color: 'var(--brand-text)' }} />
-              Gõ lệnh sửa riêng Cảnh {safeIdx + 1} bằng AI (Kiểu Claude Artifacts):
+          <div className="studio-callout studio-callout-brand">
+            <label className="form-label">
+              <Sparkles size={14} style={{ verticalAlign: '-2px', marginRight: 6, color: 'var(--brand-text)' }} />
+              Gõ lệnh sửa riêng Cảnh {safeIdx + 1} bằng AI:
             </label>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 className="input"
-                style={{ flex: 1, minHeight: 36 }}
+                style={{ flex: 1 }}
                 placeholder="VD: Đổi thành bảng so sánh Gỗ thịt nguyên tấm và Gỗ ép 3 tiêu chí..."
                 value={promptInput}
                 onChange={(e) => setPromptInput(e.target.value)}
@@ -637,22 +642,21 @@ export default function MotionArtifactStudio({
               />
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
-                style={{ minHeight: 36, whiteSpace: 'nowrap', fontWeight: 700 }}
+                className="btn btn-primary"
+                style={{ whiteSpace: 'nowrap' }}
                 disabled={refining}
                 onClick={() => handleRefineByPrompt()}
               >
-                {refining ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}{' '}
-                {refining ? 'Đang sửa...' : 'Sửa cảnh này'}
+                {refining ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
+                <span>{refining ? 'Đang sửa...' : 'Sửa cảnh này'}</span>
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {QUICK_REFINE_PROMPTS.map((qp, qIdx) => (
                 <button
                   key={qIdx}
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ fontSize: 11, padding: '2px 8px', minHeight: 25 }}
+                  className="filter-pill"
                   disabled={refining}
                   onClick={() => handleRefineByPrompt(qp)}
                 >
@@ -664,23 +668,19 @@ export default function MotionArtifactStudio({
 
           <div className="form-grid" style={{ marginBottom: 0 }}>
             <div>
-              <label className="form-label" style={{ fontSize: 11.8 }}>
-                Tiêu đề đồ họa hiển thị trên Cảnh {safeIdx + 1}
-              </label>
+              <label className="form-label">Tiêu đề đồ họa trên Cảnh {safeIdx + 1}</label>
               <textarea
                 className="textarea"
-                style={{ minHeight: 62, fontSize: 12.6 }}
+                style={{ minHeight: 68 }}
                 value={spec.headline || ''}
                 onChange={(e) => patchSpec(safeIdx, { headline: e.target.value })}
               />
             </div>
             <div>
-              <label className="form-label" style={{ fontSize: 11.8 }}>
-                Lời đọc giọng Việt tự khớp thời lượng hoạt ảnh
-              </label>
+              <label className="form-label">Lời đọc giọng Việt khớp hoạt ảnh</label>
               <textarea
                 className="textarea"
-                style={{ minHeight: 62, fontSize: 12.6 }}
+                style={{ minHeight: 68 }}
                 value={curScene.vi_text || ''}
                 onChange={(e) => patchScene(safeIdx, { vi_text: e.target.value })}
               />
@@ -694,22 +694,21 @@ export default function MotionArtifactStudio({
               alignItems: 'center',
               gap: 8,
               flexWrap: 'wrap',
-              paddingTop: 6,
-              borderTop: '1px solid var(--border-subtle)',
+              paddingTop: 10,
+              borderTop: '1px solid var(--border)',
             }}
           >
-            <span className="text-sub" style={{ fontSize: 12 }}>
-              Mỗi phân cảnh sẽ tự động co giãn hoạt ảnh `30fps` khớp chính xác từng mili-giây giọng đọc tiếng Việt!
+            <span className="text-xs text-sub">
+              Mỗi phân cảnh tự động co giãn hoạt ảnh 30fps khớp chính xác từng mili-giây giọng đọc tiếng Việt.
             </span>
             <button
               type="button"
               className="btn btn-primary"
-              style={{ minHeight: 40, fontWeight: 700 }}
               disabled={submitting}
               onClick={() => onRenderMp4 && onRenderMp4(scenes)}
             >
-              {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
-              Xuất Video MP4 1080p từ {scenes.length} phân cảnh này
+              {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
+              <span>Xuất Video MP4 1080p ({scenes.length} cảnh)</span>
             </button>
           </div>
         </div>
@@ -717,4 +716,3 @@ export default function MotionArtifactStudio({
     </div>
   );
 }
-

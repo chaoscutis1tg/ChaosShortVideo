@@ -26,6 +26,7 @@ import {
   Music,
   Play,
   Plus,
+  SlidersHorizontal,
   Smile,
   Sparkles,
   Sun,
@@ -49,7 +50,11 @@ import {
   ModeChoiceGrid,
   ParentGroupSelector,
   scrollToFirstValidationError,
+  StudioCollapsible,
   StudioLoadingBanner,
+  StudioPageHeader,
+  StudioStepFooter,
+  StudioStepNav,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
@@ -100,19 +105,19 @@ const VIBE_CHOICES = [
 const COMMENT_LENGTH_MODES = [
   {
     id: 'ALL',
-    label: 'Mọi độ dài (Ngắn & Dài)',
+    label: 'Mọi độ dài',
     preferLong: false,
     minChars: 0,
   },
   {
     id: 'MEDIUM_LONG',
-    label: 'Ưu tiên bình luận vừa & dài (≥ 65 ký tự)',
+    label: 'Vừa & dài (≥ 65 ký tự)',
     preferLong: true,
     minChars: 65,
   },
   {
     id: 'DEEP_STORY',
-    label: 'Chuyên săn bình luận dài kể chuyện (≥ 105 ký tự)',
+    label: 'Chuyện dài (≥ 105 ký tự)',
     preferLong: true,
     minChars: 105,
   },
@@ -128,7 +133,7 @@ const CARD_THEME_CHOICES = [
   {
     value: 'LIGHT_THREADS',
     title: 'Thẻ Trắng Sáng Tinh Gọn',
-    subtitle: 'Nền trắng chuẩn Threads (đã bỏ nhãn số thứ tự bình luận rườm rà)',
+    subtitle: 'Nền trắng chuẩn Threads, gọn gàng hiện đại',
     icon: Sun,
   },
   {
@@ -140,19 +145,19 @@ const CARD_THEME_CHOICES = [
   {
     value: 'CHAT_MESSENGER_ZALO',
     title: 'Chat Messenger / Zalo Tối',
-    subtitle: 'Khung điện thoại chat 2 chiều tự cuộn mượt, có bong bóng ••• đang nhập & tiếng Ting',
+    subtitle: 'Khung điện thoại chat 2 chiều tự cuộn mượt, bong bóng đang nhập & tiếng Ting',
     icon: MessageSquareText,
   },
   {
     value: 'CHAT_IMESSAGE_LIGHT',
     title: 'Chat iMessage Sáng Tinh Tế',
-    subtitle: 'Phong cách tin nhắn iPhone sáng thanh lịch cho chuyện Crush, tâm sự & tư vấn',
+    subtitle: 'Phong cách tin nhắn iPhone sáng thanh lịch cho chuyện Crush & tư vấn',
     icon: MessageSquarePlus,
   },
   {
     value: 'MIDNIGHT_VINYL_LYRIC',
     title: 'Đĩa Than Đêm Khuya & Lời Spotify',
-    subtitle: 'Đĩa than xoay tròn + Sóng nhạc nhạy theo giọng + Lời chữ sáng rõ từng câu cực Chill',
+    subtitle: 'Đĩa than xoay tròn + Sóng nhạc nhạy theo giọng + Lời chữ sáng rõ từng câu',
     icon: Music,
   },
   {
@@ -164,60 +169,60 @@ const CARD_THEME_CHOICES = [
 ];
 
 const QUIZ_CATEGORY_OPTIONS = [
-  { id: 'MUSIC_EAR', label: '🎵 Cảm âm & Kiến thức Nhạc cụ (Guitar / Violin / Piano)' },
-  { id: 'CRUSH_LOVE', label: '💕 Giải mã tâm lý Tình cảm & Crush' },
-  { id: 'PSYCHOLOGY_EQ', label: '🧠 Tâm lý học & Phản xạ EQ sắc bén' },
-  { id: 'FUN_TRIVIA', label: '⚡ Đố vui kiến thức thú vị gây bất ngờ' },
+  { id: 'MUSIC_EAR', label: 'Cảm âm & Kiến thức Nhạc cụ (Guitar / Violin / Piano)' },
+  { id: 'CRUSH_LOVE', label: 'Giải mã tâm lý Tình cảm & Crush' },
+  { id: 'PSYCHOLOGY_EQ', label: 'Tâm lý học & Phản xạ EQ sắc bén' },
+  { id: 'FUN_TRIVIA', label: 'Đố vui kiến thức thú vị gây bất ngờ' },
 ];
 
 const CHILL_BG_PRESETS = [
-  { id: 'STARRY_LOFI_BOKEH', label: '✨ Đêm Sao Lofi & Đom Đóm' },
-  { id: 'RAINY_WINDOW_NEON', label: '🌧️ Mưa Đêm Phố Thị Neon' },
-  { id: 'SUNSET_OCEAN_WAVES', label: '🌅 Hoàng Hôn Tím & Bụi Nắng' },
-  { id: 'CYBER_SYNTH_GRID', label: '🌌 Không Gian Đêm Tối Giản' },
+  { id: 'STARRY_LOFI_BOKEH', label: 'Đêm Sao Lofi & Đom Đóm' },
+  { id: 'RAINY_WINDOW_NEON', label: 'Mưa Đêm Phố Thị Neon' },
+  { id: 'SUNSET_OCEAN_WAVES', label: 'Hoàng Hôn Tím & Bụi Nắng' },
+  { id: 'CYBER_SYNTH_GRID', label: 'Không Gian Đêm Tối Giản' },
 ];
 
 const RADAR_NICHES = [
-  { id: 'ALL_HOT', label: '🔥 Đang Hot Nhất' },
-  { id: 'CRUSH_LOVE', label: '💕 Tình cảm & Crush' },
-  { id: 'CONFESSION_SECRET', label: '🤫 Bí mật thầm kín' },
-  { id: 'VN_COMMUNITY', label: '🇻🇳 Cộng đồng Việt' },
-  { id: 'WORK_CAREER', label: '💼 Chuyện công sở' },
-  { id: 'MUSIC_HOBBY', label: '🎸 Nhạc cụ & Đam mê' },
+  { id: 'ALL_HOT', label: 'Đang Hot Nhất' },
+  { id: 'CRUSH_LOVE', label: 'Tình cảm & Crush' },
+  { id: 'CONFESSION_SECRET', label: 'Bí mật thầm kín' },
+  { id: 'VN_COMMUNITY', label: 'Cộng đồng Việt' },
+  { id: 'WORK_CAREER', label: 'Chuyện công sở' },
+  { id: 'MUSIC_HOBBY', label: 'Nhạc cụ & Đam mê' },
 ];
 
 const CHAT_VIBE_OPTIONS = [
-  { id: 'CRUSH_ROMANTIC', label: '💕 Thả thính Crush / Rung động' },
-  { id: 'DRAMA_PLOT_TWIST', label: '😱 Kịch tính & Lật kèo cuối bài' },
-  { id: 'FUNNY_BANTER', label: '🤣 Trêu nhau lầy lội hài hước' },
-  { id: 'SALES_CONSULT', label: '🛍️ Khách hỏi — Shop tư vấn chốt đơn' },
+  { id: 'CRUSH_ROMANTIC', label: 'Thả thính Crush / Rung động' },
+  { id: 'DRAMA_PLOT_TWIST', label: 'Kịch tính & Lật kèo cuối bài' },
+  { id: 'FUNNY_BANTER', label: 'Trêu nhau lầy lội hài hước' },
+  { id: 'SALES_CONSULT', label: 'Khách hỏi — Shop tư vấn chốt đơn' },
 ];
 
 const EYE_GUIDE_CHOICES = [
   {
     value: 'ACTIVE_HIGHLIGHT',
     title: 'Làm nổi câu đang đọc (Khuyên dùng)',
-    subtitle: 'Giữ nguyên khung thẻ ổn định, câu đang đọc sáng 100% kèm vạch dẫn mắt, các câu khác dịu nhẹ 62%',
+    subtitle: 'Giữ nguyên khung thẻ ổn định, câu đang đọc sáng 100% kèm vạch dẫn mắt',
     icon: Sparkles,
   },
   {
     value: 'PROGRESSIVE_REVEAL',
     title: 'Hiện dần từng câu theo giọng đọc',
-    subtitle: 'Khung thẻ cố định không nhảy giật, chữ mở dần từng câu khớp đúng nhịp thuyết minh',
+    subtitle: 'Khung thẻ cố định không nhảy giật, chữ mở dần từng câu khớp nhịp thuyết minh',
     icon: MessageSquareText,
   },
   {
     value: 'STATIC_FULL',
-    title: 'Hiện tĩnh toàn bộ thẻ (Tắt dẫn mắt)',
+    title: 'Hiện tĩnh toàn bộ thẻ',
     subtitle: 'Hiển thị đồng đều 100% toàn bộ văn bản từ lúc thẻ trượt lên đến khi chuyển thẻ',
     icon: Layers,
   },
 ];
 
 const SPEED_PRESETS = [
-  { label: '1.15x Vừa phải', val: 1.15 },
-  { label: '1.25x Nhanh bắt tai (Khuyên dùng)', val: 1.25 },
-  { label: '1.35x Siêu tốc TikTok', val: 1.35 },
+  { label: '1.15x', val: 1.15 },
+  { label: '1.25x', val: 1.25 },
+  { label: '1.35x', val: 1.35 },
 ];
 
 const QUICK_THREAD_SAMPLES = [
@@ -258,6 +263,9 @@ export default function ThreadsStudioForm({
   onGroupsChanged,
   onPreviewFrameReady,
   onProjectStarted,
+  onNavigateTab,
+  showAllSteps = false,
+  onToggleShowAllSteps,
   notify,
   apiKeyConfigured = false,
   onOpenApiSettings,
@@ -266,6 +274,7 @@ export default function ThreadsStudioForm({
   const rootRef = useRef(null);
   const previewPlayerRef = useRef(null);
 
+  const [activeStep, setActiveStep] = useState(1);
   const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
   const [postUrl, setPostUrl] = useState(savedDraft.postUrl || '');
   const [rawPastedText, setRawPastedText] = useState(savedDraft.rawPastedText || '');
@@ -277,7 +286,6 @@ export default function ThreadsStudioForm({
   const [expandSlang, setExpandSlang] = useState(savedDraft.expandSlang !== false);
   const [multiVoiceCast, setMultiVoiceCast] = useState(savedDraft.multiVoiceCast !== false);
 
-  // Strictly 2 Main Voices: 1 Nữ chính & 1 Nam chính + Fast Reading Speed!
   const [femaleVoiceId, setFemaleVoiceId] = useState(
     savedDraft.femaleVoiceId || 'threads_nu_chinh'
   );
@@ -304,7 +312,6 @@ export default function ThreadsStudioForm({
   const [chatVibe, setChatVibe] = useState('CRUSH_ROMANTIC');
   const [generatingChat, setGeneratingChat] = useState(false);
 
-  // Interactive 3-2-1 Quiz Mode & Opt-in Series Split states
   const [quizMode, setQuizMode] = useState(false);
   const [quizTopic, setQuizTopic] = useState('');
   const [quizCategory, setQuizCategory] = useState('MUSIC_EAR');
@@ -313,7 +320,6 @@ export default function ThreadsStudioForm({
   const [generatingChillBg, setGeneratingChillBg] = useState('');
   const [seriesParts, setSeriesParts] = useState(1);
 
-  // Viral Radar & 3s Hook Scorer states
   const [radarOpen, setRadarOpen] = useState(false);
   const [radarNiche, setRadarNiche] = useState('ALL_HOT');
   const [radarItems, setRadarItems] = useState([]);
@@ -333,7 +339,6 @@ export default function ThreadsStudioForm({
   const [previewingAudioKey, setPreviewingAudioKey] = useState('');
   const [uploadingCardImgKey, setUploadingCardImgKey] = useState('');
 
-  // Background Video & Kho Video Nền state
   const [bgLibrary, setBgLibrary] = useState([]);
   const [selectedBgPath, setSelectedBgPath] = useState(savedDraft.selectedBgPath || '');
   const [selectedBgPreviewUrl, setSelectedBgPreviewUrl] = useState(
@@ -347,7 +352,6 @@ export default function ThreadsStudioForm({
   const [keepBgAudio, setKeepBgAudio] = useState(false);
   const [bgAudioVolume, setBgAudioVolume] = useState(0.14);
 
-  // Audio & Visual Presentation
   const [enablePopSfx, setEnablePopSfx] = useState(savedDraft.enablePopSfx !== false);
   const [subtitleStyle, setSubtitleStyle] = useState(savedDraft.subtitleStyle || 'NONE');
   const [bgmPresetId, setBgmPresetId] = useState(savedDraft.bgmPresetId || 'lofi_vanilla_chill');
@@ -406,7 +410,6 @@ export default function ThreadsStudioForm({
     loadBgLibrary();
   }, []);
 
-  // Re-cast existing bundle strictly to the 2 selected Main Voices whenever user changes Nam/Nữ/OP
   const applyTwoMainVoicesToBundle = (targetBundle, nextHost, nextMale, nextFemale, useMulti) => {
     if (!targetBundle) return targetBundle;
     const pair = nextHost === nextFemale ? [nextMale, nextFemale] : [nextFemale, nextMale];
@@ -507,7 +510,10 @@ export default function ThreadsStudioForm({
   const handleGenerateChatStory = async () => {
     const cleanIdea = chatIdea.trim();
     if (cleanIdea.length < 4) {
-      setErrors({ chatIdea: 'Vui lòng nhập tình huống hoặc chủ đề cuộc trò chuyện (ít nhất 4 ký tự).' });
+      setActiveStep(1);
+      setErrors({
+        chatIdea: 'Vui lòng nhập tình huống hoặc chủ đề cuộc trò chuyện (ít nhất 4 ký tự).',
+      });
       notify('Vui lòng nhập tình huống tin nhắn Chat trước khi gọi AI.');
       return;
     }
@@ -638,11 +644,12 @@ export default function ThreadsStudioForm({
           'Đường dẫn chưa hợp lệ — vui lòng dán link đầy đủ bắt đầu bằng https://www.threads.com/... hoặc https://www.reddit.com/...';
       } else if (isVideoOnlyPlatformUrl(cleanUrl)) {
         nextErrs.postUrl =
-          'Đây là link Video (YouTube/TikTok). Nếu muốn tải làm Video Nền hãy dán xuống Bước 2; ô này dành cho link bài viết Threads / Reddit.';
+          'Đây là link Video (YouTube/TikTok). Nếu muốn tải làm Video Nền hãy sang Bước 2; ô này dành cho link bài viết Threads / Reddit.';
       }
     }
 
     if (Object.keys(nextErrs).length > 0) {
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, ...nextErrs }));
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
@@ -690,9 +697,9 @@ export default function ThreadsStudioForm({
       ).length;
       notify(
         longCount > 0
-          ? `Đã hút thành công ${res.comments?.length || 0} bình luận (có ${longCount} bình luận kể chuyện dài giữ nguyên văn${imgCount > 0 ? ` + ${imgCount} ảnh` : ''})!`
+          ? `Đã hút thành công ${res.comments?.length || 0} bình luận (có ${longCount} bình luận kể chuyện dài${imgCount > 0 ? ` + ${imgCount} ảnh` : ''})!`
           : imgCount > 0
-          ? `Đã hút thành công bài viết + ${res.comments?.length || 0} bình luận (lấy được ${imgCount} ảnh đính kèm thực tế)!`
+          ? `Đã hút thành công bài viết + ${res.comments?.length || 0} bình luận (${imgCount} ảnh đính kèm)!`
           : `Đã lọc ${res.comments?.length || 0} bình luận tiêu biểu & gán đúng 2 giọng chính Nam/Nữ!`
       );
     } catch (err) {
@@ -887,6 +894,7 @@ export default function ThreadsStudioForm({
     const clean = bgUrlInput.trim();
     if (!isValidHttpUrl(clean)) {
       const msg = 'Vui lòng dán link video YouTube / TikTok hợp lệ (bắt đầu bằng https://...).';
+      setActiveStep(2);
       setErrors((prev) => ({ ...prev, bgUrl: msg }));
       scrollToFirstValidationError(rootRef);
       notify(msg);
@@ -931,23 +939,30 @@ export default function ThreadsStudioForm({
 
   const handleStartThreadsVideo = async (autoOneClick) => {
     const nextErrs = {};
+    let errStep = null;
+
     if (!bundle) {
       nextErrs.postUrl =
-        'Vui lòng bấm nút "Hút bài viết, Ảnh & Lọc bình luận" ở Bước 1A để tạo danh sách thẻ trước khi xuất video.';
+        'Vui lòng bấm nút tạo / hút nội dung ở Bước 1 để lên danh sách thẻ trước khi xuất video.';
+      errStep = 1;
     } else {
       const cleanTopic = (bundle.topic_title || '').trim();
       if (cleanTopic.length < 3 || cleanTopic.length > 160) {
         nextErrs.topicTitle = 'Tiêu đề SEO của dự án cần từ 3 đến 160 ký tự.';
+        errStep = 1;
       }
       if ((bundle.op_display_text || '').trim().length < 2) {
         nextErrs.opDisplay = 'Chữ hiển thị trên Thẻ Bài Gốc (OP) cần ít nhất 2 ký tự.';
+        errStep = 1;
       }
       if ((bundle.op_spoken_vi_text || '').trim().length < 2) {
         nextErrs.opSpoken = 'Lời đọc tiếng Việt của Bài Gốc (OP) cần ít nhất 2 ký tự.';
+        errStep = 1;
       }
       const selectedComments = (bundle.comments || []).filter((c) => c.selected);
       if (selectedComments.length === 0) {
         nextErrs.comments = 'Vui lòng tích chọn ít nhất 1 thẻ bình luận để đưa vào video.';
+        errStep = 1;
       } else if (
         selectedComments.some(
           (c) => !(c.display_text || '').trim() || !(c.spoken_vi_text || '').trim()
@@ -955,18 +970,22 @@ export default function ThreadsStudioForm({
       ) {
         nextErrs.comments =
           'Có bình luận đang được tích chọn nhưng bị để trống chữ hiển thị hoặc lời đọc tiếng Việt.';
+        errStep = 1;
       }
     }
 
     const effBg = selectedBgPath.trim() || bgUrlInput.trim();
     if (!effBg) {
       nextErrs.bgVideo =
-        'Bắt buộc chọn 1 Video Nền từ Kho, tải tệp video lên, hoặc dán link video nền ở Bước 2.';
+        'Bắt buộc chọn 1 Video Nền từ Kho, tạo Video Nền Chill 1 chạm, hoặc tải tệp lên ở Bước 2.';
+      if (!errStep) errStep = 2;
     } else if (!selectedBgPath.trim() && !isValidHttpUrl(bgUrlInput)) {
       nextErrs.bgUrl = 'Link video nền ở Bước 2 chưa hợp lệ (cần bắt đầu bằng https://...).';
+      if (!errStep) errStep = 2;
     }
 
     if (Object.keys(nextErrs).length > 0) {
+      if (errStep) setActiveStep(errStep);
       setErrors(nextErrs);
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
@@ -1037,6 +1056,7 @@ export default function ThreadsStudioForm({
       .filter(Boolean);
     const validUrls = rawLines.filter((u) => isValidHttpUrl(u) && !isVideoOnlyPlatformUrl(u));
     if (validUrls.length === 0) {
+      setActiveStep(1);
       setErrors({
         batchUrls:
           'Vui lòng dán ít nhất 1 đường dẫn Threads hoặc Reddit hợp lệ (mỗi dòng 1 link https://...).',
@@ -1046,15 +1066,17 @@ export default function ThreadsStudioForm({
       return;
     }
     if (validUrls.length > 15) {
+      setActiveStep(1);
       setErrors({ batchUrls: 'Mỗi mẻ chạy tối đa 15 link để đảm bảo tốc độ và ổn định GPU.' });
       notify('Tối đa 15 link mỗi mẻ chạy.');
       return;
     }
     const effBg = selectedBgPath.trim() || bgUrlInput.trim();
     if (!effBg && (!rotateBgLibrary || bgLibrary.length === 0)) {
+      setActiveStep(2);
       setErrors({
         bgVideo:
-          'Vui lòng lưu ít nhất 1 Video Nền vào Kho Video Nền hoặc chọn 1 Video Nền ở Bước 2 trước khi chạy hàng loạt.',
+          'Vui lòng lưu ít nhất 1 Video Nền vào Kho hoặc chọn 1 Video Nền ở Bước 2 trước khi chạy hàng loạt.',
       });
       scrollToFirstValidationError(rootRef);
       notify('Chưa có Video Nền ở Bước 2 để chạy hàng loạt.');
@@ -1161,888 +1183,608 @@ export default function ThreadsStudioForm({
     ? 'tin nhắn'
     : 'bình luận';
 
+  const stepItems = [
+    {
+      title: 'Bài đăng & Hội thoại',
+      meta: bundle
+        ? `Đã sẵn sàng ${selectedCommentsCount} ${itemUnitLabel}`
+        : 'Threads / Reddit / Chat / Đố vui',
+      done: Boolean(bundle && selectedCommentsCount > 0),
+    },
+    {
+      title: 'Video nền 9:16 & Nhạc',
+      meta: selectedBgPath ? 'Đã chọn Video Nền' : `Kho nền (${bgLibrary.length} video)`,
+      done: Boolean(selectedBgPath || bgUrlInput.trim()),
+    },
+    {
+      title: 'Giao diện Thẻ & Xuất bản',
+      meta: `${Number(voiceSpeed).toFixed(2)}x • ~${estTotalSec}s`,
+      done: false,
+    },
+  ];
+
+  const showStep1 = showAllSteps || activeStep === 1;
+  const showStep2 = showAllSteps || activeStep === 2;
+  const showStep3 = showAllSteps || activeStep === 3;
+
   return (
     <div ref={rootRef} className="card">
-      <div className="page-header">
-        <div>
-          <div className="page-title">
-            <MessageSquareText size={20} strokeWidth={2} /> Video Chủ Đề Threads &amp; Bình Luận Cộng Đồng
-          </div>
-          <div className="page-subtitle">
-            Hút bài viết, bình luận &amp; ảnh đính kèm trên Threads/Reddit → Đọc đối thoại 2 giọng chính Nam &amp; Nữ tốc độ cao trên nền video 9:16
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span className={`badge ${apiKeyConfigured ? 'badge-ok' : 'badge-warn'}`}>
-            <KeyRound size={12} /> {apiKeyConfigured ? 'API Key AI sẵn sàng' : 'Chưa gắn API Key'}
-          </span>
-          <span className="badge badge-info">
-            {bundle
-              ? `Đã chọn ${selectedCommentsCount} ${itemUnitLabel}`
-              : `Lấy ${maxComments} ${itemUnitLabel}`}
-          </span>
-          {isVinylThemeActive && <span className="badge badge-ok">🎵 Đĩa Than Vinyl</span>}
-          {isQuizThemeActive && (
-            <span className="badge badge-ok">⏱ Đố Vui {layoutConfig.quiz_countdown_sec || 3}s</span>
-          )}
-          {Number(seriesParts) > 1 && (
-            <span className="badge badge-warn">Series {seriesParts} phần</span>
-          )}
-          {attachedPhotosCount > 0 && (
-            <span className="badge badge-ok">{attachedPhotosCount} ảnh đính kèm</span>
-          )}
-          <span className="badge">
-            {Number(voiceSpeed).toFixed(2)}x • ~{estTotalSec}s
-          </span>
-        </div>
-      </div>
-
-      {/* QUICK THREADS SAMPLES */}
-      <div className="summary-bar">
-        <span
-          style={{
-            fontSize: 12.5,
-            fontWeight: 700,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Sparkles size={14} style={{ color: 'var(--brand-text)' }} /> Thử nhanh chủ đề mẫu:
-        </span>
-        {QUICK_THREAD_SAMPLES.map((smp, idx) => (
-          <button
-            key={idx}
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              setPostUrl('');
-              setRawPastedText(smp.rawText);
-              notify(`Đã điền "${smp.label}" — bấm nút Hút & Lọc bình luận AI bên dưới để chạy thử!`);
-            }}
-          >
-            {smp.label}
-          </button>
-        ))}
-      </div>
-
-      {/* STEP 1: THREADS LINK + 2 MAIN VOICES + FAST READING SPEED */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">1</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">
-              Dán Link Threads / Reddit, Hút Cả Ảnh Bình Luận &amp; Chỉnh 2 Giọng Chính (Nam / Nữ)
-            </div>
-            <div className="step-desc">
-              Tự động bóc tách cả ảnh người dùng đăng kèm trên bài gốc &amp; dưới bình luận, đọc bằng đúng 2 giọng Việt bản ngữ ổn định
-            </div>
-          </div>
-          {!apiKeyConfigured && onOpenApiSettings && (
+      <StudioPageHeader
+        icon={MessageSquareText}
+        title="Threads, Hội Thoại Chat & Đố Vui Cộng Đồng"
+        subtitle="Hút bài đăng & ảnh bình luận trên Threads/Reddit, tạo tin nhắn Chat hoặc Đố vui 3-2-1 với bộ đôi giọng đọc Nam & Nữ"
+        badges={[
+          {
+            label: apiKeyConfigured ? 'AI sẵn sàng' : 'Chưa gắn API Key',
+            cls: apiKeyConfigured ? 'badge-ok' : 'badge-warn',
+            icon: KeyRound,
+          },
+          {
+            label: bundle
+              ? `${selectedCommentsCount} ${itemUnitLabel}`
+              : `Lấy ${maxComments} ${itemUnitLabel}`,
+            cls: 'badge-info',
+          },
+          attachedPhotosCount > 0
+            ? { label: `${attachedPhotosCount} ảnh đính kèm`, cls: 'badge-ok' }
+            : null,
+          { label: `${Number(voiceSpeed).toFixed(2)}x • ~${estTotalSec}s`, cls: '' },
+        ]}
+        actions={
+          !apiKeyConfigured && onOpenApiSettings ? (
             <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
-              <KeyRound size={13} /> Nhập API Key AI
+              <KeyRound size={13} /> Cấu hình API
             </button>
+          ) : null
+        }
+      />
+
+      <StudioStepNav
+        steps={stepItems}
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
+        showAllSteps={showAllSteps}
+        onToggleShowAll={onToggleShowAllSteps}
+      />
+
+      {/* ==================== BƯỚC 1: BÀI ĐĂNG, KỊCH BẢN & ĐÔI GIỌNG ĐỌC ==================== */}
+      {showStep1 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">1</span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">Chọn định dạng &amp; Chuẩn bị danh sách thẻ nội dung</div>
+              <div className="step-desc">
+                Hút trực tiếp từ liên kết Threads/Reddit (tự dịch bài tiếng Anh &amp; giữ ảnh đính kèm), hoặc dựng kịch bản Chat / Đố vui bằng AI
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => (radarOpen ? setRadarOpen(false) : handleLoadViralRadar(radarNiche))}
+            >
+              <Flame size={14} /> {radarOpen ? 'Đóng xu hướng' : 'Săn bài đang Viral'}
+            </button>
+          </div>
+
+          {/* CLEAN FORMAT SEGMENTED BAR */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+            <div className="studio-segmented">
+              <button
+                type="button"
+                className={`studio-seg-btn ${
+                  !batchMode && !chatStoryMode && !quizMode ? 'active' : ''
+                }`}
+                onClick={() => {
+                  setBatchMode(false);
+                  setChatStoryMode(false);
+                  setQuizMode(false);
+                  if (
+                    layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
+                    layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT' ||
+                    layoutConfig.threads_card_theme === 'QUIZ_COUNTDOWN_CARD'
+                  ) {
+                    updateThreadsLayout({ threads_card_theme: 'DARK_THREADS' });
+                  }
+                }}
+              >
+                Bài Threads / Reddit
+              </button>
+              <button
+                type="button"
+                className={`studio-seg-btn ${chatStoryMode && !batchMode ? 'active' : ''}`}
+                onClick={() => {
+                  setBatchMode(false);
+                  setQuizMode(false);
+                  setChatStoryMode(true);
+                  if (
+                    layoutConfig.threads_card_theme !== 'CHAT_MESSENGER_ZALO' &&
+                    layoutConfig.threads_card_theme !== 'CHAT_IMESSAGE_LIGHT'
+                  ) {
+                    updateThreadsLayout({ threads_card_theme: 'CHAT_MESSENGER_ZALO' });
+                  }
+                }}
+              >
+                Tin nhắn Chat
+              </button>
+              <button
+                type="button"
+                className={`studio-seg-btn ${quizMode && !batchMode ? 'active' : ''}`}
+                onClick={() => {
+                  setBatchMode(false);
+                  setChatStoryMode(false);
+                  setQuizMode(true);
+                  updateThreadsLayout({ threads_card_theme: 'QUIZ_COUNTDOWN_CARD' });
+                }}
+              >
+                Đố vui 3-2-1
+              </button>
+              <button
+                type="button"
+                className={`studio-seg-btn ${batchMode ? 'active' : ''}`}
+                onClick={() => {
+                  setBatchMode(true);
+                  setChatStoryMode(false);
+                  setQuizMode(false);
+                }}
+              >
+                Hàng loạt (Batch)
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className={`btn btn-sm ${isVinylThemeActive ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() =>
+                updateThreadsLayout({
+                  threads_card_theme: isVinylThemeActive ? 'DARK_THREADS' : 'MIDNIGHT_VINYL_LYRIC',
+                })
+              }
+            >
+              <Music size={13} /> Đĩa than Vinyl
+            </button>
+          </div>
+
+          {/* QUICK THREADS SAMPLES */}
+          {!batchMode && !chatStoryMode && !quizMode && !bundle && (
+            <div className="summary-bar">
+              <span
+                className="text-xs fw-600 text-brand"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              >
+                <Sparkles size={14} /> Điền nhanh mẫu thử:
+              </span>
+              {QUICK_THREAD_SAMPLES.map((smp, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className="filter-pill"
+                  onClick={() => {
+                    setPostUrl('');
+                    setRawPastedText(smp.rawText);
+                    notify(`Đã điền "${smp.label}" — bấm Hút & Lọc bình luận bên dưới!`);
+                  }}
+                >
+                  {smp.label}
+                </button>
+              ))}
+            </div>
           )}
-        </div>
 
-        <ParentGroupSelector
-          projectGroups={projectGroups}
-          value={parentGroupId}
-          onChange={setParentGroupId}
-          onGroupsChanged={onGroupsChanged}
-          notify={notify}
-          label="Thuộc Dự Án Cha (Gom theo Series Chuyện Threads / Reddit / Tâm sự)"
-        />
-
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${
-              !batchMode && !chatStoryMode && !quizMode ? 'btn-primary' : 'btn-secondary'
-            }`}
-            onClick={() => {
-              setBatchMode(false);
-              setChatStoryMode(false);
-              setQuizMode(false);
-              if (
-                layoutConfig.threads_card_theme === 'CHAT_MESSENGER_ZALO' ||
-                layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT' ||
-                layoutConfig.threads_card_theme === 'QUIZ_COUNTDOWN_CARD'
-              ) {
-                updateThreadsLayout({ threads_card_theme: 'DARK_THREADS' });
-              }
-            }}
-          >
-            Làm 1 bài Threads / Reddit
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${chatStoryMode && !batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              setBatchMode(false);
-              setQuizMode(false);
-              setChatStoryMode(true);
-              if (
-                layoutConfig.threads_card_theme !== 'CHAT_MESSENGER_ZALO' &&
-                layoutConfig.threads_card_theme !== 'CHAT_IMESSAGE_LIGHT'
-              ) {
-                updateThreadsLayout({ threads_card_theme: 'CHAT_MESSENGER_ZALO' });
-              }
-            }}
-          >
-            💬 Tin Nhắn Chat
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${quizMode && !batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              setBatchMode(false);
-              setChatStoryMode(false);
-              setQuizMode(true);
-              updateThreadsLayout({ threads_card_theme: 'QUIZ_COUNTDOWN_CARD' });
-            }}
-          >
-            🧠 Đố Vui Phản Xạ 3-2-1
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${isVinylThemeActive ? 'btn-primary' : 'btn-secondary'}`}
-            title="Chuyển nhanh sang định dạng Đĩa Than Đêm Khuya xoay tròn & Lời chữ kiểu Spotify (bấm lại để về Thẻ Tối chuẩn)"
-            onClick={() =>
-              updateThreadsLayout({
-                threads_card_theme: isVinylThemeActive ? 'DARK_THREADS' : 'MIDNIGHT_VINYL_LYRIC',
-              })
-            }
-          >
-            <Music size={13} /> Đĩa Than Đêm Khuya
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              setBatchMode(true);
-              setChatStoryMode(false);
-              setQuizMode(false);
-            }}
-          >
-            Chạy hàng loạt (Batch)
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ marginLeft: 'auto', borderColor: 'var(--brand-border)' }}
-            onClick={() => {
-              if (radarOpen) setRadarOpen(false);
-              else handleLoadViralRadar(radarNiche);
-            }}
-          >
-            <Flame size={13} /> {radarOpen ? 'Đóng Radar Viral' : 'Radar Săn Bài Đang Viral'}
-          </button>
-        </div>
-
-        {/* 1-CLICK VIRAL RADAR DRAWER */}
-        {radarOpen && (
-          <div
-            className="surface-box fade-slide-in"
-            style={{
-              marginBottom: 14,
-              borderColor: 'rgba(245, 158, 11, 0.55)',
-              background: 'rgba(245, 158, 11, 0.05)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Flame size={15} style={{ color: '#f59e0b' }} />
-                Radar Săn Bài &amp; Chủ Đề Đang Nhiều Bình Luận Nhất (Tự dịch sang tiếng Việt)
-              </div>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {RADAR_NICHES.map((nc) => (
-                  <button
-                    key={nc.id}
-                    type="button"
-                    className={`btn btn-sm ${radarNiche === nc.id ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ fontSize: 11.5, padding: '3px 8px' }}
-                    disabled={loadingRadar}
-                    onClick={() => handleLoadViralRadar(nc.id)}
-                  >
-                    {nc.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {loadingRadar ? (
-              <div className="text-sub" style={{ padding: '12px 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Loader2 size={15} className="spin" /> Đang quét các bài thảo luận sôi nổi &amp; dịch tiêu đề tiếng Việt...
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: 7, maxHeight: 260, overflowY: 'auto', paddingRight: 4 }}>
-                {radarItems.map((it) => (
-                  <div
-                    key={it.item_id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      background: 'var(--bg-panel)',
-                      border: '1px solid var(--border-subtle)',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 220 }}>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
-                        <span className="badge badge-info" style={{ fontSize: 10.5 }}>{it.community_label}</span>
-                        <span className="text-muted" style={{ fontSize: 11 }}>
-                          ♥ {it.upvotes} • 💬 {it.comments_count} bình luận
-                        </span>
-                      </div>
-                      <div style={{ fontWeight: 600, fontSize: 12.8 }}>{it.title_vi}</div>
-                      {it.preview_snippet && (
-                        <div className="text-sub" style={{ fontSize: 11.6, marginTop: 2 }}>
-                          {it.preview_snippet.slice(0, 125)}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: 5 }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          setBatchMode(false);
-                          if (it.post_url) {
-                            setChatStoryMode(false);
-                            setPostUrl(it.post_url);
-                            setRawPastedText('');
-                            setRadarOpen(false);
-                            notify('Đã điền link bài Viral — bấm "Hút bài viết & Lọc bình luận" bên dưới để lấy trọn bộ!');
-                          } else {
-                            setChatStoryMode(true);
-                            setChatIdea(it.title_vi);
-                            setRadarOpen(false);
-                            notify('Đã nạp chủ đề hot vào trình viết Hội Thoại Chat!');
-                          }
-                        }}
-                      >
-                        Dùng ngay
-                      </button>
-                      {it.post_url && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            setBatchUrlsText((prev) =>
-                              prev.includes(it.post_url) ? prev : `${prev ? `${prev}\n` : ''}${it.post_url}`
-                            );
-                            notify('Đã thêm link vào danh sách Batch Queue!');
-                          }}
-                        >
-                          + Batch
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {batchMode ? (
-          <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
-            <label className="form-label">
-              Dán danh sách link Threads hoặc Reddit quốc tế (Mỗi dòng 1 link, tối đa 15 link — bài Reddit tiếng Anh sẽ tự dịch sang tiếng Việt đời thường!)
-            </label>
-            <textarea
-              className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
-              style={{ minHeight: 125 }}
-              placeholder={`https://www.threads.com/@nhonaytennhi/post/DU8UhpTgT6a\nhttps://www.reddit.com/r/AskReddit/comments/...\nhttps://www.reddit.com/r/Guitar/comments/...`}
-              value={batchUrlsText}
-              onChange={(e) => {
-                setBatchUrlsText(e.target.value);
-                clearError('batchUrls');
-              }}
-            />
-            <FieldError message={errors.batchUrls} />
-            <div className="toggle-grid" style={{ marginTop: 10, marginBottom: 10 }}>
-              <SwitchCard checked={rotateBgLibrary} onChange={setRotateBgLibrary}>
-                Tự xoay vòng đổi Video Nền qua Kho Video Nền ({bgLibrary.length} video)
-              </SwitchCard>
-              <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
-                Tự xoay vòng đổi bài Nhạc nền Lofi CC0 cho từng video
-              </SwitchCard>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 41, fontWeight: 700 }}
-                disabled={submitting}
-                onClick={handleStartBatchThreads}
-              >
-                {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
-                {submitting ? 'Đang đưa lô vào hàng đợi...' : 'Xếp hàng hút bài, dịch & dựng toàn bộ lô'}
-              </button>
-            </div>
-          </div>
-        ) : chatStoryMode ? (
-          <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
-            <div style={{ fontWeight: 700, fontSize: 13.4, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <MessageSquareText size={15} style={{ color: 'var(--brand-text)' }} />
-              Tạo Kịch Bản Hội Thoại Tin Nhắn Chat 2 Chiều (Messenger / Zalo / iMessage)
-            </div>
-            <div className="form-group" style={{ marginBottom: 10 }}>
-              <label className="form-label">
-                Ý tưởng tình huống cuộc trò chuyện (Chỉ cần gõ 1 dòng ngắn gọn)
-              </label>
-              <input
-                className={`input ${errors.chatIdea ? 'input-error' : ''}`}
-                placeholder="VD: Nhắn tin thử lòng Crush lúc 11h đêm và câu trả lời khiến tim đập loạn nhịp..."
-                value={chatIdea}
-                onChange={(e) => {
-                  setChatIdea(e.target.value);
-                  clearError('chatIdea');
-                }}
-              />
-              <FieldError message={errors.chatIdea} />
-            </div>
-
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Tên người nhắn bên Phải (Bong bóng Xanh)
-                </label>
-                <input
-                  className="input"
-                  value={chatSenderA}
-                  onChange={(e) => setChatSenderA(e.target.value)}
-                  placeholder="VD: Mình / Chủ shop"
-                />
-              </div>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Tên người đối thoại bên Trái (Có Avatar &amp; Đang hoạt động)
-                </label>
-                <input
-                  className="input"
-                  value={chatSenderB}
-                  onChange={(e) => setChatSenderB(e.target.value)}
-                  placeholder="VD: Crush 💕 / Khách hàng"
-                />
-              </div>
-            </div>
-
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>Tông màu câu chuyện Chat</label>
-                <select
-                  className="select"
-                  value={chatVibe}
-                  onChange={(e) => setChatVibe(e.target.value)}
-                >
-                  {CHAT_VIBE_OPTIONS.map((v) => (
-                    <option key={v.id} value={v.id}>{v.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Số lượng tin nhắn qua lại: <strong>{chatMsgCount} tin nhắn</strong>
-                </label>
-                <input
-                  type="range"
-                  min="4"
-                  max="16"
-                  step="1"
-                  style={{ width: '100%', marginTop: 6 }}
-                  value={chatMsgCount}
-                  onChange={(e) => setChatMsgCount(Number(e.target.value))}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span className="text-sub" style={{ fontSize: 12 }}>
-                Tự động chèn hiệu ứng <strong>• • • đang nhập</strong> &amp; tiếng <strong>Ting</strong> gửi/nhận tin nhắn 2 chiều!
-              </span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 40, fontWeight: 700 }}
-                disabled={generatingChat || submitting}
-                onClick={handleGenerateChatStory}
-              >
-                {generatingChat ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}{' '}
-                {generatingChat ? 'Đang viết hội thoại Chat...' : `AI Viết ${chatMsgCount} Tin Nhắn Chat`}
-              </button>
-            </div>
-          </div>
-        ) : quizMode ? (
-          <div className="surface-box" style={{ marginBottom: 14, borderColor: 'var(--brand)' }}>
-            <div style={{ fontWeight: 700, fontSize: 13.4, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <HelpCircle size={15} style={{ color: 'var(--brand-text)' }} />
-              Tạo Video Đố Vui / Thử Tài Cảm Âm Kèm Đồng Hồ Đếm Ngược 3 - 2 - 1 Kéo Bình Luận
-            </div>
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Chủ đề bộ câu đố (Tùy chọn — Để trống AI tự chọn câu đắt giá)
-                </label>
-                <input
-                  className="input"
-                  placeholder="VD: Phân biệt tiếng Guitar gỗ thịt vs gỗ ép / Giải mã tâm lý Crush..."
-                  value={quizTopic}
-                  onChange={(e) => setQuizTopic(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>Lĩnh vực đố vui</label>
-                <select
-                  className="select"
-                  value={quizCategory}
-                  onChange={(e) => setQuizCategory(e.target.value)}
-                >
-                  {QUIZ_CATEGORY_OPTIONS.map((q) => (
-                    <option key={q.id} value={q.id}>
-                      {q.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Số câu đố trong video: <strong>{quizQuestionCount} câu</strong>
-                </label>
-                <input
-                  type="range"
-                  min="2"
-                  max="5"
-                  step="1"
-                  style={{ width: '100%', marginTop: 6 }}
-                  value={quizQuestionCount}
-                  onChange={(e) => setQuizQuestionCount(Number(e.target.value))}
-                />
-              </div>
-              <div>
-                <label className="form-label" style={{ fontSize: 12 }}>
-                  Thời gian đếm ngược mỗi câu: <strong>{layoutConfig.quiz_countdown_sec || 3} giây</strong>
-                </label>
-                <input
-                  type="range"
-                  min="2"
-                  max="5"
-                  step="1"
-                  style={{ width: '100%', marginTop: 6 }}
-                  value={layoutConfig.quiz_countdown_sec || 3}
-                  onChange={(e) =>
-                    updateThreadsLayout({ quiz_countdown_sec: Number(e.target.value) })
-                  }
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span className="text-sub" style={{ fontSize: 12 }}>
-                Mỗi câu đố tự giữ hình <strong>{layoutConfig.quiz_countdown_sec || 3}s</strong> kèm tiếng <strong>Tích-tắc</strong> đếm ngược &amp; chuông <strong>Ding</strong> khi lật đáp án xanh ngọc!
-              </span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 40, fontWeight: 700 }}
-                disabled={generatingQuiz || submitting}
-                onClick={handleGenerateQuiz}
-              >
-                {generatingQuiz ? <Loader2 size={15} className="spin" /> : <Clock size={15} />}{' '}
-                {generatingQuiz
-                  ? 'Đang biên soạn bộ câu đố...'
-                  : `AI Tạo ${quizQuestionCount} Câu Đố & Đáp Án`}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="form-group">
-              <label className="form-label">
-                <Link2 size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-                Đường dẫn bài đăng Threads hoặc Reddit Quốc Tế (bài Reddit tự dịch sang tiếng Việt kể chuyện tự nhiên!)
-              </label>
-              <input
-                className={`input ${errors.postUrl ? 'input-error' : ''}`}
-                placeholder="VD: https://www.threads.com/@.../post/... hoặc https://www.reddit.com/r/AskReddit/comments/..."
-                value={postUrl}
-                onChange={(e) => {
-                  setPostUrl(e.target.value);
-                  clearError('postUrl', 'rawPastedText');
-                }}
-              />
-              <FieldError message={errors.postUrl} />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Nội dung văn bản dự phòng (Tùy chọn — Có thể dán câu chuyện tiếng Anh/Việt để tự dịch &amp; tách thẻ)
-              </label>
-              <textarea
-                className={`textarea ${errors.rawPastedText ? 'input-error' : ''}`}
-                style={{ minHeight: 74 }}
-                placeholder={`Có thể để trống nếu đã dán link công khai ở trên...`}
-                value={rawPastedText}
-                onChange={(e) => {
-                  setRawPastedText(e.target.value);
-                  clearError('rawPastedText', 'postUrl');
-                }}
-              />
-              <FieldError message={errors.rawPastedText} />
-            </div>
-          </>
-        )}
-
-        {/* STRICT 2 MAIN VOICES (NAM & NỮ) + FAST READING SPEED CONTROL */}
-        <div
-          className="surface-box"
-          style={{
-            marginBottom: 14,
-            borderColor: 'var(--brand-border)',
-            background: 'var(--bg-panel)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 13.4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Users size={15} style={{ color: 'var(--brand-text)' }} />
-              Bộ Đôi 2 Giọng Đọc Chính Cố Định (1 Nữ &amp; 1 Nam Chuẩn Tiếng Việt) &amp; Tốc Độ Đọc
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${opSpeakerGender === 'FEMALE' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setOpSpeakerGender('FEMALE')}
-              >
-                Chủ thớt (OP): Giọng Nữ đọc
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${opSpeakerGender === 'MALE' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setOpSpeakerGender('MALE')}
-              >
-                Chủ thớt (OP): Giọng Nam đọc
-              </button>
-            </div>
-          </div>
-
-          <div className="form-grid" style={{ marginBottom: 12 }}>
-            <div>
-              <label className="form-label" style={{ fontSize: 12 }}>
-                Giọng Nữ Chính (Đọc tự nhiên, truyền cảm)
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  className="select"
-                  style={{ flex: 1 }}
-                  value={femaleVoiceId}
-                  onChange={(e) => setFemaleVoiceId(e.target.value)}
-                >
-                  {(femaleVoiceOptions.length > 0 ? femaleVoiceOptions : voices).map((v) => (
-                    <option key={v.profile_id} value={v.profile_id}>
-                      {stripLeadingEmoji(v.display_name)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ whiteSpace: 'nowrap' }}
-                  onClick={() =>
-                    handlePreviewVoiceSnippet(
-                      'test_female',
-                      femaleVoiceId,
-                      'Mình đã hí hoáy một tiếng với cây đàn Guitar và mình sắp khóc rồi mọi người ơi!'
-                    )
-                  }
-                >
-                  {previewingAudioKey === 'test_female' ? (
-                    <Loader2 size={13} />
-                  ) : (
-                    <Volume2 size={13} />
-                  )}{' '}
-                  Nghe Nữ
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="form-label" style={{ fontSize: 12 }}>
-                Giọng Nam Chính (Ấm rõ, dứt khoát)
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  className="select"
-                  style={{ flex: 1 }}
-                  value={maleVoiceId}
-                  onChange={(e) => setMaleVoiceId(e.target.value)}
-                >
-                  {(maleVoiceOptions.length > 0 ? maleVoiceOptions : voices).map((v) => (
-                    <option key={v.profile_id} value={v.profile_id}>
-                      {stripLeadingEmoji(v.display_name)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ whiteSpace: 'nowrap' }}
-                  onClick={() =>
-                    handlePreviewVoiceSnippet(
-                      'test_male',
-                      maleVoiceId,
-                      'Không hề muộn đâu bạn ơi, tập hai mươi phút mỗi tối là đệm hát ngon lành ngay!'
-                    )
-                  }
-                >
-                  {previewingAudioKey === 'test_male' ? (
-                    <Loader2 size={13} />
-                  ) : (
-                    <Volume2 size={13} />
-                  )}{' '}
-                  Nghe Nam
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div>
+          {/* VIRAL RADAR DRAWER */}
+          {radarOpen && (
+            <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginBottom: 16 }}>
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  fontSize: 12.4,
-                  marginBottom: 4,
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 10,
                 }}
               >
-                <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Gauge size={14} style={{ color: 'var(--brand-text)' }} />
-                  Tốc độ đọc cuốn hút: <strong>{Number(voiceSpeed).toFixed(2)}x</strong>
-                </span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {SPEED_PRESETS.map((sp) => (
+                <div className="text-sm fw-700" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Flame size={15} style={{ color: 'var(--brand-text)' }} />
+                  <span>Bài thảo luận đang nhiều bình luận nhất (Tự dịch sang tiếng Việt)</span>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {RADAR_NICHES.map((nc) => (
                     <button
-                      key={sp.val}
+                      key={nc.id}
                       type="button"
-                      className={`btn btn-sm ${
-                        Math.abs(Number(voiceSpeed) - sp.val) < 0.02 ? 'btn-primary' : 'btn-secondary'
-                      }`}
-                      style={{ padding: '2px 7px', minHeight: 24, fontSize: 11 }}
-                      onClick={() => setVoiceSpeed(sp.val)}
+                      className={`filter-pill ${radarNiche === nc.id ? 'active' : ''}`}
+                      disabled={loadingRadar}
+                      onClick={() => handleLoadViralRadar(nc.id)}
                     >
-                      {sp.val}x
+                      {nc.label}
                     </button>
                   ))}
                 </div>
               </div>
-              <input
-                type="range"
-                min="1.00"
-                max="1.45"
-                step="0.05"
-                style={{ width: '100%' }}
-                value={voiceSpeed}
-                onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
-              />
-              <div
-                className="text-muted"
-                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.2, marginTop: 2 }}
-              >
-                <span>1.00x Chậm</span>
-                <span>1.25x Nhanh bắt tai Shorts/TikTok</span>
-                <span>1.45x Cực nhanh</span>
-              </div>
-            </div>
 
-            <div>
-              <label className="form-label" style={{ marginBottom: 4, fontSize: 12.4 }}>
-                Số bình luận tiêu biểu muốn lấy: <strong>{maxComments} bình luận</strong>
+              {loadingRadar ? (
+                <div className="text-xs text-sub" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Loader2 size={15} className="spin" /> Đang quét các bài thảo luận sôi nổi...
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 7, maxHeight: 250, overflowY: 'auto', paddingRight: 4 }}>
+                  {radarItems.map((it) => (
+                    <div
+                      key={it.item_id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '9px 12px',
+                        borderRadius: 8,
+                        background: 'var(--bg-panel)',
+                        border: '1px solid var(--border)',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
+                          <span className="badge badge-info">{it.community_label}</span>
+                          <span className="text-xs text-muted">
+                            {it.upvotes} lượt thích • {it.comments_count} bình luận
+                          </span>
+                        </div>
+                        <div className="text-sm fw-600">{it.title_vi}</div>
+                        {it.preview_snippet && (
+                          <div className="text-xs text-sub" style={{ marginTop: 2 }}>
+                            {it.preview_snippet.slice(0, 125)}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            setBatchMode(false);
+                            if (it.post_url) {
+                              setChatStoryMode(false);
+                              setPostUrl(it.post_url);
+                              setRawPastedText('');
+                              setRadarOpen(false);
+                              notify('Đã điền link bài Viral — bấm Hút bài viết bên dưới!');
+                            } else {
+                              setChatStoryMode(true);
+                              setChatIdea(it.title_vi);
+                              setRadarOpen(false);
+                              notify('Đã nạp chủ đề vào trình viết Hội Thoại Chat!');
+                            }
+                          }}
+                        >
+                          Dùng ngay
+                        </button>
+                        {it.post_url && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => {
+                              setBatchUrlsText((prev) =>
+                                prev.includes(it.post_url)
+                                  ? prev
+                                  : `${prev ? `${prev}\n` : ''}${it.post_url}`
+                              );
+                              notify('Đã thêm link vào danh sách Batch!');
+                            }}
+                          >
+                            + Batch
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* INPUT AREA BY FORMAT */}
+          {batchMode ? (
+            <div className="studio-callout studio-callout-brand" style={{ marginBottom: 16 }}>
+              <label className="form-label">
+                Danh sách link Threads hoặc Reddit quốc tế (Mỗi dòng 1 link, tối đa 15 link)
               </label>
-              <input
-                type="range"
-                min="2"
-                max="15"
-                step="1"
-                style={{ width: '100%', marginTop: 4 }}
-                value={maxComments}
-                onChange={(e) => setMaxComments(Number(e.target.value))}
-              />
-              <div
-                className="text-muted"
-                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.2, marginTop: 2 }}
-              >
-                <span>2 câu (~15s)</span>
-                <span>6–8 câu (Chuẩn ~45s)</span>
-                <span>15 câu (~95s)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {!chatStoryMode && !quizMode && (
-          <>
-            <div className="form-group">
-              <label className="form-label">Tiêu chí AI chọn lọc bình luận tiêu biểu</label>
-              <ModeChoiceGrid
-                options={VIBE_CHOICES}
-                value={filterVibe}
-                onChange={(nextVibe) => {
-                  setFilterVibe(nextVibe);
-                  if (nextVibe === 'LONG_STORY' && commentLengthMode === 'ALL') {
-                    setCommentLengthMode('DEEP_STORY');
-                  }
+              <textarea
+                className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
+                style={{ minHeight: 125 }}
+                placeholder={`https://www.threads.com/@nhonaytennhi/post/DU8UhpTgT6a\nhttps://www.reddit.com/r/AskReddit/comments/...`}
+                value={batchUrlsText}
+                onChange={(e) => {
+                  setBatchUrlsText(e.target.value);
+                  clearError('batchUrls');
                 }}
               />
-            </div>
-
-            {/* COMMENT LENGTH PREFERENCE SELECTOR */}
-            <div
-              className="surface-box"
-              style={{
-                marginBottom: 14,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 13.1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    color: 'var(--text-primary)',
-                  }}
+              <FieldError message={errors.batchUrls} />
+              <div className="toggle-grid" style={{ marginTop: 12, marginBottom: 12 }}>
+                <SwitchCard checked={rotateBgLibrary} onChange={setRotateBgLibrary}>
+                  Tự xoay vòng đổi Video Nền qua Kho ({bgLibrary.length} video)
+                </SwitchCard>
+                <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
+                  Tự xoay vòng đổi bài Nhạc nền Lofi CC0
+                </SwitchCard>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={submitting}
+                  onClick={handleStartBatchThreads}
                 >
-                  <BookOpen size={15} style={{ color: 'var(--brand-text)' }} />
-                  Độ dài bình luận muốn lấy (Săn các bình luận dài kể chuyện đầu – cuối)
-                </div>
-                <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
-                  Giữ nguyên 100% câu chuyện dài không bị tóm tắt; thẻ Threads tự co giãn cỡ chữ &amp; chia nhịp đọc mượt mà
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {COMMENT_LENGTH_MODES.map((m) => {
-                  const active = commentLengthMode === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setCommentLengthMode(m.id)}
-                    >
-                      {m.label}
-                    </button>
-                  );
-                })}
+                  {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
+                  <span>{submitting ? 'Đang đưa vào hàng đợi...' : 'Xếp hàng chạy toàn bộ lô'}</span>
+                </button>
               </div>
             </div>
-          </>
-        )}
-
-        <div className="toggle-grid" style={{ marginBottom: 14 }}>
-          <SwitchCard icon={Languages} checked={expandSlang} onChange={setExpandSlang}>
-            Bung viết tắt teen-code (ko→không, đc→được) &amp; lọc sạch icon rác
-          </SwitchCard>
-          <SwitchCard icon={Users} checked={multiVoiceCast} onChange={setMultiVoiceCast}>
-            Đan xen đối thoại chỉ dùng 2 Giọng Chính (Nam ↔ Nữ)
-          </SwitchCard>
-          <SwitchCard
-            icon={EyeOff}
-            checked={Boolean(layoutConfig.threads_anonymize_handles)}
-            onChange={(val) => updateThreadsLayout({ threads_anonymize_handles: val })}
-          >
-            Che ẩn tên tài khoản (nguoila_01)
-          </SwitchCard>
-        </div>
-
-        {/* PROMINENT EXTRACT & AI CURATE BAR */}
-        {!batchMode && !chatStoryMode && !quizMode && (
-          <div
-            className="surface-box"
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-              borderColor: 'var(--brand)',
-            }}
-          >
-            <div style={{ minWidth: 220, flex: 1 }}>
-              <div style={{ fontSize: 13.4, fontWeight: 700, color: 'var(--text-primary)' }}>
-                Bước 1A: Hút bài viết, ảnh bình luận &amp; chọn ra {maxComments} phản hồi đắt giá nhất
+          ) : chatStoryMode ? (
+            <div className="studio-callout studio-callout-brand" style={{ marginBottom: 16 }}>
+              <div className="text-sm fw-700" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 7 }}>
+                <MessageSquareText size={16} style={{ color: 'var(--brand-text)' }} />
+                <span>Tạo Kịch Bản Hội Thoại Tin Nhắn Chat 2 Chiều (Messenger / Zalo / iMessage)</span>
               </div>
-              <div className="text-sub" style={{ fontSize: 12.2, marginTop: 2 }}>
-                Tự động giữ lại ảnh chụp dưới các bình luận và hiển thị ngay bên dưới để bạn duyệt trước khi ghép video
+              <div className="form-group">
+                <label className="form-label">Ý tưởng tình huống cuộc trò chuyện</label>
+                <input
+                  className={`input ${errors.chatIdea ? 'input-error' : ''}`}
+                  placeholder="VD: Nhắn tin thử lòng Crush lúc 11h đêm và câu trả lời khiến tim đập loạn nhịp..."
+                  value={chatIdea}
+                  onChange={(e) => {
+                    setChatIdea(e.target.value);
+                    clearError('chatIdea');
+                  }}
+                />
+                <FieldError message={errors.chatIdea} />
+              </div>
+
+              <div className="form-grid" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="form-label">Tên người nhắn bên Phải (Bong bóng Xanh)</label>
+                  <input
+                    className="input"
+                    value={chatSenderA}
+                    onChange={(e) => setChatSenderA(e.target.value)}
+                    placeholder="VD: Mình / Chủ shop"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Tên người đối thoại bên Trái</label>
+                  <input
+                    className="input"
+                    value={chatSenderB}
+                    onChange={(e) => setChatSenderB(e.target.value)}
+                    placeholder="VD: Crush / Khách hàng"
+                  />
+                </div>
+              </div>
+
+              <div className="form-grid" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="form-label">Tông màu câu chuyện Chat</label>
+                  <select
+                    className="select"
+                    value={chatVibe}
+                    onChange={(e) => setChatVibe(e.target.value)}
+                  >
+                    {CHAT_VIBE_OPTIONS.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">
+                    Số lượng tin nhắn qua lại: <strong>{chatMsgCount} tin nhắn</strong>
+                  </label>
+                  <input
+                    type="range"
+                    min="4"
+                    max="16"
+                    step="1"
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={chatMsgCount}
+                    onChange={(e) => setChatMsgCount(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="text-xs text-sub">
+                  Tự động chèn hiệu ứng <strong>• • • đang nhập</strong> &amp; tiếng <strong>Ting</strong> gửi/nhận tin nhắn 2 chiều
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={generatingChat || submitting}
+                  onClick={handleGenerateChatStory}
+                >
+                  {generatingChat ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
+                  <span>
+                    {generatingChat ? 'Đang viết hội thoại...' : `AI Viết ${chatMsgCount} Tin Nhắn Chat`}
+                  </span>
+                </button>
               </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ minHeight: 41, fontWeight: 700 }}
-              disabled={extracting || submitting}
-              onClick={handleExtractThreads}
-            >
-              {extracting ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
-              <span>
-                {extracting
-                  ? 'Đang hút bài, ảnh & lọc bình luận...'
-                  : `Hút bài viết, Ảnh & Lọc ${maxComments} bình luận`}
-              </span>
-            </button>
-          </div>
-        )}
+          ) : quizMode ? (
+            <div className="studio-callout studio-callout-brand" style={{ marginBottom: 16 }}>
+              <div className="text-sm fw-700" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 7 }}>
+                <HelpCircle size={16} style={{ color: 'var(--brand-text)' }} />
+                <span>Tạo Video Đố Vui Phản Xạ Kèm Đồng Hồ Đếm Ngược 3 - 2 - 1</span>
+              </div>
+              <div className="form-grid" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="form-label">Chủ đề bộ câu đố (Tùy chọn)</label>
+                  <input
+                    className="input"
+                    placeholder="VD: Phân biệt tiếng Guitar gỗ thịt vs gỗ ép / Giải mã tâm lý Crush..."
+                    value={quizTopic}
+                    onChange={(e) => setQuizTopic(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Lĩnh vực đố vui</label>
+                  <select
+                    className="select"
+                    value={quizCategory}
+                    onChange={(e) => setQuizCategory(e.target.value)}
+                  >
+                    {QUIZ_CATEGORY_OPTIONS.map((q) => (
+                      <option key={q.id} value={q.id}>
+                        {q.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-        <StudioLoadingBanner
-          loading={extracting}
-          showSkeleton={!bundle}
-          title="Đang hút bài viết, tải Avatar tròn & lọc bình luận tiêu biểu bằng AI..."
-          subtitle="Hệ thống đang tải song song ảnh đại diện, ảnh bình luận & phân vai đối thoại 2 giọng chính"
-          steps={[
-            'Kết nối bài viết Threads / Reddit',
-            'Tải Avatar người dùng & Ảnh bình luận',
-            'AI chọn lọc & bung viết tắt tiếng Việt',
-          ]}
-          stepIntervalMs={2800}
-        />
+              <div className="form-grid" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="form-label">
+                    Số câu đố trong video: <strong>{quizQuestionCount} câu</strong>
+                  </label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="5"
+                    step="1"
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={quizQuestionCount}
+                    onChange={(e) => setQuizQuestionCount(Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">
+                    Thời gian đếm ngược mỗi câu: <strong>{layoutConfig.quiz_countdown_sec || 3} giây</strong>
+                  </label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="5"
+                    step="1"
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={layoutConfig.quiz_countdown_sec || 3}
+                    onChange={(e) =>
+                      updateThreadsLayout({ quiz_countdown_sec: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              </div>
 
-        {/* INTERACTIVE CURATED THREAD & COMMENTS EDITOR (WITH ATTACHED PHOTOS!) */}
-        {bundle && (
-          <div
-            className={extracting ? 'is-reloading-dim' : 'fade-slide-in'}
-            style={{ marginTop: 15, display: 'grid', gap: 12 }}
-          >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="text-xs text-sub">
+                  Mỗi câu đố tự giữ hình <strong>{layoutConfig.quiz_countdown_sec || 3}s</strong> kèm tiếng <strong>Tích-tắc</strong> &amp; chuông <strong>Ding</strong> khi lật đáp án
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={generatingQuiz || submitting}
+                  onClick={handleGenerateQuiz}
+                >
+                  {generatingQuiz ? <Loader2 size={15} className="spin" /> : <Clock size={15} />}
+                  <span>
+                    {generatingQuiz
+                      ? 'Đang biên soạn...'
+                      : `AI Tạo ${quizQuestionCount} Câu Đố & Đáp Án`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="form-label">
+                  <Link2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                  Đường dẫn bài đăng Threads hoặc Reddit quốc tế (tự dịch sang tiếng Việt)
+                </label>
+                <input
+                  className={`input ${errors.postUrl ? 'input-error' : ''}`}
+                  placeholder="VD: https://www.threads.com/@.../post/... hoặc https://www.reddit.com/r/AskReddit/comments/..."
+                  value={postUrl}
+                  onChange={(e) => {
+                    setPostUrl(e.target.value);
+                    clearError('postUrl', 'rawPastedText');
+                  }}
+                />
+                <FieldError message={errors.postUrl} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  Hoặc dán trực tiếp nội dung bài viết &amp; bình luận (Tùy chọn)
+                </label>
+                <textarea
+                  className={`textarea ${errors.rawPastedText ? 'input-error' : ''}`}
+                  style={{ minHeight: 78 }}
+                  placeholder="Có thể để trống nếu đã dán link công khai ở trên..."
+                  value={rawPastedText}
+                  onChange={(e) => {
+                    setRawPastedText(e.target.value);
+                    clearError('rawPastedText', 'postUrl');
+                  }}
+                />
+                <FieldError message={errors.rawPastedText} />
+              </div>
+
+              <div
+                className="studio-callout studio-callout-brand"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ minWidth: 220, flex: 1 }}>
+                  <div className="text-sm fw-700 text-main">
+                    Hút bài viết, ảnh bình luận &amp; chọn ra {maxComments} phản hồi đắt giá nhất
+                  </div>
+                  <div className="text-xs text-sub" style={{ marginTop: 2 }}>
+                    Tự động giữ lại ảnh chụp dưới các bình luận và gán đối thoại 2 giọng chính Nam &amp; Nữ
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={extracting || submitting}
+                  onClick={handleExtractThreads}
+                >
+                  {extracting ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
+                  <span>
+                    {extracting ? 'Đang hút bài & lọc...' : `Hút bài & Lọc ${maxComments} bình luận`}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
+
+          <StudioLoadingBanner
+            loading={extracting}
+            showSkeleton={!bundle}
+            title="Đang hút bài viết, tải Avatar tròn & lọc bình luận tiêu biểu bằng AI..."
+            subtitle="Hệ thống đang tải song song ảnh đại diện, ảnh bình luận & phân vai đối thoại 2 giọng chính"
+            steps={[
+              'Kết nối bài viết Threads / Reddit',
+              'Tải Avatar người dùng & Ảnh bình luận',
+              'AI chọn lọc & bung viết tắt tiếng Việt',
+            ]}
+            stepIntervalMs={2800}
+          />
+
+          {/* INTERACTIVE CURATED THREAD & COMMENTS EDITOR */}
+          {bundle && (
             <div
-              className="surface-box"
-              style={{
-                borderColor: 'rgba(16, 185, 129, 0.5)',
-                background: 'rgba(16, 185, 129, 0.06)',
-              }}
+              className={`studio-callout studio-callout-success ${
+                extracting ? 'is-reloading-dim' : 'fade-slide-in'
+              }`}
+              style={{ marginBottom: 14 }}
             >
               <div
                 style={{
@@ -2051,28 +1793,24 @@ export default function ThreadsStudioForm({
                   alignItems: 'center',
                   gap: 8,
                   flexWrap: 'wrap',
-                  marginBottom: 8,
+                  marginBottom: 10,
                 }}
               >
                 <span
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 13.4,
-                    color: 'var(--success-text)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
+                  className="text-sm fw-700 text-success"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                   <CheckCircle2 size={16} />
-                  {bundle.extraction_note || 'Đã sẵn sàng danh sách bài đăng gốc & bình luận tiêu biểu'}
+                  <span>
+                    {bundle.extraction_note ||
+                      'Đã sẵn sàng danh sách bài đăng gốc & bình luận tiêu biểu'}
+                  </span>
                 </span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {(bundle.comments || []).length > 1 && (
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      title="Đưa các bình luận dài nhiều chữ nhất lên đầu danh sách"
                       onClick={() => {
                         setBundle((prev) => {
                           if (!prev) return prev;
@@ -2100,19 +1838,17 @@ export default function ThreadsStudioForm({
                     className="btn btn-secondary btn-sm"
                     onClick={addCustomComment}
                   >
-                    <MessageSquarePlus size={13} /> + Thêm 1 bình luận riêng
+                    <MessageSquarePlus size={13} /> Thêm 1 thẻ
                   </button>
                 </div>
               </div>
 
               {/* OP MAIN THREAD CARD EDITOR */}
               <div
+                className="surface-box"
                 style={{
-                  padding: 12,
-                  borderRadius: 10,
-                  background: 'var(--bg-panel)',
-                  border: '1.5px solid var(--brand)',
-                  marginBottom: 10,
+                  borderColor: 'var(--brand)',
+                  marginBottom: 12,
                 }}
               >
                 <div
@@ -2122,35 +1858,29 @@ export default function ThreadsStudioForm({
                     alignItems: 'center',
                     gap: 8,
                     flexWrap: 'wrap',
-                    marginBottom: 8,
+                    marginBottom: 10,
                   }}
                 >
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                     {bundle.op_avatar_media_url && !layoutConfig.threads_anonymize_handles && (
                       <img
                         src={bundle.op_avatar_media_url}
                         alt="OP Avatar"
                         style={{
-                          width: 30,
-                          height: 30,
+                          width: 28,
+                          height: 28,
                           borderRadius: '50%',
                           objectFit: 'cover',
                           border: '1.5px solid var(--brand)',
                         }}
                       />
                     )}
-                    <span className="badge badge-info">Thẻ mở đầu • Bài đăng gốc (OP)</span>
+                    <span className="badge badge-info">Thẻ mở đầu • Bài gốc (OP)</span>
                   </span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
-                      className="input"
-                      style={{ width: 150, minHeight: 31, padding: '4px 9px', fontSize: 12.3 }}
+                      className="input input-sm"
+                      style={{ width: 148 }}
                       value={bundle.op_author_handle}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_author_handle: e.target.value }))
@@ -2158,8 +1888,8 @@ export default function ThreadsStudioForm({
                       title="Tên tài khoản hiển thị trên thẻ OP"
                     />
                     <input
-                      className="input"
-                      style={{ width: 78, minHeight: 31, padding: '4px 8px', fontSize: 12.3 }}
+                      className="input input-sm"
+                      style={{ width: 78 }}
                       value={bundle.op_likes_display}
                       onChange={(e) =>
                         setBundle((prev) => ({ ...prev, op_likes_display: e.target.value }))
@@ -2169,7 +1899,6 @@ export default function ThreadsStudioForm({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ minHeight: 31 }}
                       onClick={() => {
                         const nextId =
                           (bundle.op_voice_profile_id || hostVoiceId) === femaleVoiceId
@@ -2179,13 +1908,12 @@ export default function ThreadsStudioForm({
                       }}
                     >
                       {(bundle.op_voice_profile_id || hostVoiceId) === maleVoiceId
-                        ? 'Giọng Nam Chính'
-                        : 'Giọng Nữ Chính'}
+                        ? 'Giọng Nam'
+                        : 'Giọng Nữ'}
                     </button>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ minHeight: 31 }}
                       onClick={() =>
                         handlePreviewVoiceSnippet(
                           'op_voice',
@@ -2201,17 +1929,13 @@ export default function ThreadsStudioForm({
                       )}{' '}
                       Nghe OP
                     </button>
-                    <label
-                      className="btn btn-secondary btn-sm"
-                      style={{ minHeight: 31, cursor: 'pointer' }}
-                      title="Đính kèm hoặc đổi ảnh trong thẻ bài đăng gốc"
-                    >
+                    <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
                       {uploadingCardImgKey === 'OP' ? (
                         <Loader2 size={13} />
                       ) : (
                         <ImagePlus size={13} />
                       )}{' '}
-                      Ảnh bài gốc
+                      Ảnh OP
                       <input
                         type="file"
                         accept="image/*"
@@ -2226,26 +1950,34 @@ export default function ThreadsStudioForm({
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                    <label className="form-label" style={{ fontSize: 12, marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      marginBottom: 5,
+                    }}
+                  >
+                    <label className="form-label" style={{ marginBottom: 0 }}>
                       Tiêu đề SEO của dự án video
                     </label>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ fontSize: 11.6, padding: '3px 9px', borderColor: 'var(--brand-border)' }}
                       disabled={scoringHook}
                       onClick={handleScoreOpeningHook}
-                      title="AI chấm điểm tỷ lệ giữ chân 3 giây đầu của Thẻ Mở Đầu & gợi ý 3 câu Hook A/B bắt tai hơn"
                     >
-                      {scoringHook ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{' '}
-                      {scoringHook ? 'Đang chấm điểm Hook 3s...' : '🎯 Chấm điểm Hook 3 giây & Gợi ý A/B'}
+                      {scoringHook ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}
+                      <span>
+                        {scoringHook ? 'Đang chấm...' : 'Chấm điểm Hook 3 giây & Gợi ý A/B'}
+                      </span>
                     </button>
                   </div>
                   <input
                     className={`input ${errors.topicTitle ? 'input-error' : ''}`}
-                    style={{ minHeight: 35 }}
                     value={bundle.topic_title}
                     onChange={(e) => {
                       setBundle((prev) => ({ ...prev, topic_title: e.target.value }));
@@ -2256,26 +1988,29 @@ export default function ThreadsStudioForm({
                 </div>
 
                 {hookScoreRes && (
-                  <div
-                    className="surface-box fade-slide-in"
-                    style={{
-                      marginBottom: 10,
-                      padding: '10px 12px',
-                      borderColor: 'rgba(14, 165, 233, 0.5)',
-                      background: 'rgba(14, 165, 233, 0.07)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 12.8 }}>
-                        Điểm Giữ Chân 3 Giây Đầu: <span style={{ color: '#38bdf8' }}>{hookScoreRes.overall_score}/100</span> — {hookScoreRes.verdict_label}
+                  <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginBottom: 10 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div className="text-sm fw-700">
+                        Điểm Giữ Chân 3 Giây Đầu:{' '}
+                        <span className="text-brand">{hookScoreRes.overall_score}/100</span> —{' '}
+                        {hookScoreRes.verdict_label}
                       </div>
-                      <span className="badge badge-info" style={{ fontSize: 11 }}>
-                        Đọc mở đầu ~{hookScoreRes.estimated_intro_sec}s • Tò mò {hookScoreRes.curiosity_score} • Cảm xúc {hookScoreRes.emotion_score}
+                      <span className="badge badge-info">
+                        Mở đầu ~{hookScoreRes.estimated_intro_sec}s
                       </span>
                     </div>
                     {hookScoreRes.weakness_note && (
-                      <div className="text-sub" style={{ fontSize: 12, marginBottom: 8 }}>
-                        💡 {hookScoreRes.weakness_note}
+                      <div className="text-xs text-sub" style={{ marginBottom: 8 }}>
+                        Gợi ý cải thiện: {hookScoreRes.weakness_note}
                       </div>
                     )}
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -2287,30 +2022,32 @@ export default function ThreadsStudioForm({
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: 8,
-                            padding: '6px 9px',
-                            borderRadius: 7,
+                            padding: '7px 10px',
+                            borderRadius: 8,
                             background: 'var(--bg-panel)',
-                            border: '1px solid var(--border-subtle)',
+                            border: '1px solid var(--border)',
                           }}
                         >
-                          <div style={{ fontSize: 12.2, flex: 1 }}>
-                            <strong style={{ color: 'var(--brand-text)' }}>[{v.style_label} • {v.predicted_score}đ]</strong>{' '}
+                          <div className="text-xs" style={{ flex: 1 }}>
+                            <strong className="text-brand">
+                              [{v.style_label} • {v.predicted_score}đ]
+                            </strong>{' '}
                             {v.hook_text}
                           </div>
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
-                            style={{ fontSize: 11.4, whiteSpace: 'nowrap' }}
+                            style={{ whiteSpace: 'nowrap' }}
                             onClick={() => {
                               setBundle((prev) => ({
                                 ...prev,
                                 op_display_text: v.hook_text,
                                 op_spoken_vi_text: v.spoken_vi_text || v.hook_text,
                               }));
-                              notify(`Đã áp dụng phương án Hook "${v.style_label}" vào Thẻ Mở Đầu!`);
+                              notify(`Đã áp dụng Hook "${v.style_label}" vào Thẻ Mở Đầu!`);
                             }}
                           >
-                            Áp dụng Hook này
+                            Áp dụng
                           </button>
                         </div>
                       ))}
@@ -2320,12 +2057,10 @@ export default function ThreadsStudioForm({
 
                 <div className="form-grid">
                   <div>
-                    <label className="form-label" style={{ fontSize: 11.8 }}>
-                      Chữ hiển thị trên Thẻ Bài Gốc
-                    </label>
+                    <label className="form-label text-xs">Chữ hiển thị trên Thẻ Bài Gốc</label>
                     <textarea
                       className={`textarea ${errors.opDisplay ? 'input-error' : ''}`}
-                      style={{ minHeight: 66, fontSize: 13 }}
+                      style={{ minHeight: 68 }}
                       value={bundle.op_display_text}
                       onChange={(e) => {
                         setBundle((prev) => ({ ...prev, op_display_text: e.target.value }));
@@ -2335,12 +2070,12 @@ export default function ThreadsStudioForm({
                     <FieldError message={errors.opDisplay} />
                   </div>
                   <div>
-                    <label className="form-label" style={{ fontSize: 11.8 }}>
+                    <label className="form-label text-xs">
                       Lời đọc giọng Việt ({Number(voiceSpeed).toFixed(2)}x)
                     </label>
                     <textarea
                       className={`textarea ${errors.opSpoken ? 'input-error' : ''}`}
-                      style={{ minHeight: 66, fontSize: 13 }}
+                      style={{ minHeight: 68 }}
                       value={bundle.op_spoken_vi_text}
                       onChange={(e) => {
                         setBundle((prev) => ({ ...prev, op_spoken_vi_text: e.target.value }));
@@ -2361,7 +2096,7 @@ export default function ThreadsStudioForm({
                       padding: 6,
                       borderRadius: 8,
                       background: 'var(--bg-step)',
-                      border: '1px solid var(--border-strong)',
+                      border: '1px solid var(--border)',
                     }}
                   >
                     {bundle.op_image_media_url && (
@@ -2369,20 +2104,17 @@ export default function ThreadsStudioForm({
                         src={bundle.op_image_media_url}
                         alt="OP attachment"
                         style={{
-                          width: 68,
-                          height: 68,
+                          width: 64,
+                          height: 64,
                           objectFit: 'cover',
                           borderRadius: 6,
                         }}
                       />
                     )}
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>
-                      Ảnh đính kèm hiển thị trong Thẻ Bài Gốc
-                    </span>
+                    <span className="text-xs fw-600">Ảnh đính kèm trong Thẻ Bài Gốc</span>
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
-                      style={{ padding: '2px 7px', minHeight: 26 }}
                       onClick={() =>
                         setBundle((prev) => ({
                           ...prev,
@@ -2400,7 +2132,7 @@ export default function ThreadsStudioForm({
 
               {/* COMMENTS LIST */}
               <FieldError message={errors.comments} />
-              <div style={{ display: 'grid', gap: 10, maxHeight: 620, overflowY: 'auto', paddingRight: 4 }}>
+              <div style={{ display: 'grid', gap: 10, maxHeight: 580, overflowY: 'auto', paddingRight: 4 }}>
                 {(bundle.comments || []).map((cmt, idx) => {
                   const pKey = `cmt_${idx}`;
                   const isMaleLine = (cmt.voice_profile_id || hostVoiceId) === maleVoiceId;
@@ -2409,22 +2141,19 @@ export default function ThreadsStudioForm({
                   const estReadSec = Math.max(
                     2,
                     Math.round(
-                      ((cmt.spoken_vi_text || cmt.display_text || '').trim().split(/\s+/).length || 1) /
+                      ((cmt.spoken_vi_text || cmt.display_text || '').trim().split(/\s+/).length ||
+                        1) /
                         (2.85 * Math.max(1.0, Number(voiceSpeed) || 1.25))
                     )
                   );
-                  const boxMinH = dispLen > 200 ? 112 : dispLen > 95 ? 82 : 56;
+                  const boxMinH = dispLen > 200 ? 108 : dispLen > 95 ? 80 : 58;
                   return (
                     <div
                       key={cmt.comment_id || idx}
+                      className="surface-box"
                       style={{
-                        padding: '10px 12px',
-                        borderRadius: 9,
-                        background: 'var(--bg-panel)',
-                        border: cmt.selected
-                          ? '1px solid var(--border-strong)'
-                          : '1px dashed var(--border)',
-                        opacity: cmt.selected ? 1 : 0.58,
+                        borderStyle: cmt.selected ? 'solid' : 'dashed',
+                        opacity: cmt.selected ? 1 : 0.56,
                       }}
                     >
                       <div
@@ -2434,16 +2163,15 @@ export default function ThreadsStudioForm({
                           alignItems: 'center',
                           gap: 8,
                           flexWrap: 'wrap',
-                          marginBottom: 7,
+                          marginBottom: 8,
                         }}
                       >
                         <label
+                          className="text-sm fw-600"
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 7,
-                            fontWeight: 700,
-                            fontSize: 13,
+                            gap: 8,
                             cursor: 'pointer',
                           }}
                         >
@@ -2458,50 +2186,32 @@ export default function ThreadsStudioForm({
                               src={cmt.avatar_media_url}
                               alt={cmt.author_handle}
                               style={{
-                                width: 26,
-                                height: 26,
+                                width: 24,
+                                height: 24,
                                 borderRadius: '50%',
                                 objectFit: 'cover',
                                 border: '1px solid var(--border-strong)',
                               }}
                             />
                           )}
-                          <span>Thẻ trả lời {idx + 1}</span>
-                          {dispLen >= 95 ? (
-                            <span
-                              className="badge badge-info"
-                              style={{ fontSize: 10.5, padding: '1px 7px' }}
-                            >
-                              Bình luận dài • {dispLen} ký tự (~{estReadSec}s)
-                            </span>
-                          ) : (
-                            <span className="text-muted" style={{ fontSize: 11.2, fontWeight: 500 }}>
-                              {dispLen} ký tự (~{estReadSec}s)
-                            </span>
-                          )}
-                          {hasCmtImg && (
-                            <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 6px' }}>
-                              Có ảnh bình luận
-                            </span>
-                          )}
-                          {cmt.is_ai_suggested && (
-                            <span className="badge badge-warn" style={{ fontSize: 10.5, padding: '1px 6px' }}>
-                              Gợi ý AI
-                            </span>
-                          )}
+                          <span>Thẻ {idx + 1}</span>
+                          <span className="text-xs text-muted fw-500">
+                            {dispLen} ký tự (~{estReadSec}s)
+                          </span>
+                          {hasCmtImg && <span className="badge badge-ok">Có ảnh</span>}
                         </label>
 
                         <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                           <input
-                            className="input"
-                            style={{ width: 138, minHeight: 30, padding: '3px 8px', fontSize: 12.2 }}
+                            className="input input-sm"
+                            style={{ width: 136 }}
                             value={cmt.author_handle}
                             onChange={(e) => patchComment(idx, { author_handle: e.target.value })}
                             title="Tên tài khoản bình luận"
                           />
                           <input
-                            className="input"
-                            style={{ width: 68, minHeight: 30, padding: '3px 7px', fontSize: 12.2 }}
+                            className="input input-sm"
+                            style={{ width: 68 }}
                             value={cmt.likes_display}
                             onChange={(e) => patchComment(idx, { likes_display: e.target.value })}
                             title="Số lượt thích"
@@ -2509,21 +2219,17 @@ export default function ThreadsStudioForm({
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            style={{ minHeight: 30, padding: '0 9px', fontSize: 11.8 }}
-                            title="Bấm để đổi nhanh giữa Giọng Nam Chính và Giọng Nữ Chính"
                             onClick={() =>
                               patchComment(idx, {
                                 voice_profile_id: isMaleLine ? femaleVoiceId : maleVoiceId,
                               })
                             }
                           >
-                            {isMaleLine ? 'Giọng Nam Chính' : 'Giọng Nữ Chính'}
+                            {isMaleLine ? 'Giọng Nam' : 'Giọng Nữ'}
                           </button>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            style={{ padding: '0 8px', minHeight: 30 }}
-                            title="Nghe thử giọng đọc bình luận này ở tốc độ đã chọn"
                             onClick={() =>
                               handlePreviewVoiceSnippet(
                                 pKey,
@@ -2538,11 +2244,7 @@ export default function ThreadsStudioForm({
                               <Volume2 size={12} />
                             )}
                           </button>
-                          <label
-                            className="btn btn-secondary btn-sm"
-                            style={{ padding: '0 7px', minHeight: 30, cursor: 'pointer' }}
-                            title="Đính kèm hoặc đổi ảnh trong bình luận này"
-                          >
+                          <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
                             {uploadingCardImgKey === String(idx) ? (
                               <Loader2 size={12} />
                             ) : (
@@ -2562,29 +2264,23 @@ export default function ThreadsStudioForm({
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            style={{ padding: '0 6px', minHeight: 30 }}
                             disabled={idx === 0}
                             onClick={() => moveComment(idx, idx - 1)}
-                            title="Đẩy lên trên"
                           >
                             <ArrowUp size={12} />
                           </button>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            style={{ padding: '0 6px', minHeight: 30 }}
                             disabled={idx === bundle.comments.length - 1}
                             onClick={() => moveComment(idx, idx + 1)}
-                            title="Đẩy xuống dưới"
                           >
                             <ArrowDown size={12} />
                           </button>
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
-                            style={{ padding: '0 6px', minHeight: 30 }}
                             onClick={() => removeComment(idx)}
-                            title="Xóa bình luận này"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -2593,16 +2289,12 @@ export default function ThreadsStudioForm({
 
                       <div className="form-grid">
                         <div>
-                          <div
-                            className="text-muted"
-                            style={{ fontSize: 11.2, marginBottom: 3, fontWeight: 600 }}
-                          >
-                            Chữ hiển thị trên thẻ Threads
+                          <div className="text-xs text-muted fw-600" style={{ marginBottom: 4 }}>
+                            Chữ hiển thị trên thẻ
                           </div>
                           <textarea
                             className="textarea"
-                            style={{ minHeight: boxMinH, fontSize: 12.8, lineHeight: 1.45 }}
-                            placeholder="Chữ hiển thị đầy đủ trên thẻ bình luận..."
+                            style={{ minHeight: boxMinH }}
                             value={cmt.display_text}
                             onChange={(e) =>
                               patchComment(idx, {
@@ -2613,16 +2305,12 @@ export default function ThreadsStudioForm({
                           />
                         </div>
                         <div>
-                          <div
-                            className="text-muted"
-                            style={{ fontSize: 11.2, marginBottom: 3, fontWeight: 600 }}
-                          >
-                            Lời đọc giọng Việt (đã bung viết tắt)
+                          <div className="text-xs text-muted fw-600" style={{ marginBottom: 4 }}>
+                            Lời đọc giọng Việt
                           </div>
                           <textarea
                             className="textarea"
-                            style={{ minHeight: boxMinH, fontSize: 12.8, lineHeight: 1.45 }}
-                            placeholder="Lời đọc giọng Việt đầy đủ..."
+                            style={{ minHeight: boxMinH }}
                             value={cmt.spoken_vi_text}
                             onChange={(e) => patchComment(idx, { spoken_vi_text: e.target.value })}
                           />
@@ -2632,14 +2320,14 @@ export default function ThreadsStudioForm({
                       {hasCmtImg && (
                         <div
                           style={{
-                            marginTop: 7,
+                            marginTop: 8,
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 9,
-                            padding: 5,
+                            padding: 6,
                             borderRadius: 8,
                             background: 'var(--bg-step)',
-                            border: '1px solid rgba(16, 185, 129, 0.45)',
+                            border: '1px solid var(--success-border)',
                           }}
                         >
                           {cmt.attached_image_media_url && (
@@ -2647,20 +2335,17 @@ export default function ThreadsStudioForm({
                               src={cmt.attached_image_media_url}
                               alt="Comment attachment"
                               style={{
-                                width: 62,
-                                height: 62,
+                                width: 58,
+                                height: 58,
                                 objectFit: 'cover',
                                 borderRadius: 6,
                               }}
                             />
                           )}
-                          <span style={{ fontSize: 11.8, fontWeight: 600 }}>
-                            Ảnh đính kèm của bình luận (sẽ hiển thị ngay bên trong thẻ)
-                          </span>
+                          <span className="text-xs fw-600">Ảnh đính kèm của bình luận</span>
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
-                            style={{ padding: '2px 6px', minHeight: 24, fontSize: 11 }}
                             onClick={() =>
                               patchComment(idx, {
                                 attached_image_path: '',
@@ -2678,447 +2363,580 @@ export default function ThreadsStudioForm({
                 })}
               </div>
 
-              <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: 12.2 }}>
-                  Thẻ câu hỏi tương tác cuối video (Để trống nếu muốn kết thúc ngay sau bình luận cuối)
+              <div style={{ marginTop: 12 }}>
+                <label className="form-label text-xs">
+                  Thẻ câu hỏi tương tác cuối video (Để trống nếu kết thúc ngay sau bình luận cuối)
                 </label>
                 <input
                   className="input"
-                  placeholder="VD: Còn bạn nghĩ sao về câu chuyện này? Hãy để lại ý kiến dưới phần bình luận nhé!"
                   value={appendCtaComment}
                   onChange={(e) => setAppendCtaComment(e.target.value)}
                 />
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* STEP 2: BACKGROUND VIDEO & REUSABLE KHO VIDEO NỀN */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">2</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">
-              Chọn Video Nền Chạy Dưới Thẻ Bình Luận &amp; Kho Video Nền Tái Sử Dụng ({bgLibrary.length})
-            </div>
-            <div className="step-desc">
-              Video nền sẽ tự động cắt khung dọc 9:16 và lặp vòng mượt mà vừa khít tổng thời lượng đọc toàn bộ bình luận
-            </div>
-          </div>
-        </div>
-
-        {/* 1-CLICK ZERO-COPYRIGHT CHILL 9:16 LOOP GENERATOR (NO YOUTUBE NEEDED) */}
-        <div
-          className="surface-box"
-          style={{
-            marginBottom: 14,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            borderColor: 'var(--brand-border)',
-          }}
-        >
-          <div style={{ fontSize: 12.5 }}>
-            <strong>✨ Tạo nhanh Video Nền Chill 9:16 Sạch Bản Quyền</strong>{' '}
-            <span className="text-sub">(1 chạm vào Kho — Không cần tải YouTube):</span>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {CHILL_BG_PRESETS.map((cp) => (
-              <button
-                key={cp.id}
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: 11.6 }}
-                disabled={Boolean(generatingChillBg)}
-                onClick={() => handleGenerateChillBg(cp.id)}
+          {/* COLLAPSIBLE VOICE CASTING, FILTERING & PARENT SERIES */}
+          <StudioCollapsible
+            icon={Users}
+            title="Bộ đôi 2 Giọng Đọc Chính (Nam & Nữ), Tiêu chí lọc AI & Nhóm Series"
+            subtitle="Chỉnh giọng Nữ/Nam đối thoại, tốc độ đọc, tiêu chí chọn bình luận dài và thư mục Dự Án Cha"
+            defaultOpen={!bundle}
+            badge={`${Number(voiceSpeed).toFixed(2)}x`}
+          >
+            <div className="surface-box" style={{ marginBottom: 14 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 12,
+                }}
               >
-                {generatingChillBg === cp.id ? (
-                  <Loader2 size={12} className="spin" />
-                ) : null}{' '}
-                {cp.label}
-              </button>
-            ))}
-          </div>
-        </div>
+                <div className="text-sm fw-700" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Users size={15} style={{ color: 'var(--brand-text)' }} />
+                  <span>Bộ Đôi 2 Giọng Đọc Chính Cố Định (1 Nữ &amp; 1 Nam)</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {onNavigateTab && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => onNavigateTab('voices')}
+                    >
+                      Kho giọng
+                    </button>
+                  )}
+                  <div className="studio-segmented">
+                    <button
+                      type="button"
+                      className={`studio-seg-btn ${opSpeakerGender === 'FEMALE' ? 'active' : ''}`}
+                      onClick={() => setOpSpeakerGender('FEMALE')}
+                    >
+                      OP: Giọng Nữ
+                    </button>
+                    <button
+                      type="button"
+                      className={`studio-seg-btn ${opSpeakerGender === 'MALE' ? 'active' : ''}`}
+                      onClick={() => setOpSpeakerGender('MALE')}
+                    >
+                      OP: Giọng Nam
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-        {bgLibrary.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <div className="form-label">
-              Chọn nhanh 1 chạm từ Kho Video Nền đã lưu ({bgLibrary.length} video):
-            </div>
-            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
-              {bgLibrary.map((bg) => {
-                const isSelected = selectedBgPath === bg.local_path;
-                return (
+              <div className="form-grid" style={{ marginBottom: 14 }}>
+                <div>
+                  <label className="form-label">Giọng Nữ Chính</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select
+                      className="select"
+                      style={{ flex: 1 }}
+                      value={femaleVoiceId}
+                      onChange={(e) => setFemaleVoiceId(e.target.value)}
+                    >
+                      {(femaleVoiceOptions.length > 0 ? femaleVoiceOptions : voices).map((v) => (
+                        <option key={v.profile_id} value={v.profile_id}>
+                          {stripLeadingEmoji(v.display_name)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ minHeight: 40, whiteSpace: 'nowrap' }}
+                      onClick={() =>
+                        handlePreviewVoiceSnippet(
+                          'test_female',
+                          femaleVoiceId,
+                          'Mình đã hí hoáy một tiếng với cây đàn Guitar và mình sắp khóc rồi mọi người ơi!'
+                        )
+                      }
+                    >
+                      {previewingAudioKey === 'test_female' ? (
+                        <Loader2 size={13} />
+                      ) : (
+                        <Volume2 size={13} />
+                      )}{' '}
+                      Nghe Nữ
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label">Giọng Nam Chính</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select
+                      className="select"
+                      style={{ flex: 1 }}
+                      value={maleVoiceId}
+                      onChange={(e) => setMaleVoiceId(e.target.value)}
+                    >
+                      {(maleVoiceOptions.length > 0 ? maleVoiceOptions : voices).map((v) => (
+                        <option key={v.profile_id} value={v.profile_id}>
+                          {stripLeadingEmoji(v.display_name)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ minHeight: 40, whiteSpace: 'nowrap' }}
+                      onClick={() =>
+                        handlePreviewVoiceSnippet(
+                          'test_male',
+                          maleVoiceId,
+                          'Không hề muộn đâu bạn ơi, tập hai mươi phút mỗi tối là đệm hát ngon lành ngay!'
+                        )
+                      }
+                    >
+                      {previewingAudioKey === 'test_male' ? (
+                        <Loader2 size={13} />
+                      ) : (
+                        <Volume2 size={13} />
+                      )}{' '}
+                      Nghe Nam
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <div>
                   <div
-                    key={bg.bg_id}
-                    onClick={() => {
-                      setSelectedBgPath(bg.local_path);
-                      setSelectedBgPreviewUrl(bg.media_url || '');
-                      clearError('bgVideo', 'bgUrl');
-                    }}
                     style={{
-                      width: 142,
-                      flexShrink: 0,
-                      borderRadius: 10,
-                      padding: 6,
-                      cursor: 'pointer',
-                      background: isSelected ? 'var(--brand-soft)' : 'var(--bg-panel)',
-                      border: isSelected ? '2px solid var(--brand)' : '1px solid var(--border)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 4,
                     }}
                   >
-                    <video
-                      src={bg.media_url}
-                      muted
-                      playsInline
-                      onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.pause();
-                        e.currentTarget.currentTime = 0;
-                      }}
-                      style={{
-                        width: '100%',
-                        height: 118,
-                        objectFit: 'cover',
-                        borderRadius: 7,
-                        background: '#080b11',
-                      }}
-                    />
+                    <span className="text-xs fw-600" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <Gauge size={14} style={{ color: 'var(--brand-text)' }} />
+                      Tốc độ đọc: <strong>{Number(voiceSpeed).toFixed(2)}x</strong>
+                    </span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {SPEED_PRESETS.map((sp) => (
+                        <button
+                          key={sp.val}
+                          type="button"
+                          className={`filter-pill ${
+                            Math.abs(Number(voiceSpeed) - sp.val) < 0.02 ? 'active' : ''
+                          }`}
+                          onClick={() => setVoiceSpeed(sp.val)}
+                        >
+                          {sp.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min="1.00"
+                    max="1.45"
+                    step="0.05"
+                    style={{ width: '100%' }}
+                    value={voiceSpeed}
+                    onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label text-xs">
+                    Số bình luận tiêu biểu muốn lấy: <strong>{maxComments} bình luận</strong>
+                  </label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="15"
+                    step="1"
+                    style={{ width: '100%', marginTop: 4 }}
+                    value={maxComments}
+                    onChange={(e) => setMaxComments(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {!chatStoryMode && !quizMode && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Tiêu chí AI chọn lọc bình luận</label>
+                  <ModeChoiceGrid
+                    options={VIBE_CHOICES}
+                    value={filterVibe}
+                    onChange={(nextVibe) => {
+                      setFilterVibe(nextVibe);
+                      if (nextVibe === 'LONG_STORY' && commentLengthMode === 'ALL') {
+                        setCommentLengthMode('DEEP_STORY');
+                      }
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="surface-box"
+                  style={{
+                    marginBottom: 14,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div className="text-sm fw-600">Độ dài bình luận ưu tiên</div>
+                    <div className="text-xs text-sub">
+                      Giữ nguyên 100% câu chuyện dài không bị tóm tắt
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {COMMENT_LENGTH_MODES.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`filter-pill ${commentLengthMode === m.id ? 'active' : ''}`}
+                        onClick={() => setCommentLengthMode(m.id)}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="toggle-grid" style={{ marginBottom: 14 }}>
+              <SwitchCard icon={Languages} checked={expandSlang} onChange={setExpandSlang}>
+                Bung viết tắt teen-code (ko→không, đc→được)
+              </SwitchCard>
+              <SwitchCard icon={Users} checked={multiVoiceCast} onChange={setMultiVoiceCast}>
+                Đan xen đối thoại 2 Giọng Chính (Nam ↔ Nữ)
+              </SwitchCard>
+              <SwitchCard
+                icon={EyeOff}
+                checked={Boolean(layoutConfig.threads_anonymize_handles)}
+                onChange={(val) => updateThreadsLayout({ threads_anonymize_handles: val })}
+              >
+                Che ẩn tên tài khoản (@nguoila_01)
+              </SwitchCard>
+            </div>
+
+            <ParentGroupSelector
+              projectGroups={projectGroups}
+              value={parentGroupId}
+              onChange={setParentGroupId}
+              onGroupsChanged={onGroupsChanged}
+              notify={notify}
+              label="Thuộc Nhóm Dự Án Cha (Series Threads / Reddit)"
+            />
+          </StudioCollapsible>
+        </div>
+      )}
+
+      {/* ==================== BƯỚC 2: VIDEO NỀN 9:16 & NHẠC NỀN ==================== */}
+      {showStep2 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">2</span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">
+                Video Nền Chạy Dưới Thẻ Bình Luận ({bgLibrary.length} trong kho) &amp; Nhạc Nền
+              </div>
+              <div className="step-desc">
+                Video nền tự cắt khung dọc 9:16 và lặp vòng mượt mà vừa khít tổng thời lượng đọc toàn bộ bình luận
+              </div>
+            </div>
+          </div>
+
+          {/* 1-CLICK ZERO-COPYRIGHT CHILL 9:16 LOOP GENERATOR */}
+          <div
+            className="studio-callout studio-callout-brand"
+            style={{
+              marginBottom: 16,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div className="text-sm">
+              <strong>Tạo nhanh Video Nền Chill 9:16 Sạch Bản Quyền</strong>{' '}
+              <span className="text-xs text-sub">(1 chạm vào Kho — Không cần tải YouTube):</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {CHILL_BG_PRESETS.map((cp) => (
+                <button
+                  key={cp.id}
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={Boolean(generatingChillBg)}
+                  onClick={() => handleGenerateChillBg(cp.id)}
+                >
+                  {generatingChillBg === cp.id ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}
+                  <span>{cp.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {bgLibrary.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="form-label">
+                Chọn 1 chạm từ Kho Video Nền đã lưu ({bgLibrary.length} video):
+              </div>
+              <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+                {bgLibrary.map((bg) => {
+                  const isSelected = selectedBgPath === bg.local_path;
+                  return (
                     <div
+                      key={bg.bg_id}
+                      onClick={() => {
+                        setSelectedBgPath(bg.local_path);
+                        setSelectedBgPreviewUrl(bg.media_url || '');
+                        clearError('bgVideo', 'bgUrl');
+                      }}
                       style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        marginTop: 5,
+                        width: 144,
+                        flexShrink: 0,
+                        borderRadius: 10,
+                        padding: 7,
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--brand-soft)' : 'var(--bg-panel)',
+                        border: isSelected ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+                      }}
+                    >
+                      <video
+                        src={bg.media_url}
+                        muted
+                        playsInline
+                        onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.pause();
+                          e.currentTarget.currentTime = 0;
+                        }}
+                        style={{
+                          width: '100%',
+                          height: 118,
+                          objectFit: 'cover',
+                          borderRadius: 7,
+                          background: '#080b11',
+                        }}
+                      />
+                      <div
+                        className="text-xs fw-600"
+                        style={{
+                          marginTop: 6,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={bg.title}
+                      >
+                        {bg.title}
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginTop: 3,
+                        }}
+                      >
+                        <span className="text-xs text-muted">
+                          {formatSecondsVi(Math.round((bg.duration_ms || 0) / 1000))}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSavedBg(bg, e)}
+                          title="Xóa khỏi Kho Video Nền"
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--danger-text)',
+                            cursor: 'pointer',
+                            padding: 2,
+                            display: 'inline-flex',
+                          }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <StudioLoadingBanner
+            loading={uploadingBg || savingBgUrl}
+            title={
+              savingBgUrl
+                ? 'Đang tải video nền từ liên kết trực tuyến vào Kho Video Nền...'
+                : 'Đang tải tệp video nền lên máy chủ cục bộ...'
+            }
+            subtitle="Hệ thống đang kiểm tra khung hình & lưu sẵn để tái sử dụng 1 chạm"
+            steps={[
+              'Tải luồng video gốc',
+              'Kiểm tra thông số FFprobe & lưu vào Kho Video Nền',
+            ]}
+            stepIntervalMs={3000}
+          />
+
+          <div className="form-grid" style={{ marginBottom: 16 }}>
+            <div>
+              <MediaDropzone
+                accept="video/*"
+                disabled={uploadingBg}
+                loading={uploadingBg}
+                error={errors.bgVideo}
+                icon={Upload}
+                title={
+                  uploadingBg
+                    ? 'Đang tải video nền lên máy chủ...'
+                    : 'Kéo thả hoặc chọn tệp Video Nền (.mp4, .mov, .webm)'
+                }
+                hint="VD: Lái xe ban đêm, mưa chill bên cửa sổ, chơi đàn, nấu ăn..."
+                onFilesSelected={handleUploadBgFiles}
+              />
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  marginTop: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <SwitchCard
+                  icon={BookmarkPlus}
+                  checked={saveUploadedToLib}
+                  onChange={setSaveUploadedToLib}
+                >
+                  Lưu vào Kho Video Nền
+                </SwitchCard>
+                <input
+                  className="input"
+                  style={{ flex: 1, minWidth: 160 }}
+                  placeholder="Tên gợi nhớ khi lưu kho (tùy chọn)"
+                  value={bgCustomTitle}
+                  onChange={(e) => setBgCustomTitle(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div
+              className="surface-box"
+              style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 12 }}
+            >
+              <div>
+                <label className="form-label">Hoặc dán link YouTube / TikTok để tải làm Video Nền</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    className={`input ${errors.bgUrl ? 'input-error' : ''}`}
+                    style={{ flex: 1 }}
+                    placeholder="https://www.youtube.com/shorts/... hoặc TikTok..."
+                    value={bgUrlInput}
+                    onChange={(e) => {
+                      setBgUrlInput(e.target.value);
+                      clearError('bgUrl', 'bgVideo');
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ whiteSpace: 'nowrap' }}
+                    disabled={savingBgUrl}
+                    onClick={handleDownloadBgFromUrl}
+                  >
+                    {savingBgUrl ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
+                    <span>{savingBgUrl ? 'Đang tải...' : 'Tải vào Kho'}</span>
+                  </button>
+                </div>
+                <FieldError message={errors.bgUrl} />
+              </div>
+
+              {selectedBgPreviewUrl && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: 'var(--bg-step)',
+                    border: '1px solid var(--brand-border)',
+                  }}
+                >
+                  <video
+                    src={selectedBgPreviewUrl}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    style={{
+                      width: 52,
+                      height: 80,
+                      objectFit: 'cover',
+                      borderRadius: 6,
+                      background: '#000',
+                    }}
+                  />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="text-xs fw-700 text-brand">
+                      <Film size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+                      Đã chọn Video Nền sẵn sàng
+                    </div>
+                    <div
+                      className="text-xs text-muted"
+                      style={{
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                       }}
-                      title={bg.title}
                     >
-                      {bg.title}
+                      {selectedBgPath}
                     </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginTop: 3,
-                      }}
-                    >
-                      <span className="text-muted" style={{ fontSize: 11 }}>
-                        {formatSecondsVi(Math.round((bg.duration_ms || 0) / 1000))}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteSavedBg(bg, e)}
-                        title="Xóa khỏi Kho Video Nền"
-                        style={{
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'var(--danger)',
-                          cursor: 'pointer',
-                          padding: 2,
-                          display: 'inline-flex',
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <StudioLoadingBanner
-          loading={uploadingBg || savingBgUrl}
-          title={
-            savingBgUrl
-              ? 'Đang tải video nền từ liên kết trực tuyến vào Kho Video Nền...'
-              : 'Đang tải tệp video nền lên máy chủ cục bộ...'
-          }
-          subtitle="Hệ thống đang kiểm tra khung hình & lưu sẵn để tái sử dụng 1 chạm"
-          steps={[
-            'Tải luồng video gốc',
-            'Kiểm tra thông số FFprobe & lưu vào Kho Video Nền',
-          ]}
-          stepIntervalMs={3000}
-        />
-
-        <div className="form-grid" style={{ marginBottom: 12 }}>
-          <div>
-            <MediaDropzone
-              accept="video/*"
-              disabled={uploadingBg}
-              loading={uploadingBg}
-              error={errors.bgVideo}
-              icon={Upload}
-              title={
-                uploadingBg
-                  ? 'Đang tải video nền lên máy chủ...'
-                  : 'Kéo thả hoặc chọn tệp Video Nền (.mp4, .mov, .webm) từ máy tính / điện thoại'
-              }
-              hint="VD: Lái xe ban đêm, mưa chill bên cửa sổ, chơi đàn, Minecraft parkour, nấu ăn..."
-              onFilesSelected={handleUploadBgFiles}
-            />
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                alignItems: 'center',
-                marginTop: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <SwitchCard
-                icon={BookmarkPlus}
-                checked={saveUploadedToLib}
-                onChange={setSaveUploadedToLib}
-              >
-                Lưu luôn vào Kho Video Nền
-              </SwitchCard>
-              <input
-                className="input"
-                style={{ flex: 1, minWidth: 160, minHeight: 36 }}
-                placeholder="Tên gợi nhớ khi lưu kho (tùy chọn)"
-                value={bgCustomTitle}
-                onChange={(e) => setBgCustomTitle(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            className="surface-box"
-            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10 }}
-          >
-            <div>
-              <label className="form-label">
-                Hoặc dán link YouTube / TikTok để tải về làm Video Nền
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  className={`input ${errors.bgUrl ? 'input-error' : ''}`}
-                  style={{ flex: 1, minHeight: 37 }}
-                  placeholder="https://www.youtube.com/shorts/... hoặc TikTok..."
-                  value={bgUrlInput}
-                  onChange={(e) => {
-                    setBgUrlInput(e.target.value);
-                    clearError('bgUrl', 'bgVideo');
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ minHeight: 37, whiteSpace: 'nowrap' }}
-                  disabled={savingBgUrl}
-                  onClick={handleDownloadBgFromUrl}
-                >
-                  {savingBgUrl ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
-                  <span>{savingBgUrl ? 'Đang tải...' : 'Tải vào Kho'}</span>
-                </button>
-              </div>
-              <FieldError message={errors.bgUrl} />
-            </div>
-
-            {selectedBgPreviewUrl && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: 8,
-                  borderRadius: 8,
-                  background: 'var(--bg-step)',
-                  border: '1px solid var(--brand-border)',
-                }}
-              >
-                <video
-                  src={selectedBgPreviewUrl}
-                  muted
-                  loop
-                  autoPlay
-                  playsInline
-                  style={{ width: 54, height: 84, objectFit: 'cover', borderRadius: 6, background: '#000' }}
-                />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-text)' }}>
-                    <Film size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-                    Đã chọn Video Nền sẵn sàng
-                  </div>
-                  <div
-                    className="text-muted"
-                    style={{
-                      fontSize: 11.5,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {selectedBgPath}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div>
-              <div
-                className="text-sub"
-                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}
+              <div>
+                <div
+                  className="text-xs text-sub"
+                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
+                >
+                  <span>Độ phủ tối làm nổi bật Thẻ Bình Luận</span>
+                  <strong>{Math.round((layoutConfig.threads_bg_dim ?? 0.28) * 100)}%</strong>
+                </div>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="0.65"
+                  step="0.03"
+                  style={{ width: '100%' }}
+                  value={layoutConfig.threads_bg_dim ?? 0.28}
+                  onChange={(e) =>
+                    updateThreadsLayout({ threads_bg_dim: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <SwitchCard
+                checked={layoutConfig.auto_skip_black_intro !== false}
+                onChange={(val) => updateThreadsLayout({ auto_skip_black_intro: val })}
               >
-                <span>Độ phủ tối làm nổi bật Thẻ Bình Luận</span>
-                <strong>{Math.round((layoutConfig.threads_bg_dim ?? 0.28) * 100)}%</strong>
-              </div>
-              <input
-                type="range"
-                min="0.05"
-                max="0.65"
-                step="0.03"
-                style={{ width: '100%' }}
-                value={layoutConfig.threads_bg_dim ?? 0.28}
-                onChange={(e) =>
-                  updateThreadsLayout({ threads_bg_dim: parseFloat(e.target.value) })
-                }
-              />
-            </div>
-
-            <SwitchCard
-              checked={layoutConfig.auto_skip_black_intro !== false}
-              onChange={(val) => updateThreadsLayout({ auto_skip_black_intro: val })}
-            >
-              Tự bỏ 1–3s đầu nếu bị tối đen (giữ nguyên 100% màu sắc gốc)
-            </SwitchCard>
-          </div>
-        </div>
-      </div>
-
-      {/* STEP 3: FLOATING CARD STYLE, POP SFX & AUDIO */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">3</span>
-          <div>
-            <div className="step-title">
-              Giao diện Thẻ Bình Luận Nổi (Gọn Đẹp Không Đánh Số), Tiếng Pop &amp; Nhạc Nền
-            </div>
-            <div className="step-desc">
-              Thẻ bình luận hiển thị tự nhiên đúng giao diện Threads kèm ảnh đính kèm bên trong thẻ
+                Tự bỏ 1–3s đầu nếu bị tối đen
+              </SwitchCard>
             </div>
           </div>
-        </div>
 
-        <div style={{ marginBottom: 14 }}>
-          <ModeChoiceGrid
-            options={CARD_THEME_CHOICES}
-            value={layoutConfig.threads_card_theme || 'DARK_THREADS'}
-            onChange={(val) => updateThreadsLayout({ threads_card_theme: val })}
-          />
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="form-label" style={{ marginBottom: 7 }}>
-            Hiệu ứng Dẫn Mắt Người Đọc theo giọng nói &amp; Chuyển động thẻ Slide-up Spring
-          </label>
-          <ModeChoiceGrid
-            options={EYE_GUIDE_CHOICES}
-            value={layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT'}
-            onChange={(val) => updateThreadsLayout({ threads_eye_guide_mode: val })}
-          />
-        </div>
-
-        <div className="toggle-grid" style={{ marginBottom: 14 }}>
-          <SwitchCard checked={enablePopSfx} onChange={setEnablePopSfx}>
-            Phát tiếng &ldquo;Pop&rdquo; nhẹ mỗi khi nảy thẻ bình luận mới
-          </SwitchCard>
-          <SwitchCard checked={keepBgAudio} onChange={setKeepBgAudio}>
-            Giữ tiếng động gốc của video nền (mưa, đàn, phố đêm...)
-          </SwitchCard>
-          <SwitchCard
-            checked={layoutConfig.safe_zone_guard !== false}
-            onChange={(val) => updateThreadsLayout({ safe_zone_guard: val })}
-          >
-            Tự căn vùng an toàn TikTok/Shorts (né nút Tim/Share bên phải &amp; Caption dưới đáy)
-          </SwitchCard>
-          <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
-            Âm hiệu điểm nhấn (Chuông ấm mở đầu 3s &amp; Click êm khi hiện ảnh đính kèm)
-          </SwitchCard>
-        </div>
-
-        {/* OPT-IN SERIES SPLITTER + CINEMATIC AMBIENCE & STORY PROGRESS BAR (ALL DEFAULT OFF / 1) */}
-        <div
-          className="surface-box"
-          style={{
-            marginBottom: 14,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 10,
-            alignItems: 'end',
-          }}
-        >
-          <div>
-            <label className="form-label" style={{ fontSize: 12, marginBottom: 4 }}>
-              📚 Chia Series nhiều phần (Mặc định 1 phần)
-            </label>
-            <select
-              className="select"
-              value={seriesParts}
-              onChange={(e) => setSeriesParts(Number(e.target.value))}
-            >
-              <option value={1}>1 phần trọn vẹn (Mặc định)</option>
-              <option value={2}>Chia 2 phần (Tự chèn thẻ ngắt sang Phần 2)</option>
-              <option value={3}>Chia 3 phần (Series Phần 1 - 2 - 3)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="form-label" style={{ fontSize: 12, marginBottom: 4 }}>
-              ✨ Lớp phủ không khí điện ảnh (Mặc định Tắt)
-            </label>
-            <select
-              className="select"
-              value={layoutConfig.ambience_overlay || 'NONE'}
-              onChange={(e) => updateThreadsLayout({ ambience_overlay: e.target.value })}
-            >
-              <option value="NONE">Tắt hiệu ứng (Giữ nguyên bản 100%)</option>
-              <option value="GOLDEN_BOKEH">✨ Hạt bụi nắng vàng (Golden Bokeh)</option>
-              <option value="NIGHT_RAIN">🌧️ Mưa đêm phố thị (Night Rain)</option>
-              <option value="WARM_LIGHT_LEAK">🌅 Vệt nắng chiều ấm (Warm Light Leak)</option>
-              <option value="VINTAGE_FILM_35MM">🎞️ Phim nhựa cổ điển 35mm</option>
-            </select>
-          </div>
-
-          <SwitchCard
-            checked={Boolean(layoutConfig.story_progress_bar_enabled)}
-            onChange={(val) => updateThreadsLayout({ story_progress_bar_enabled: val })}
-          >
-            Thanh tiến trình đốt truyện trên đỉnh (Mặc định Tắt)
-          </SwitchCard>
-        </div>
-
-        {keepBgAudio && (
-          <div className="surface-box" style={{ marginBottom: 14 }}>
-            <div
-              className="text-sub"
-              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}
-            >
-              <span>Âm lượng tiếng gốc của video nền lót dưới giọng đọc</span>
-              <strong>{Math.round(bgAudioVolume * 100)}%</strong>
-            </div>
-            <input
-              type="range"
-              min="0.04"
-              max="0.45"
-              step="0.02"
-              style={{ width: '100%' }}
-              value={bgAudioVolume}
-              onChange={(e) => setBgAudioVolume(parseFloat(e.target.value))}
-            />
-          </div>
-        )}
-
-        <div className="form-grid">
           <InlineBgmSelector
             bgmPresets={bgmPresets}
             bgmPresetId={bgmPresetId}
@@ -3128,35 +2946,159 @@ export default function ThreadsStudioForm({
             customBgmPath={customBgmPath}
             onCustomBgmChange={setCustomBgmPath}
             notify={notify}
-            label="Nhạc nền Lofi / Chill lót nhẹ"
+            label="Nhạc nền Lofi / Chill lót nhẹ dưới cuộc trò chuyện"
           />
+        </div>
+      )}
 
-          <div className="selector-card">
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Phụ đề chạy thêm dưới đáy video (Tùy chọn)
-            </label>
+      {/* ==================== BƯỚC 3: GIAO DIỆN THẺ NỔI & XUẤT BẢN ==================== */}
+      {showStep3 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">3</span>
+            <div>
+              <div className="step-title">Giao diện Thẻ nổi, Dẫn mắt người đọc &amp; Xuất bản</div>
+              <div className="step-desc">
+                Chọn giao diện thẻ hiển thị trên nền 9:16 và các âm hiệu chuyển thẻ
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label className="form-label">Chủ đề giao diện Thẻ nổi</label>
+            <ModeChoiceGrid
+              options={CARD_THEME_CHOICES}
+              value={layoutConfig.threads_card_theme || 'DARK_THREADS'}
+              onChange={(val) => updateThreadsLayout({ threads_card_theme: val })}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label className="form-label">Hiệu ứng dẫn mắt người đọc theo giọng nói</label>
+            <ModeChoiceGrid
+              options={EYE_GUIDE_CHOICES}
+              value={layoutConfig.threads_eye_guide_mode || 'ACTIVE_HIGHLIGHT'}
+              onChange={(val) => updateThreadsLayout({ threads_eye_guide_mode: val })}
+            />
+          </div>
+
+          <div className="toggle-grid" style={{ marginBottom: 16 }}>
+            <SwitchCard checked={enablePopSfx} onChange={setEnablePopSfx}>
+              Phát tiếng &ldquo;Pop&rdquo; nhẹ mỗi khi nảy thẻ mới
+            </SwitchCard>
+            <SwitchCard checked={keepBgAudio} onChange={setKeepBgAudio}>
+              Giữ tiếng động gốc của video nền (mưa, đàn, phố đêm...)
+            </SwitchCard>
+            <SwitchCard
+              checked={layoutConfig.safe_zone_guard !== false}
+              onChange={(val) => updateThreadsLayout({ safe_zone_guard: val })}
+            >
+              Tự căn vùng an toàn TikTok / Shorts
+            </SwitchCard>
+            <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
+              Âm hiệu điểm nhấn (Chuông mở đầu 3s &amp; Click ảnh)
+            </SwitchCard>
+          </div>
+
+          {keepBgAudio && (
+            <div className="surface-box" style={{ marginBottom: 16 }}>
+              <div
+                className="text-xs text-sub"
+                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
+              >
+                <span>Âm lượng tiếng gốc của video nền lót dưới giọng đọc</span>
+                <strong>{Math.round(bgAudioVolume * 100)}%</strong>
+              </div>
+              <input
+                type="range"
+                min="0.04"
+                max="0.45"
+                step="0.02"
+                style={{ width: '100%' }}
+                value={bgAudioVolume}
+                onChange={(e) => setBgAudioVolume(parseFloat(e.target.value))}
+              />
+            </div>
+          )}
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Phụ đề chạy thêm dưới đáy video (Tùy chọn)</label>
             <select
               className="select"
               value={subtitleStyle}
               onChange={(e) => setSubtitleStyle(e.target.value)}
             >
               <option value="NONE">
-                Tắt phụ đề dưới đáy (Khuyên dùng vì chữ &amp; ảnh đã hiện rõ trên Thẻ Threads)
+                Tắt phụ đề dưới đáy (Khuyên dùng vì chữ đã hiện rõ trên Thẻ nổi)
               </option>
               <option value="KARAOKE_CAPCUT">Bật thêm chữ Karaoke chạy từng từ</option>
               <option value="CINEMA">Bật thêm phụ đề câu thanh lịch</option>
             </select>
-            <div className="text-muted" style={{ fontSize: 11.8 }}>
-              Mỗi thẻ bình luận nổi đã tự động căn chữ &amp; ảnh đính kèm ngay tầm mắt người xem, khớp từng mili-giây giọng đọc.
-            </div>
           </div>
+
+          <StudioCollapsible
+            icon={SlidersHorizontal}
+            title="Chia Series nhiều phần, Lớp phủ điện ảnh & Thanh đốt truyện (Tùy chọn)"
+            subtitle="Tự tách bài dài thành Phần 1 - 2 - 3 hoặc bật hiệu ứng hạt nắng / mưa đêm"
+            badge={
+              Number(seriesParts) > 1 ||
+              (layoutConfig.ambience_overlay && layoutConfig.ambience_overlay !== 'NONE') ||
+              layoutConfig.story_progress_bar_enabled
+                ? 'Đang bật'
+                : ''
+            }
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 12,
+                alignItems: 'end',
+              }}
+            >
+              <div>
+                <label className="form-label">Chia Series nhiều phần</label>
+                <select
+                  className="select"
+                  value={seriesParts}
+                  onChange={(e) => setSeriesParts(Number(e.target.value))}
+                >
+                  <option value={1}>1 phần trọn vẹn (Mặc định)</option>
+                  <option value={2}>Chia 2 phần (Tự chèn thẻ sang Phần 2)</option>
+                  <option value={3}>Chia 3 phần (Series Phần 1 - 2 - 3)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">Lớp phủ không khí điện ảnh</label>
+                <select
+                  className="select"
+                  value={layoutConfig.ambience_overlay || 'NONE'}
+                  onChange={(e) => updateThreadsLayout({ ambience_overlay: e.target.value })}
+                >
+                  <option value="NONE">Tắt hiệu ứng (Giữ nguyên bản 100%)</option>
+                  <option value="GOLDEN_BOKEH">Hạt bụi nắng vàng (Golden Bokeh)</option>
+                  <option value="NIGHT_RAIN">Mưa đêm phố thị (Night Rain)</option>
+                  <option value="WARM_LIGHT_LEAK">Vệt nắng chiều ấm (Warm Light Leak)</option>
+                  <option value="VINTAGE_FILM_35MM">Phim nhựa cổ điển 35mm</option>
+                </select>
+              </div>
+
+              <SwitchCard
+                checked={Boolean(layoutConfig.story_progress_bar_enabled)}
+                onChange={(val) => updateThreadsLayout({ story_progress_bar_enabled: val })}
+              >
+                Thanh tiến trình đốt truyện trên đỉnh
+              </SwitchCard>
+            </div>
+          </StudioCollapsible>
         </div>
-      </div>
+      )}
 
       <StudioLoadingBanner
         loading={submitting}
         title="Đang khởi tạo dự án Video Threads & đưa vào tiến trình dựng..."
-        subtitle="Hệ thống đang chuẩn bị thẻ giao diện Threads nổi và bộ đôi 2 giọng đọc chính"
+        subtitle="Hệ thống đang chuẩn bị thẻ giao diện nổi và bộ đôi 2 giọng đọc chính"
         steps={[
           'Kiểm tra dữ liệu bài đăng & bình luận',
           'Khởi động tiến trình tổng hợp giọng đọc & ghép khung 9:16',
@@ -3164,42 +3106,28 @@ export default function ThreadsStudioForm({
         stepIntervalMs={1800}
       />
 
-      {/* STICKY ACTION BAR */}
-      <div className="sticky-action-bar">
-        <span className="text-sub" style={{ fontSize: 12.2 }}>
-          Tự động lưu nháp • <strong>Ctrl + Enter</strong> để xuất ngay
-        </span>
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            flex: 1,
-            justifyContent: 'flex-end',
-          }}
-        >
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ minHeight: 42 }}
-            disabled={submitting || extracting || uploadingBg || savingBgUrl}
-            onClick={() => handleStartThreadsVideo(false)}
-          >
-            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
-            Đưa sang Chờ duyệt kịch bản
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ minWidth: 245, minHeight: 42, fontSize: 14, fontWeight: 700 }}
-            disabled={submitting || extracting || uploadingBg || savingBgUrl}
-            onClick={() => handleStartThreadsVideo(true)}
-          >
-            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
-            {submitting ? 'Đang khởi tạo dự án...' : 'Bắt đầu dựng Video Threads ngay'}
-          </button>
-        </div>
-      </div>
+      <StudioStepFooter
+        activeStep={activeStep}
+        totalSteps={3}
+        showAllSteps={showAllSteps}
+        onStepChange={setActiveStep}
+        nextStepLabel={
+          activeStep === 1 ? 'Tiếp tục: Chọn Video Nền & Nhạc' : 'Tiếp tục: Giao diện Thẻ & Xuất'
+        }
+        hintText="Tự động lưu nháp • Ctrl + Enter để xuất ngay"
+        secondaryAction={{
+          label: 'Duyệt kịch bản trước',
+          icon: submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />,
+          disabled: submitting || extracting || uploadingBg || savingBgUrl,
+          onClick: () => handleStartThreadsVideo(false),
+        }}
+        primaryAction={{
+          label: submitting ? 'Đang khởi tạo...' : 'Bắt đầu dựng Video ngay',
+          icon: submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />,
+          disabled: submitting || extracting || uploadingBg || savingBgUrl,
+          onClick: () => handleStartThreadsVideo(true),
+        }}
+      />
     </div>
   );
 }

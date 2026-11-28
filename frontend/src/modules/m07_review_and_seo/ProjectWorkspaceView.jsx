@@ -44,8 +44,17 @@ import {
   GROUP_COLOR_PALETTE,
   InlineBgmSelector,
   InlineVoiceSelector,
+  StudioPageHeader,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
+
+const MODE_TO_TAB = {
+  MOVIE_CLIPPER: 'movie',
+  PRODUCT_SHOWCASE: 'product',
+  TOPIC_VIDEO: 'topic',
+  TOPIC_TO_SHORTS: 'topic',
+  THREADS_TOPIC: 'threads',
+};
 
 const RUNNING_STATES = [
   'QUEUED',
@@ -137,6 +146,8 @@ export default function ProjectWorkspaceView({
   setLayoutConfig,
   onPreviewFrameReady,
   onQuickEditStateChange,
+  onNavigateTab,
+  lastCreationTab = 'topic',
   notify,
 }) {
   const [filterMode, setFilterMode] = useState('ALL');
@@ -820,100 +831,138 @@ export default function ProjectWorkspaceView({
       ? groupMap[activeGroupId]
       : null;
 
+  const runningTotal = projects.filter(
+    (p) => RUNNING_STATES.includes(p.state) || p.state === 'PAUSED'
+  ).length;
+  const reviewTotal = projects.filter((p) => p.state === 'AWAITING_REVIEW').length;
+  const doneTotal = projects.filter((p) => p.state === 'COMPLETED').length;
+
   return (
     <div>
-      {/* PARENT PROJECT CONTAINERS STRIP (DỰ ÁN CHA CHỨA CÁC DỰ ÁN CON) */}
-      <div className="parent-groups-strip">
-        <span
+      {/* UNIFIED WORKSPACE PAGE HEADER WITH CROSS-PAGE STUDIO NAVIGATION */}
+      <div className="card" style={{ padding: '18px 22px', marginBottom: 16 }}>
+        <StudioPageHeader
+          icon={FolderKanban}
+          title="Quản Lý Dự Án, Duyệt Kịch Bản & Xuất MP4"
+          subtitle="Theo dõi tiến trình kết xuất GPU trực tiếp, chỉnh sửa nhanh từng câu thoại, tải gói Video MP4 & nội dung SEO"
+          badges={[
+            { label: `${projects.length} dự án`, cls: 'badge-info' },
+            runningTotal > 0 ? { label: `${runningTotal} đang xử lý`, cls: 'badge-warn' } : null,
+            reviewTotal > 0 ? { label: `${reviewTotal} chờ duyệt`, cls: 'badge-info' } : null,
+            doneTotal > 0 ? { label: `${doneTotal} hoàn tất`, cls: 'badge-ok' } : null,
+          ]}
+          actions={
+            onNavigateTab ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => onNavigateTab(lastCreationTab)}
+              >
+                <Plus size={14} /> Tạo video mới
+              </button>
+            ) : null
+          }
+        />
+
+        {/* PARENT PROJECT CONTAINERS STRIP */}
+        <div
           style={{
-            fontSize: 12.4,
-            fontWeight: 800,
-            color: 'var(--text-primary)',
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            whiteSpace: 'nowrap',
-            marginRight: 4,
+            gap: 8,
+            overflowX: 'auto',
+            paddingTop: 2,
           }}
         >
-          <FolderTree size={15} style={{ color: 'var(--brand-text)' }} />
-          Dự Án Cha:
-        </span>
+          <span
+            className="text-xs fw-700 text-main"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              whiteSpace: 'nowrap',
+              marginRight: 4,
+            }}
+          >
+            <FolderTree size={15} style={{ color: 'var(--brand-text)' }} />
+            Nhóm Series:
+          </span>
 
-        <button
-          type="button"
-          className={`group-chip ${activeGroupId === 'ALL' ? 'active' : ''}`}
-          onClick={() => onSelectGroup && onSelectGroup('ALL')}
-        >
-          <span>Tất cả ({projects.length})</span>
-        </button>
+          <button
+            type="button"
+            className={`group-chip ${activeGroupId === 'ALL' ? 'active' : ''}`}
+            onClick={() => onSelectGroup && onSelectGroup('ALL')}
+          >
+            <span>Tất cả ({projects.length})</span>
+          </button>
 
-        <button
-          type="button"
-          className={`group-chip ${activeGroupId === 'UNGROUPED' ? 'active' : ''}`}
-          onClick={() => onSelectGroup && onSelectGroup('UNGROUPED')}
-        >
-          <span>Độc lập ({ungroupedCount})</span>
-        </button>
+          <button
+            type="button"
+            className={`group-chip ${activeGroupId === 'UNGROUPED' ? 'active' : ''}`}
+            onClick={() => onSelectGroup && onSelectGroup('UNGROUPED')}
+          >
+            <span>Độc lập ({ungroupedCount})</span>
+          </button>
 
-        {projectGroups.map((grp) => {
-          const isAct = activeGroupId === grp.group_id;
-          return (
-            <div
-              key={grp.group_id}
-              className={`group-chip ${isAct ? 'active' : ''}`}
-              onClick={() => onSelectGroup && onSelectGroup(grp.group_id)}
-              title={grp.description || `Dự Án Cha: ${grp.name}`}
-            >
-              <span
-                className="group-dot"
-                style={{ background: grp.color_tag || '#0ea5e9' }}
-              />
-              <span>
-                {grp.name} ({grp.project_count || 0})
-              </span>
-              {isAct && (
-                <button
-                  type="button"
-                  title={`Xóa Dự Án Cha "${grp.name}" (giữ nguyên các dự án con)`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteParentGroup(grp);
-                  }}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--danger)',
-                    cursor: 'pointer',
-                    padding: 0,
-                    marginLeft: 2,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          );
-        })}
+          {projectGroups.map((grp) => {
+            const isAct = activeGroupId === grp.group_id;
+            return (
+              <div
+                key={grp.group_id}
+                className={`group-chip ${isAct ? 'active' : ''}`}
+                onClick={() => onSelectGroup && onSelectGroup(grp.group_id)}
+                title={grp.description || `Dự Án Cha: ${grp.name}`}
+              >
+                <span
+                  className="group-dot"
+                  style={{ background: grp.color_tag || '#6366f1' }}
+                />
+                <span>
+                  {grp.name} ({grp.project_count || 0})
+                </span>
+                {isAct && (
+                  <button
+                    type="button"
+                    title={`Xóa Dự Án Cha "${grp.name}" (giữ nguyên các dự án con)`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteParentGroup(grp);
+                    }}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--danger-text)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      marginLeft: 2,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
 
-        <button
-          type="button"
-          className={`btn btn-sm ${creatingGroup ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ marginLeft: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}
-          onClick={() => setCreatingGroup((p) => !p)}
-        >
-          {creatingGroup ? (
-            <>
-              <X size={13} /> Đóng
-            </>
-          ) : (
-            <>
-              <FolderPlus size={14} /> + Tạo Dự Án Cha
-            </>
-          )}
-        </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${creatingGroup ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ marginLeft: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}
+            onClick={() => setCreatingGroup((p) => !p)}
+          >
+            {creatingGroup ? (
+              <>
+                <X size={13} /> Đóng
+              </>
+            ) : (
+              <>
+                <FolderPlus size={14} /> Tạo nhóm Series
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* INLINE PARENT GROUP CREATOR */}
@@ -921,36 +970,34 @@ export default function ProjectWorkspaceView({
         <div
           className="card"
           style={{
-            marginBottom: 14,
-            padding: '14px 16px',
+            marginBottom: 16,
+            padding: '16px 18px',
             borderColor: 'var(--brand)',
           }}
         >
           <div
+            className="text-sm fw-700 text-brand"
             style={{
-              fontWeight: 700,
-              fontSize: 13.6,
-              color: 'var(--brand-text)',
-              marginBottom: 8,
+              marginBottom: 10,
               display: 'flex',
               alignItems: 'center',
               gap: 6,
             }}
           >
-            <FolderPlus size={15} /> Tạo Dự Án Cha mới để gom quản lý nhiều dự án video con (Series / Chiến dịch / Khách hàng)
+            <FolderPlus size={15} /> Tạo Nhóm Dự Án Cha mới để gom quản lý nhiều dự án con
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               className="input"
-              style={{ flex: 1, minWidth: 220, minHeight: 37 }}
-              placeholder="Tên Dự Án Cha (VD: Series Học Guitar 30 Ngày / Bộ sưu tập Đàn Violin S2...)"
+              style={{ flex: 1, minWidth: 220 }}
+              placeholder="Tên nhóm Series (VD: Series Học Guitar 30 Ngày / Bộ sưu tập Đàn Violin...)"
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreateParentGroup()}
             />
             <input
               className="input"
-              style={{ flex: 1, minWidth: 190, minHeight: 37 }}
+              style={{ flex: 1, minWidth: 190 }}
               placeholder="Ghi chú ngắn (tùy chọn)"
               value={newGroupDesc}
               onChange={(e) => setNewGroupDesc(e.target.value)}
@@ -976,18 +1023,17 @@ export default function ProjectWorkspaceView({
             </div>
             <button
               type="button"
-              className="btn btn-primary btn-sm"
-              style={{ minHeight: 37 }}
+              className="btn btn-primary"
               disabled={savingGroup}
               onClick={handleCreateParentGroup}
             >
-              <Plus size={14} /> {savingGroup ? 'Đang tạo...' : 'Lưu Dự Án Cha'}
+              <Plus size={14} /> {savingGroup ? 'Đang tạo...' : 'Lưu nhóm'}
             </button>
           </div>
         </div>
       )}
 
-      {/* 2-COLUMN MASTER-DETAIL WORKSPACE (NO MORE JUMPING UP & DOWN!) */}
+      {/* 2-COLUMN MASTER-DETAIL WORKSPACE */}
       <div className="workspace-split-2col">
         {/* LEFT STICKY MASTER PANE */}
         <div className="workspace-master-pane">
@@ -997,21 +1043,19 @@ export default function ProjectWorkspaceView({
               justifyContent: 'space-between',
               alignItems: 'center',
               gap: 6,
-              marginBottom: 8,
+              marginBottom: 10,
             }}
           >
             <div
+              className="text-sm fw-700 text-main"
               style={{
-                fontWeight: 800,
-                fontSize: 14.2,
-                color: 'var(--text-primary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
                 minWidth: 0,
               }}
             >
-              <FolderKanban size={17} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
+              <FolderKanban size={16} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
               <span
                 style={{
                   whiteSpace: 'nowrap',
@@ -1022,13 +1066,11 @@ export default function ProjectWorkspaceView({
                 {activeGroupObj ? activeGroupObj.name : 'Danh sách Dự Án'}
               </span>
             </div>
-            <span className="badge badge-info" style={{ fontSize: 11, padding: '2px 8px' }}>
-              {filteredProjects.length} mục
-            </span>
+            <span className="badge badge-info">{filteredProjects.length} mục</span>
           </div>
 
           {/* INSTANT SEARCH INPUT */}
-          <div style={{ position: 'relative', marginBottom: 8 }}>
+          <div style={{ position: 'relative', marginBottom: 10 }}>
             <Search
               size={14}
               style={{
@@ -1040,11 +1082,10 @@ export default function ProjectWorkspaceView({
               }}
             />
             <input
-              className="input"
+              className="input input-sm"
               style={{
-                minHeight: 35,
-                padding: '6px 30px 6px 32px',
-                fontSize: 12.8,
+                paddingLeft: 32,
+                paddingRight: 28,
               }}
               placeholder="Tìm nhanh theo tên dự án..."
               value={searchQuery}
@@ -1079,24 +1120,14 @@ export default function ProjectWorkspaceView({
               ['RUNNING', 'Đang chạy'],
               ['REVIEW', 'Chờ duyệt'],
               ['DONE', 'Hoàn thành'],
-              ['UNPOSTED', 'Chưa đăng kênh'],
+              ['UNPOSTED', 'Chưa đăng'],
               ['POSTED', 'Đã đăng'],
             ].map(([k, lbl]) => (
               <button
                 key={k}
                 type="button"
+                className={`filter-pill ${filterMode === k ? 'active' : ''}`}
                 onClick={() => setFilterMode(k)}
-                style={{
-                  padding: '4px 9px',
-                  borderRadius: 999,
-                  fontSize: 11.5,
-                  fontWeight: filterMode === k ? 700 : 500,
-                  cursor: 'pointer',
-                  border:
-                    filterMode === k ? '1px solid var(--brand)' : '1px solid var(--border)',
-                  background: filterMode === k ? 'var(--brand-soft)' : 'var(--bg-step)',
-                  color: filterMode === k ? 'var(--brand-text)' : 'var(--text-secondary)',
-                }}
               >
                 {lbl}
               </button>
@@ -1108,9 +1139,9 @@ export default function ProjectWorkspaceView({
             {filteredProjects.length === 0 ? (
               <div
                 className="step-box"
-                style={{ marginBottom: 0, textAlign: 'center', padding: '22px 12px' }}
+                style={{ marginBottom: 0, textAlign: 'center', padding: '24px 12px' }}
               >
-                <div className="text-sub" style={{ fontSize: 13 }}>
+                <div className="text-sm text-sub">
                   Không có dự án nào khớp bộ lọc hiện tại.
                 </div>
               </div>
@@ -1124,14 +1155,12 @@ export default function ProjectWorkspaceView({
                     key={p.id}
                     onClick={() => onSelectProject(p.id)}
                     className={`project-row-item ${activeSel ? 'active' : ''}`}
-                    style={{ padding: '10px 12px', alignItems: 'flex-start' }}
+                    style={{ alignItems: 'flex-start' }}
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div
+                        className="text-sm fw-600 text-main"
                         style={{
-                          fontWeight: 700,
-                          fontSize: 13.4,
-                          color: 'var(--text-primary)',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 7,
@@ -1159,9 +1188,8 @@ export default function ProjectWorkspaceView({
                       </div>
 
                       <div
-                        className="text-muted"
+                        className="text-xs text-muted"
                         style={{
-                          fontSize: 11.6,
                           marginTop: 4,
                           display: 'flex',
                           alignItems: 'center',
@@ -1171,60 +1199,27 @@ export default function ProjectWorkspaceView({
                       >
                         <span>{MODE_LABELS[p.mode] || p.mode}</span>
                         {parentGrp && (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '1px 7px',
-                              borderRadius: 999,
-                              background: 'var(--bg-elevated)',
-                              border: '1px solid var(--border)',
-                              color: 'var(--text-secondary)',
-                              fontWeight: 600,
-                            }}
-                          >
+                          <span className="badge">
                             <span
                               className="group-dot"
                               style={{
-                                width: 7,
-                                height: 7,
-                                background: parentGrp.color_tag || '#0ea5e9',
+                                width: 6,
+                                height: 6,
+                                background: parentGrp.color_tag || '#6366f1',
                               }}
                             />
                             {parentGrp.name}
                           </span>
                         )}
                         {Array.isArray(p.published_channels) && p.published_channels.length > 0 && (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              padding: '1px 6px',
-                              borderRadius: 999,
-                              background: 'rgba(16, 185, 129, 0.14)',
-                              border: '1px solid rgba(16, 185, 129, 0.4)',
-                              color: 'var(--success-text)',
-                              fontSize: 10.4,
-                              fontWeight: 700,
-                            }}
-                            title={`Đã đăng: ${p.published_channels.join(', ')}`}
-                          >
+                          <span className="badge badge-ok">
                             <CheckCircle2 size={10} /> Đã đăng ({p.published_channels.length})
                           </span>
                         )}
                       </div>
 
                       {lp && RUNNING_STATES.includes(p.state) && (
-                        <div
-                          style={{
-                            fontSize: 11.5,
-                            marginTop: 4,
-                            color: 'var(--brand-text)',
-                            fontWeight: 600,
-                          }}
-                        >
+                        <div className="text-xs text-brand fw-600" style={{ marginTop: 4 }}>
                           {lp.step_label ? `${lp.step_label} • ` : ''}
                           {lp.percent || 0}%
                           {lp.eta_sec !== null && lp.eta_sec !== undefined
@@ -1242,7 +1237,7 @@ export default function ProjectWorkspaceView({
                           ? 'badge-warn'
                           : 'badge-info'
                       }`}
-                      style={{ fontSize: 10.8, padding: '2px 7px', flexShrink: 0 }}
+                      style={{ flexShrink: 0 }}
                     >
                       {STAGE_LABELS[p.state] || p.state}
                     </span>
@@ -1256,17 +1251,26 @@ export default function ProjectWorkspaceView({
         {/* RIGHT DETAIL PANE */}
         <div className="workspace-detail-pane">
           {!detail ? (
-            <div className="card" style={{ textAlign: 'center', padding: '44px 24px' }}>
+            <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
               <FolderKanban
                 size={34}
-                style={{ color: 'var(--brand-text)', margin: '0 auto 10px', display: 'block' }}
+                style={{ color: 'var(--brand-text)', margin: '0 auto 12px', display: 'block' }}
               />
-              <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 4 }}>
+              <div className="text-md fw-700" style={{ marginBottom: 6 }}>
                 Chọn một dự án ở cột bên trái để xem video &amp; bộ nội dung SEO
               </div>
-              <div className="text-sub" style={{ fontSize: 13.2 }}>
-                Bạn cũng có thể gom các dự án con vào cùng một Dự Án Cha ở thanh phía trên để quản lý theo Series dễ dàng.
+              <div className="text-sm text-sub" style={{ marginBottom: 16 }}>
+                Bạn cũng có thể tạo dự án mới hoặc gom các dự án con vào chung Nhóm Series.
               </div>
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => onNavigateTab(lastCreationTab)}
+                >
+                  <Plus size={15} /> Bắt đầu tạo video mới
+                </button>
+              )}
             </div>
           ) : (
             <div className="card" style={{ marginBottom: 0 }}>
@@ -1280,7 +1284,7 @@ export default function ProjectWorkspaceView({
                       display: 'flex',
                       gap: 8,
                       alignItems: 'center',
-                      marginTop: 7,
+                      marginTop: 8,
                       flexWrap: 'wrap',
                     }}
                   >
@@ -1296,41 +1300,31 @@ export default function ProjectWorkspaceView({
                       {STAGE_LABELS[detail.state] || detail.state}
                     </span>
                     <span className="badge">{MODE_LABELS[detail.mode] || detail.mode}</span>
-                    <span className="badge" style={{ fontSize: 11.2 }}>
-                      {savedAspect}
-                    </span>
+                    <span className="badge">{savedAspect}</span>
                     {detail.saved_request?.visual_mode === 'MOTION_GRAPHICS' && (
-                      <span className="badge badge-ok" style={{ fontSize: 11.2 }}>
-                        🎬 Motion Graphics
-                      </span>
+                      <span className="badge badge-ok">Motion Graphics</span>
                     )}
                     {detail.mode === 'THREADS_TOPIC' &&
                       detail.saved_request?.layout_config?.threads_card_theme ===
                         'MIDNIGHT_VINYL_LYRIC' && (
-                        <span className="badge badge-info" style={{ fontSize: 11.2 }}>
-                          🎵 Đĩa Than Vinyl
-                        </span>
+                        <span className="badge badge-info">Đĩa Than Vinyl</span>
                       )}
                     {detail.mode === 'THREADS_TOPIC' &&
                       detail.saved_request?.layout_config?.threads_card_theme ===
                         'QUIZ_COUNTDOWN_CARD' && (
-                        <span className="badge badge-info" style={{ fontSize: 11.2 }}>
-                          ⏱ Đố Vui 3-2-1
-                        </span>
+                        <span className="badge badge-info">Đố Vui 3-2-1</span>
                       )}
                     {detail.saved_request?.layout_config?.ambience_overlay &&
                       detail.saved_request.layout_config.ambience_overlay !== 'NONE' && (
-                        <span className="badge badge-ok" style={{ fontSize: 11.2 }}>
-                          ✨ {detail.saved_request.layout_config.ambience_overlay}
+                        <span className="badge badge-ok">
+                          {detail.saved_request.layout_config.ambience_overlay}
                         </span>
                       )}
                     {detail.saved_request?.layout_config?.story_progress_bar_enabled && (
-                      <span className="badge badge-info" style={{ fontSize: 11.2 }}>
-                        Thanh đốt truyện
-                      </span>
+                      <span className="badge badge-info">Thanh đốt truyện</span>
                     )}
                     {detail.clips?.length > 0 && (
-                      <span className="text-sub" style={{ fontSize: 12.8 }}>
+                      <span className="text-xs text-sub">
                         Đã xuất xong{' '}
                         <strong>
                           {completedClips.length}/{detail.clips.length}
@@ -1348,47 +1342,42 @@ export default function ProjectWorkspaceView({
                         marginLeft: 4,
                       }}
                     >
-                      <FolderTree size={13} style={{ color: 'var(--brand-text)' }} />
+                      <FolderTree size={14} style={{ color: 'var(--brand-text)' }} />
                       <select
-                        className="select"
+                        className="select select-sm"
                         style={{
                           width: 'auto',
                           minWidth: 185,
-                          minHeight: 31,
-                          padding: '3px 9px',
-                          fontSize: 12.2,
                         }}
                         value={detail.parent_group_id || ''}
                         onChange={(e) => handleAssignDetailGroup(e.target.value)}
-                        title="Gắn hoặc chuyển dự án con này sang Dự Án Cha khác"
+                        title="Gắn hoặc chuyển dự án con này sang Nhóm Series khác"
                       >
-                        <option value="">Dự án độc lập (Chưa gắn Dự Án Cha)</option>
+                        <option value="">Dự án độc lập</option>
                         {projectGroups.map((g) => (
                           <option key={g.group_id} value={g.group_id}>
-                            Dự Án Cha: {g.name}
+                            Series: {g.name}
                           </option>
                         ))}
                       </select>
                     </div>
                   </div>
 
-                  {/* CHANNEL PUBLISHING TRACKER (ĐÃ ĐĂNG TIKTOK / YOUTUBE SHORTS / REELS) */}
+                  {/* CHANNEL PUBLISHING TRACKER */}
                   <div
                     style={{
                       display: 'flex',
                       gap: 6,
                       alignItems: 'center',
                       flexWrap: 'wrap',
-                      marginTop: 9,
-                      padding: '7px 10px',
-                      borderRadius: 9,
+                      marginTop: 10,
+                      padding: '8px 12px',
+                      borderRadius: 10,
                       background: 'var(--bg-step)',
-                      border: '1px solid var(--border-subtle)',
+                      border: '1px solid var(--border)',
                     }}
                   >
-                    <span style={{ fontSize: 11.8, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      Trạng thái đăng kênh:
-                    </span>
+                    <span className="text-xs fw-600 text-sub">Trạng thái đăng kênh:</span>
                     {[
                       ['TIKTOK', 'TikTok'],
                       ['YOUTUBE_SHORTS', 'YouTube Shorts'],
@@ -1401,23 +1390,21 @@ export default function ProjectWorkspaceView({
                           type="button"
                           disabled={savingPubStatus}
                           onClick={() => handleTogglePublishedChannel(chKey)}
-                          className={`btn btn-sm ${isPosted ? 'btn-primary' : 'btn-secondary'}`}
+                          className={`filter-pill ${isPosted ? 'active' : ''}`}
                           style={{
-                            minHeight: 27,
-                            padding: '2px 9px',
-                            fontSize: 11.5,
-                            background: isPosted ? 'rgba(16, 185, 129, 0.22)' : undefined,
-                            borderColor: isPosted ? 'rgba(16, 185, 129, 0.65)' : undefined,
+                            background: isPosted ? 'var(--success-soft)' : undefined,
+                            borderColor: isPosted ? 'var(--success-border)' : undefined,
                             color: isPosted ? 'var(--success-text)' : undefined,
                           }}
                         >
-                          {isPosted ? <CheckCircle2 size={12} /> : null} {isPosted ? `Đã đăng ${chLabel}` : chLabel}
+                          {isPosted ? <CheckCircle2 size={12} /> : null}{' '}
+                          {isPosted ? `Đã đăng ${chLabel}` : chLabel}
                         </button>
                       );
                     })}
                     <input
-                      className="input"
-                      style={{ flex: 1, minWidth: 170, minHeight: 28, padding: '3px 9px', fontSize: 11.8 }}
+                      className="input input-sm"
+                      style={{ flex: 1, minWidth: 170 }}
                       placeholder="Ghi chú link bài đăng / giờ hẹn đăng..."
                       value={pubNoteDraft}
                       onChange={(e) => setPubNoteDraft(e.target.value)}
@@ -1432,13 +1419,23 @@ export default function ProjectWorkspaceView({
                 </div>
 
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                  {onNavigateTab && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => onNavigateTab(MODE_TO_TAB[detail.mode] || 'topic')}
+                      title="Mở xưởng sản xuất cùng chế độ để làm thêm tập tiếp theo"
+                    >
+                      <Plus size={14} /> Tạo thêm cùng chế độ
+                    </button>
+                  )}
+
                   {completedClips.length > 0 && (
                     <>
                       <a
                         href={studioApi.getProjectZipUrl(detail.id)}
                         download={`ChaosShortVideo_${detail.id}.zip`}
                         className="btn btn-primary btn-sm"
-                        style={{ textDecoration: 'none' }}
                         title="Tải trọn gói 1 tệp .ZIP gồm toàn bộ Video MP4, Ảnh bìa & Nội dung SEO"
                       >
                         <Archive size={14} /> Tải trọn gói (.ZIP)
@@ -1447,10 +1444,9 @@ export default function ProjectWorkspaceView({
                         href={studioApi.getProjectCapcutPackUrl(detail.id)}
                         download={`CapCut_StemPack_${detail.id}.zip`}
                         className="btn btn-secondary btn-sm"
-                        style={{ textDecoration: 'none', borderColor: 'var(--brand-border)' }}
-                        title="Tải Gói Tách Lớp cho CapCut PC (Voice sạch không nhạc nền .wav + Phụ đề .srt + Thẻ PNG trong suốt)"
+                        title="Tải Gói Tách Lớp cho CapCut PC (Voice sạch .wav + Phụ đề .srt + Thẻ PNG trong suốt)"
                       >
-                        <Columns size={14} /> Gói Tách Lớp CapCut (.ZIP)
+                        <Columns size={14} /> Gói CapCut (.ZIP)
                       </a>
                     </>
                   )}
@@ -1571,10 +1567,10 @@ export default function ProjectWorkspaceView({
                         return (
                           <div
                             key={ph.key}
+                            className="text-xs"
                             style={{
-                              padding: '5px 8px',
+                              padding: '6px 9px',
                               borderRadius: 7,
-                              fontSize: 11.4,
                               fontWeight: isCurPhase ? 700 : 600,
                               display: 'flex',
                               alignItems: 'center',
@@ -1582,12 +1578,12 @@ export default function ProjectWorkspaceView({
                               border: isCurPhase
                                 ? '1px solid var(--brand)'
                                 : isDonePhase
-                                ? '1px solid rgba(16, 185, 129, 0.45)'
-                                : '1px solid var(--border-subtle)',
+                                ? '1px solid var(--success-border)'
+                                : '1px solid var(--border)',
                               background: isCurPhase
                                 ? 'var(--brand-soft)'
                                 : isDonePhase
-                                ? 'rgba(16, 185, 129, 0.10)'
+                                ? 'var(--success-soft)'
                                 : 'var(--bg-elevated)',
                               color: isCurPhase
                                 ? 'var(--brand-text)'
@@ -1788,7 +1784,7 @@ export default function ProjectWorkspaceView({
                           gap: 8,
                         }}
                       >
-                        <strong style={{ fontSize: 14.5, color: 'var(--brand-text)' }}>
+                        <strong className="text-md text-brand">
                           Biên tập kịch bản, ước lượng giây đọc từng câu, đổi giọng &amp; xuất lại nhanh
                         </strong>
                         {detail.state !== 'AWAITING_REVIEW' && (
@@ -2479,20 +2475,12 @@ export default function ProjectWorkspaceView({
                         </div>
 
                         <div style={{ minWidth: 0 }}>
-                          <h4
-                            style={{
-                              fontSize: 15.5,
-                              fontWeight: 700,
-                              color: 'var(--text-primary)',
-                              marginBottom: 4,
-                            }}
-                          >
+                          <h4 className="text-md fw-700 text-main" style={{ marginBottom: 4 }}>
                             Phần {clip.part_number}: {clip.hook_banner_title}
                           </h4>
                           <div
-                            className="text-muted"
+                            className="text-xs text-muted"
                             style={{
-                              fontSize: 12,
                               marginBottom: 8,
                               wordBreak: 'break-all',
                             }}
@@ -2513,7 +2501,7 @@ export default function ProjectWorkspaceView({
                                     marginBottom: 6,
                                   }}
                                 >
-                                  <strong style={{ fontSize: 13.2, color: 'var(--text-primary)' }}>
+                                  <strong className="text-sm text-main">
                                     Nội dung đăng YouTube Shorts
                                   </strong>
                                   <div style={{ display: 'flex', gap: 6 }}>
@@ -2535,17 +2523,17 @@ export default function ProjectWorkspaceView({
                                     </button>
                                   </div>
                                 </div>
-                                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                <div className="text-sm fw-700 text-main">
                                   {clip.seo.yt_shorts_title}
                                 </div>
                                 <div
-                                  className="text-sub"
+                                  className="text-sm text-sub"
                                   style={{ marginTop: 4, whiteSpace: 'pre-line' }}
                                 >
                                   {clip.seo.yt_shorts_desc}
                                 </div>
                                 {ytTags.length > 0 && (
-                                  <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                  <div className="text-xs text-muted" style={{ marginTop: 6 }}>
                                     Từ khóa: {ytTags.join(', ')}
                                   </div>
                                 )}
@@ -2562,7 +2550,7 @@ export default function ProjectWorkspaceView({
                                     flexWrap: 'wrap',
                                   }}
                                 >
-                                  <strong style={{ fontSize: 13.2, color: 'var(--text-primary)' }}>
+                                  <strong className="text-sm text-main">
                                     Caption &amp; Hashtag đăng TikTok
                                   </strong>
                                   <button
@@ -2572,7 +2560,7 @@ export default function ProjectWorkspaceView({
                                     <Copy size={13} /> Sao chép đăng TikTok
                                   </button>
                                 </div>
-                                <div className="text-sub" style={{ whiteSpace: 'pre-line' }}>
+                                <div className="text-sm text-sub" style={{ whiteSpace: 'pre-line' }}>
                                   {tiktokFull}
                                 </div>
                               </div>
@@ -2589,9 +2577,7 @@ export default function ProjectWorkspaceView({
                                       flexWrap: 'wrap',
                                     }}
                                   >
-                                    <strong
-                                      style={{ fontSize: 13.2, color: 'var(--success-text)' }}
-                                    >
+                                    <strong className="text-sm text-success">
                                       Bình luận đầu tiên gợi ý ghim dưới video
                                     </strong>
                                     <button
@@ -2603,7 +2589,7 @@ export default function ProjectWorkspaceView({
                                       <Copy size={13} /> Sao chép
                                     </button>
                                   </div>
-                                  <div className="text-sub" style={{ whiteSpace: 'pre-line' }}>
+                                  <div className="text-sm text-sub" style={{ whiteSpace: 'pre-line' }}>
                                     {clip.seo.pinned_comment}
                                   </div>
                                 </div>

@@ -2,12 +2,14 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import {
   Bell,
   BellOff,
+  CheckCircle2,
   Clapperboard,
   Copy,
   Cpu,
   FileText,
   Film,
   FolderKanban,
+  Loader2,
   MessageSquareText,
   Mic,
   Moon,
@@ -19,6 +21,7 @@ import {
   ShoppingBag,
   SlidersHorizontal,
   Smartphone,
+  Sparkles,
   Sun,
   Wifi,
   X,
@@ -90,6 +93,8 @@ const ThreadsStudioForm = lazyWithAutoReload(
   'threads'
 );
 
+const CREATION_TABS = new Set(['topic', 'threads', 'product', 'movie']);
+
 const ACTIVE_STATES = [
   'QUEUED',
   'INGESTING',
@@ -144,8 +149,12 @@ function fireDesktopNotification(title, body) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('topic');
+  const [lastCreationTab, setLastCreationTab] = useState('topic');
   const [visitedTabs, setVisitedTabs] = useState(() => new Set(['topic']));
   const [theme, setTheme] = useState(() => localStorage.getItem('chaos_theme') || 'dark');
+  const [showAllSteps, setShowAllSteps] = useState(
+    () => localStorage.getItem('chaos_show_all_steps') === 'true'
+  );
   const [systemStatus, setSystemStatus] = useState(null);
   const [voices, setVoices] = useState([]);
   const [bgmPresets, setBgmPresets] = useState([]);
@@ -187,6 +196,16 @@ export default function App() {
     localStorage.setItem('chaos_theme', theme);
   }, [theme]);
 
+  const handleToggleShowAllSteps = (nextVal) => {
+    const val = Boolean(nextVal);
+    setShowAllSteps(val);
+    try {
+      localStorage.setItem('chaos_show_all_steps', String(val));
+    } catch {
+      // ignore
+    }
+  };
+
   const notify = (msg) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
@@ -216,18 +235,18 @@ export default function App() {
           if (alertOnRef.current) {
             playCompletionChime();
             fireDesktopNotification(
-              '✅ ChaosShortVideo — Xuất video hoàn tất!',
+              'ChaosShortVideo — Xuất video hoàn tất!',
               `Dự án "${p.name}" đã dựng xong MP4 & gói SEO.`
             );
           }
           if (document.hidden) {
-            document.title = `✅ XONG VIDEO: ${p.name.slice(0, 26)}!`;
+            document.title = `XONG VIDEO: ${p.name.slice(0, 26)}!`;
           }
           notify(`Đã xuất xong video: "${p.name}"!`);
         } else if (oldState && ACTIVE_STATES.includes(oldState) && p.state === 'FAILED') {
           if (alertOnRef.current) {
             fireDesktopNotification(
-              '⚠️ Dự án gặp sự cố khi xử lý',
+              'Dự án gặp sự cố khi xử lý',
               `"${p.name}": ${p.error_message || 'Vui lòng mở ứng dụng để xem chi tiết.'}`
             );
           }
@@ -277,7 +296,6 @@ export default function App() {
     }
   };
 
-  // Smart Adaptive Polling: 2.6s ONLY when a job is actively running & tab is visible; 18s when idle!
   useEffect(() => {
     refreshAllData(true);
     let timerId = null;
@@ -285,7 +303,6 @@ export default function App() {
 
     const scheduleNext = () => {
       if (cancelled) return;
-      // Keep polling every 5.5s in background tabs WHILE a video is rendering so Chime + Desktop Notification fire on time!
       const delay = hasRunningRef.current
         ? document.hidden
           ? 5500
@@ -329,7 +346,6 @@ export default function App() {
     };
   }, []);
 
-  // Global Studio Keyboard Shortcuts (Esc closes modals)
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -343,6 +359,9 @@ export default function App() {
   }, [showSettings, showLanQrModal, showMobilePreviewDrawer]);
 
   const handleTabSwitch = (nextTab) => {
+    if (CREATION_TABS.has(nextTab)) {
+      setLastCreationTab(nextTab);
+    }
     setActiveTab(nextTab);
     setVisitedTabs((prev) => (prev.has(nextTab) ? prev : new Set([...prev, nextTab])));
     setInspectorManualOverride(null);
@@ -370,16 +389,12 @@ export default function App() {
   const runningProjects = projects.filter((p) => ACTIVE_OR_PAUSED.includes(p.state));
   const pinnedJob = runningProjects[0] || null;
   const queuedCount = projects.filter((p) => p.state === 'QUEUED').length;
+  const reviewCount = projects.filter((p) => p.state === 'AWAITING_REVIEW').length;
+  const completedCount = projects.filter((p) => p.state === 'COMPLETED').length;
   const currentPreviewFrameUrl = previewFramesByTab[activeTab] || '';
 
-  // Smart Context-Aware Inspector: Auto-open on creation tabs or when Quick Re-Edit is open in Workspace;
-  // Auto-collapse on Voices Lab and Workspace browsing so 2-column Master-Detail has generous space!
   const autoShowInspector =
-    activeTab === 'product' ||
-    activeTab === 'movie' ||
-    activeTab === 'topic' ||
-    activeTab === 'threads' ||
-    (activeTab === 'workspace' && Boolean(workspaceEditingMode));
+    CREATION_TABS.has(activeTab) || (activeTab === 'workspace' && Boolean(workspaceEditingMode));
   const showDesktopInspector =
     inspectorManualOverride !== null ? inspectorManualOverride : autoShowInspector;
 
@@ -434,121 +449,172 @@ export default function App() {
     },
     {
       id: 'voices',
-      label: 'Giọng Đọc & Thu Mẫu',
+      label: 'Phòng Giọng Đọc',
       shortLabel: 'Giọng Đọc',
       icon: Mic,
       count: voices.length,
     },
   ];
 
+  const apiKeyReady = Boolean(
+    systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
+  );
+
   return (
     <div className="app-shell">
-      {/* PINNED TOP STUDIO HEADER */}
+      {/* PINNED TOP PRODUCTION HEADER WITH UNIFIED PIPELINE JOURNEY BAR */}
       <header className="studio-header">
         <div className="brand-wrap">
           <div className="brand-mark">
-            <Clapperboard size={20} strokeWidth={2.1} />
+            <Clapperboard size={19} strokeWidth={2.2} />
           </div>
           <div style={{ minWidth: 0 }}>
             <div className="brand-title">
               ChaosShortVideo
-              <span className="brand-version-pill">Studio v3.3</span>
+              <span className="brand-version-pill">Studio v3.5</span>
             </div>
             <div className="brand-sub">
-              Phân tích ý tưởng bằng AI, dựng video bán hàng, cắt dịch phim & quản lý dự án đa tầng
+              Hệ thống sản xuất Video Ngắn AI • Đồng bộ từ Ý tưởng đến Xuất bản
             </div>
           </div>
         </div>
 
+        {/* GLOBAL CROSS-PAGE PIPELINE JOURNEY BAR */}
+        <div className="pipeline-journey-pill" role="navigation" aria-label="Hành trình sản xuất video">
+          <button
+            type="button"
+            className={`journey-step-btn ${CREATION_TABS.has(activeTab) ? 'active' : ''}`}
+            onClick={() => handleTabSwitch(lastCreationTab)}
+            title="Quay lại xưởng sáng tạo kịch bản & thiết lập video"
+          >
+            <Sparkles size={13} />
+            <span>1. Tạo kịch bản</span>
+          </button>
+          <span className="journey-arrow">→</span>
+          <button
+            type="button"
+            className={`journey-step-btn ${
+              activeTab === 'workspace' && Boolean(pinnedJob) ? 'active' : ''
+            }`}
+            onClick={() => {
+              if (pinnedJob) setActiveProjectId(pinnedJob.id);
+              handleTabSwitch('workspace');
+            }}
+            title="Theo dõi tiến trình kết xuất GPU thời gian thực"
+          >
+            {pinnedJob ? (
+              <>
+                <Loader2 size={13} className="spin" style={{ color: 'var(--brand-text)' }} />
+                <span>
+                  2. Đang dựng ({Math.round(Number(pinnedJob.live_progress?.percent || 0))}%)
+                </span>
+              </>
+            ) : (
+              <>
+                <Cpu size={13} />
+                <span>2. Hàng đợi GPU</span>
+              </>
+            )}
+          </button>
+          <span className="journey-arrow">→</span>
+          <button
+            type="button"
+            className={`journey-step-btn ${
+              activeTab === 'workspace' && !pinnedJob ? 'active' : ''
+            }`}
+            onClick={() => handleTabSwitch('workspace')}
+            title="Duyệt kịch bản, tải Video MP4 & sao chép bộ SEO"
+          >
+            <CheckCircle2 size={13} />
+            <span>
+              3. Duyệt &amp; Tải MP4
+              {reviewCount > 0 ? ` (${reviewCount} chờ)` : completedCount > 0 ? ` (${completedCount})` : ''}
+            </span>
+          </button>
+        </div>
+
         <div className="header-actions">
+          <span className={`badge ${primaryGpu ? 'badge-ok' : 'badge-warn'} hide-on-mobile`}>
+            <Cpu size={13} />
+            {primaryGpu
+              ? `${primaryGpu.name.replace('NVIDIA GeForce ', '')} • ${Math.round(
+                  primaryGpu.vram_total_mb / 1024
+                )}GB${systemStatus?.nvenc_available ? ' NVENC' : ''}`
+              : 'CPU Mode'}
+          </span>
+
           {lanUrls.length > 0 && (
             <button
               type="button"
-              className="badge badge-info hide-on-mobile"
-              style={{ cursor: 'pointer' }}
-              title="Bấm để mở Mã QR quét bằng điện thoại cùng mạng Wi-Fi"
+              className="icon-toolbar-btn hide-on-mobile"
+              title={`Quét QR kết nối Điện thoại cùng Wi-Fi (${lanUrls[0]})`}
               onClick={() => setShowLanQrModal(true)}
             >
-              <QrCode size={13} /> Điện thoại LAN: {lanUrls[0].replace('http://', '')}
+              <QrCode size={16} />
             </button>
           )}
 
-          <span className={`badge ${primaryGpu ? 'badge-ok' : 'badge-warn'} hide-on-mobile`}>
-            <Cpu size={13} />{' '}
-            {primaryGpu
-              ? `${primaryGpu.name} (${Math.round(primaryGpu.vram_total_mb / 1024)}GB${
-                  systemStatus?.nvenc_available ? ' • NVENC' : ''
-                })`
-              : 'Chế độ CPU'}
-          </span>
-
           <button
             type="button"
-            className={`btn btn-sm ${showDesktopInspector ? 'btn-primary' : 'btn-secondary'} hide-on-mobile`}
+            className={`icon-toolbar-btn ${showDesktopInspector ? 'active' : ''} hide-on-mobile`}
             onClick={() => setInspectorManualOverride(!showDesktopInspector)}
-            title="Đóng / Mở bảng mô phỏng khung 9:16 và theo dõi phần cứng bên phải"
+            title="Đóng / Mở khung mô phỏng 9:16 và phần cứng bên phải"
           >
-            {showDesktopInspector ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-            <span>Khung 9:16 &amp; GPU</span>
+            {showDesktopInspector ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
           </button>
 
           <button
             type="button"
-            className={`btn btn-sm ${completionAlertOn ? 'btn-primary' : 'btn-secondary'} hide-on-mobile`}
+            className={`icon-toolbar-btn ${completionAlertOn ? 'active' : ''} hide-on-mobile`}
             onClick={async () => {
               const nextVal = !completionAlertOn;
               setCompletionAlertOn(nextVal);
               if (nextVal) {
                 playCompletionChime();
-                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+                if (
+                  typeof window !== 'undefined' &&
+                  'Notification' in window &&
+                  Notification.permission === 'default'
+                ) {
                   try {
                     await Notification.requestPermission();
                   } catch {
                     // ignore
                   }
                 }
-                notify('Đã bật chuông & thông báo màn hình khi xuất xong video ở tab khác!');
+                notify('Đã bật chuông báo hoàn tất video.');
               } else {
                 notify('Đã tắt chuông báo hoàn tất.');
               }
             }}
-            title="Bật / Tắt chuông báo & thông báo Windows khi render xong lúc bạn đang ở tab khác"
+            title={completionAlertOn ? 'Đang bật chuông báo hoàn tất' : 'Đang tắt chuông báo'}
           >
-            {completionAlertOn ? <Bell size={14} /> : <BellOff size={14} />}
-            <span>{completionAlertOn ? 'Chuông báo' : 'Tắt chuông'}</span>
+            {completionAlertOn ? <Bell size={16} /> : <BellOff size={16} />}
           </button>
 
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
+            className="icon-toolbar-btn"
             onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-            title="Chuyển đổi giao diện Tối / Sáng dễ nhìn"
+            title={theme === 'dark' ? 'Chuyển sang giao diện Sáng' : 'Chuyển sang giao diện Tối'}
           >
-            {theme === 'dark' ? (
-              <>
-                <Sun size={14} /> <span className="hide-on-mobile">Nền sáng</span>
-              </>
-            ) : (
-              <>
-                <Moon size={14} /> <span className="hide-on-mobile">Nền tối</span>
-              </>
-            )}
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 
           <button className="btn btn-secondary btn-sm" onClick={() => setShowSettings(true)}>
-            <SlidersHorizontal size={14} />{' '}
-            <span className="hide-on-mobile">API &amp; Sao lưu</span>
+            <SlidersHorizontal size={14} />
+            <span className="hide-on-mobile">Cài đặt API</span>
           </button>
         </div>
       </header>
 
       {/* LOCKED 3-PANE INDEPENDENT SCROLL WORKSPACE */}
       <div className={`studio-layout-3col ${showDesktopInspector ? '' : 'inspector-collapsed'}`}>
-        {/* LEFT FIXED SIDEBAR */}
+        {/* LEFT CLEAN SAAS SIDEBAR */}
         <aside className="studio-sidebar">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <nav className="nav-rail">
-              <div className="nav-section-label">Công cụ sản xuất</div>
+              <div className="nav-section-label">Xưởng sáng tạo</div>
               {navItems.slice(0, 4).map((item) => {
                 const Icon = item.icon;
                 return (
@@ -558,7 +624,7 @@ export default function App() {
                     onClick={() => handleTabSwitch(item.id)}
                   >
                     <span className="rail-btn-left">
-                      <Icon size={18} strokeWidth={1.9} />
+                      <Icon size={17} strokeWidth={1.9} />
                       <span>{item.label}</span>
                     </span>
                   </button>
@@ -570,6 +636,8 @@ export default function App() {
               </div>
               {navItems.slice(4).map((item) => {
                 const Icon = item.icon;
+                const badgeCount =
+                  item.id === 'workspace' && reviewCount > 0 ? `${reviewCount} duyệt` : item.count;
                 return (
                   <button
                     key={item.id}
@@ -577,10 +645,10 @@ export default function App() {
                     onClick={() => handleTabSwitch(item.id)}
                   >
                     <span className="rail-btn-left">
-                      <Icon size={18} strokeWidth={1.9} />
+                      <Icon size={17} strokeWidth={1.9} />
                       <span>{item.label}</span>
                     </span>
-                    {item.count !== undefined && <span className="rail-count">{item.count}</span>}
+                    {badgeCount !== undefined && <span className="rail-count">{badgeCount}</span>}
                   </button>
                 );
               })}
@@ -588,45 +656,38 @@ export default function App() {
 
             {/* QUICK PARENT PROJECT GROUPS NAVIGATION IN SIDEBAR */}
             {projectGroups.length > 0 && (
-              <div className="nav-rail hide-on-mobile" style={{ padding: '10px 10px 12px' }}>
-                <div className="nav-section-label" style={{ paddingTop: 2 }}>
-                  Dự án cha ({projectGroups.length})
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {projectGroups.slice(0, 6).map((grp) => (
-                    <button
-                      key={grp.group_id}
-                      type="button"
-                      className={`rail-btn ${
-                        activeTab === 'workspace' && activeGroupId === grp.group_id ? 'active' : ''
-                      }`}
-                      style={{ padding: '7px 10px', fontSize: 12.8 }}
-                      onClick={() => {
-                        setActiveGroupId(grp.group_id);
-                        handleTabSwitch('workspace');
-                      }}
-                    >
-                      <span className="rail-btn-left">
-                        <span
-                          className="group-dot"
-                          style={{ background: grp.color_tag || '#0ea5e9' }}
-                        />
-                        <span
-                          style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {grp.name}
-                        </span>
+              <div className="nav-rail hide-on-mobile">
+                <div className="nav-section-label">Nhóm Series ({projectGroups.length})</div>
+                {projectGroups.slice(0, 6).map((grp) => (
+                  <button
+                    key={grp.group_id}
+                    type="button"
+                    className={`rail-btn ${
+                      activeTab === 'workspace' && activeGroupId === grp.group_id ? 'active' : ''
+                    }`}
+                    onClick={() => {
+                      setActiveGroupId(grp.group_id);
+                      handleTabSwitch('workspace');
+                    }}
+                  >
+                    <span className="rail-btn-left">
+                      <span
+                        className="group-dot"
+                        style={{ background: grp.color_tag || '#6366f1' }}
+                      />
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {grp.name}
                       </span>
-                      <span className="rail-count" style={{ fontSize: 10.8, padding: '1px 6px' }}>
-                        {grp.project_count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                    </span>
+                    <span className="rail-count">{grp.project_count}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -639,33 +700,22 @@ export default function App() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: 4,
+                  marginBottom: 6,
                 }}
               >
                 <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: 'var(--brand-text)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
+                  className="text-xs fw-700 text-brand"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                   {pinnedJob.state !== 'PAUSED' && <span className="pulse-dot" />}
-                  {pinnedJob.state === 'PAUSED' ? 'Đang tạm dừng' : 'Đang xử lý video'}
+                  {pinnedJob.state === 'PAUSED' ? 'Đang tạm dừng' : 'Đang dựng video'}
                 </span>
-                {queuedCount > 0 && (
-                  <span className="badge badge-warn" style={{ fontSize: 10.5, padding: '1px 7px' }}>
-                    +{queuedCount} chờ
-                  </span>
-                )}
+                {queuedCount > 0 && <span className="badge badge-warn">+{queuedCount} chờ</span>}
               </div>
 
               <div
+                className="text-sm fw-600 text-main"
                 style={{
-                  fontSize: 13.5,
-                  fontWeight: 700,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -676,33 +726,11 @@ export default function App() {
                 {pinnedJob.name}
               </div>
 
-              <div className="text-sub" style={{ fontSize: 12 }}>
+              <div className="text-xs text-sub">
                 {pinnedJob.live_progress?.step_label ||
                   STAGE_LABELS[pinnedJob.state] ||
                   pinnedJob.state}
               </div>
-
-              {pinnedJob.live_progress?.message && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontFamily: "Consolas, 'JetBrains Mono', monospace",
-                    color: 'var(--brand-text)',
-                    background: 'rgba(15, 23, 42, 0.55)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 5,
-                    padding: '3px 6px',
-                    marginTop: 4,
-                    marginBottom: 4,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                  title={pinnedJob.live_progress.message}
-                >
-                  &gt; {pinnedJob.live_progress.message}
-                </div>
-              )}
 
               <div className="progress-track">
                 <div
@@ -716,16 +744,15 @@ export default function App() {
               </div>
 
               <div
-                className="text-sub"
+                className="text-xs text-sub"
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  fontSize: 12,
-                  marginBottom: 9,
+                  marginBottom: 10,
                 }}
               >
                 <strong>{Number(pinnedJob.live_progress?.percent || 0).toFixed(1)}%</strong>
-                <span style={{ color: 'var(--success-text)', fontWeight: 600 }}>
+                <span className="text-success fw-600">
                   {pinnedJob.live_progress?.eta_sec !== null &&
                   pinnedJob.live_progress?.eta_sec !== undefined
                     ? `Còn ~${formatSecondsVi(pinnedJob.live_progress.eta_sec)}`
@@ -765,118 +792,129 @@ export default function App() {
           )}
         </aside>
 
-        {/* CENTER INDEPENDENT SCROLL WORKSPACE (Lazy-loaded on first visit, then kept mounted!) */}
+        {/* CENTER INDEPENDENT SCROLL WORKSPACE */}
         <main className="studio-center-scroll">
-          <div style={{ display: activeTab === 'topic' ? 'block' : 'none' }}>
-            <TopicStudioForm
-              voices={voices}
-              bgmPresets={bgmPresets}
-              layoutConfig={layoutConfig}
-              setLayoutConfig={setLayoutConfig}
-              projectGroups={projectGroups}
-              onGroupsChanged={refreshGroupsAndProjects}
-              onProjectStarted={handleProjectStarted}
-              notify={notify}
-              apiKeyConfigured={Boolean(
-                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
-              )}
-              onOpenApiSettings={() => setShowSettings(true)}
-            />
-          </div>
-
-          <Suspense
-            fallback={
-              <div className="card" style={{ padding: 24, fontSize: 13.5 }}>
-                Đang mở không gian làm việc...
-              </div>
-            }
-          >
-            {visitedTabs.has('threads') && (
-              <div style={{ display: activeTab === 'threads' ? 'block' : 'none' }}>
-                <ThreadsStudioForm
-                  voices={voices}
-                  bgmPresets={bgmPresets}
-                  layoutConfig={layoutConfig}
-                  setLayoutConfig={setLayoutConfig}
-                  projectGroups={projectGroups}
-                  onGroupsChanged={refreshGroupsAndProjects}
-                  onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
-                  onProjectStarted={handleProjectStarted}
-                  notify={notify}
-                  apiKeyConfigured={Boolean(
-                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
-              )}
-                  onOpenApiSettings={() => setShowSettings(true)}
-                />
-              </div>
-            )}
-
-            {visitedTabs.has('product') && (
-              <div style={{ display: activeTab === 'product' ? 'block' : 'none' }}>
-                <ProductStudioForm
-                  voices={voices}
-                  bgmPresets={bgmPresets}
-                  layoutConfig={layoutConfig}
-                  setLayoutConfig={setLayoutConfig}
-                  projectGroups={projectGroups}
-                  onGroupsChanged={refreshGroupsAndProjects}
-                  onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
-                  onProjectStarted={handleProjectStarted}
-                  notify={notify}
-                  apiKeyConfigured={Boolean(
-                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
-              )}
-                  onOpenApiSettings={() => setShowSettings(true)}
-                />
-              </div>
-            )}
-
-            {visitedTabs.has('movie') && (
-              <div style={{ display: activeTab === 'movie' ? 'block' : 'none' }}>
-                <MovieStudioForm
-                  voices={voices}
-                  bgmPresets={bgmPresets}
-                  layoutConfig={layoutConfig}
-                  setLayoutConfig={setLayoutConfig}
-                  projectGroups={projectGroups}
-                  onGroupsChanged={refreshGroupsAndProjects}
-                  onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
-                  onProjectStarted={handleProjectStarted}
-                  notify={notify}
-                />
-              </div>
-            )}
-
-            {activeTab === 'voices' && (
-              <VoiceCloneLab
-                voices={voices}
-                onVoicesChanged={() => refreshAllData(false)}
-                notify={notify}
-              />
-            )}
-
-            {activeTab === 'workspace' && (
-              <ProjectWorkspaceView
-                activeProjectId={activeProjectId}
-                projects={projects}
-                projectGroups={projectGroups}
-                activeGroupId={activeGroupId}
-                onSelectGroup={setActiveGroupId}
-                onGroupsChanged={refreshGroupsAndProjects}
-                onSelectProject={setActiveProjectId}
-                onProjectsRefresh={refreshGroupsAndProjects}
+          <div className="studio-center-inner">
+            <div style={{ display: activeTab === 'topic' ? 'block' : 'none' }}>
+              <TopicStudioForm
                 voices={voices}
                 bgmPresets={bgmPresets}
                 layoutConfig={layoutConfig}
                 setLayoutConfig={setLayoutConfig}
-                onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
-                onQuickEditStateChange={(isOpen, projMode) =>
-                  setWorkspaceEditingMode(isOpen ? projMode : null)
-                }
+                projectGroups={projectGroups}
+                onGroupsChanged={refreshGroupsAndProjects}
+                onProjectStarted={handleProjectStarted}
+                onNavigateTab={handleTabSwitch}
+                showAllSteps={showAllSteps}
+                onToggleShowAllSteps={handleToggleShowAllSteps}
                 notify={notify}
+                apiKeyConfigured={apiKeyReady}
+                onOpenApiSettings={() => setShowSettings(true)}
               />
-            )}
-          </Suspense>
+            </div>
+
+            <Suspense
+              fallback={
+                <div className="card text-sm text-sub" style={{ padding: 28 }}>
+                  Đang mở không gian làm việc...
+                </div>
+              }
+            >
+              {visitedTabs.has('threads') && (
+                <div style={{ display: activeTab === 'threads' ? 'block' : 'none' }}>
+                  <ThreadsStudioForm
+                    voices={voices}
+                    bgmPresets={bgmPresets}
+                    layoutConfig={layoutConfig}
+                    setLayoutConfig={setLayoutConfig}
+                    projectGroups={projectGroups}
+                    onGroupsChanged={refreshGroupsAndProjects}
+                    onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
+                    onProjectStarted={handleProjectStarted}
+                    onNavigateTab={handleTabSwitch}
+                    showAllSteps={showAllSteps}
+                    onToggleShowAllSteps={handleToggleShowAllSteps}
+                    notify={notify}
+                    apiKeyConfigured={apiKeyReady}
+                    onOpenApiSettings={() => setShowSettings(true)}
+                  />
+                </div>
+              )}
+
+              {visitedTabs.has('product') && (
+                <div style={{ display: activeTab === 'product' ? 'block' : 'none' }}>
+                  <ProductStudioForm
+                    voices={voices}
+                    bgmPresets={bgmPresets}
+                    layoutConfig={layoutConfig}
+                    setLayoutConfig={setLayoutConfig}
+                    projectGroups={projectGroups}
+                    onGroupsChanged={refreshGroupsAndProjects}
+                    onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
+                    onProjectStarted={handleProjectStarted}
+                    onNavigateTab={handleTabSwitch}
+                    showAllSteps={showAllSteps}
+                    onToggleShowAllSteps={handleToggleShowAllSteps}
+                    notify={notify}
+                    apiKeyConfigured={apiKeyReady}
+                    onOpenApiSettings={() => setShowSettings(true)}
+                  />
+                </div>
+              )}
+
+              {visitedTabs.has('movie') && (
+                <div style={{ display: activeTab === 'movie' ? 'block' : 'none' }}>
+                  <MovieStudioForm
+                    voices={voices}
+                    bgmPresets={bgmPresets}
+                    layoutConfig={layoutConfig}
+                    setLayoutConfig={setLayoutConfig}
+                    projectGroups={projectGroups}
+                    onGroupsChanged={refreshGroupsAndProjects}
+                    onPreviewFrameReady={(u) => setTabPreviewFrame('movie', u)}
+                    onProjectStarted={handleProjectStarted}
+                    onNavigateTab={handleTabSwitch}
+                    showAllSteps={showAllSteps}
+                    onToggleShowAllSteps={handleToggleShowAllSteps}
+                    notify={notify}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'voices' && (
+                <VoiceCloneLab
+                  voices={voices}
+                  onVoicesChanged={() => refreshAllData(false)}
+                  onBackToStudio={() => handleTabSwitch(lastCreationTab)}
+                  notify={notify}
+                />
+              )}
+
+              {activeTab === 'workspace' && (
+                <ProjectWorkspaceView
+                  activeProjectId={activeProjectId}
+                  projects={projects}
+                  projectGroups={projectGroups}
+                  activeGroupId={activeGroupId}
+                  onSelectGroup={setActiveGroupId}
+                  onGroupsChanged={refreshGroupsAndProjects}
+                  onSelectProject={setActiveProjectId}
+                  onProjectsRefresh={refreshGroupsAndProjects}
+                  voices={voices}
+                  bgmPresets={bgmPresets}
+                  layoutConfig={layoutConfig}
+                  setLayoutConfig={setLayoutConfig}
+                  onPreviewFrameReady={(u) => setTabPreviewFrame('workspace', u)}
+                  onQuickEditStateChange={(isOpen, projMode) =>
+                    setWorkspaceEditingMode(isOpen ? projMode : null)
+                  }
+                  onNavigateTab={handleTabSwitch}
+                  lastCreationTab={lastCreationTab}
+                  notify={notify}
+                />
+              )}
+            </Suspense>
+          </div>
         </main>
 
         {/* SMART CONTEXT-AWARE RIGHT DESKTOP INSPECTOR */}
@@ -902,7 +940,7 @@ export default function App() {
         className="btn btn-primary floating-preview-fab"
         onClick={() => setShowMobilePreviewDrawer(true)}
       >
-        <Smartphone size={16} /> Xem trước &amp; Phần cứng
+        <Smartphone size={16} /> Khung 9:16 &amp; GPU
       </button>
 
       {/* SLIDE-OVER DRAWER FOR SMALL SCREENS */}
@@ -914,10 +952,10 @@ export default function App() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 12,
+                marginBottom: 14,
               }}
             >
-              <strong style={{ fontSize: 15 }}>Xem trước khung hình &amp; Thiết bị</strong>
+              <strong className="text-md">Mô phỏng khung 9:16 &amp; Thiết bị</strong>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -960,31 +998,19 @@ export default function App() {
 
       {/* LAN WI-FI MOBILE QR MODAL */}
       {showLanQrModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(2, 6, 23, 0.76)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 120,
-            padding: 16,
-          }}
-          onClick={() => setShowLanQrModal(false)}
-        >
+        <div className="modal-backdrop" onClick={() => setShowLanQrModal(false)}>
           <div
             className="card"
             onClick={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: 460, marginBottom: 0, textAlign: 'center' }}
           >
-            <div className="page-header" style={{ marginBottom: 14, textAlign: 'left' }}>
+            <div className="page-header" style={{ marginBottom: 16, textAlign: 'left' }}>
               <div>
                 <div className="page-title">
-                  <Wifi size={19} /> Mở ChaosShortVideo trên Điện thoại
+                  <Wifi size={19} /> Kết nối Điện thoại qua Wi-Fi
                 </div>
                 <div className="page-subtitle">
-                  Tải thẳng ảnh &amp; video gốc vừa chụp từ iPhone / Android vào máy chủ qua Wi-Fi
+                  Tải thẳng ảnh &amp; video gốc từ iPhone / Android vào máy chủ qua mạng LAN
                 </div>
               </div>
               <button
@@ -998,7 +1024,7 @@ export default function App() {
 
             {lanUrls.length > 1 && (
               <div className="form-group" style={{ textAlign: 'left' }}>
-                <label className="form-label">Chọn địa chỉ mạng nội bộ:</label>
+                <label className="form-label">Chọn địa chỉ mạng nội bộ</label>
                 <select
                   className="select"
                   value={activeLanUrl}
@@ -1020,37 +1046,33 @@ export default function App() {
                 borderRadius: 16,
                 background: '#ffffff',
                 border: '2px solid var(--brand)',
-                marginBottom: 12,
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+                marginBottom: 14,
               }}
             >
               <img
                 src={studioApi.getLanQrImageUrl(activeLanUrl)}
                 alt="LAN Wi-Fi QR Code"
-                style={{ width: 220, height: 220, display: 'block' }}
+                style={{ width: 210, height: 210, display: 'block' }}
               />
             </div>
 
-            <div
-              className="step-box"
-              style={{ textAlign: 'left', padding: '12px 14px', marginBottom: 12 }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-                Hướng dẫn kết nối nhanh (Không cần gửi vòng qua Zalo):
+            <div className="step-box" style={{ textAlign: 'left', padding: 14, marginBottom: 14 }}>
+              <div className="text-sm fw-600" style={{ marginBottom: 4 }}>
+                Hướng dẫn kết nối nhanh:
               </div>
-              <div className="text-sub" style={{ fontSize: 12.6, lineHeight: 1.5 }}>
-                1. Đảm bảo điện thoại bắt <strong>cùng mạng Wi-Fi</strong> với máy tính này.
+              <div className="text-xs text-sub">
+                1. Điện thoại kết nối <strong>cùng mạng Wi-Fi</strong> với máy tính này.
                 <br />
-                2. Mở <strong>Camera điện thoại</strong> hướng vào hình trên để mở thẳng giao diện Studio.
+                2. Mở <strong>Camera điện thoại</strong> quét mã QR trên để mở thẳng giao diện Studio.
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
               <input
-                className="input"
+                className="input fw-600"
                 readOnly
                 value={activeLanUrl}
-                style={{ flex: 1, fontWeight: 700, textAlign: 'center' }}
+                style={{ flex: 1, textAlign: 'center' }}
               />
               <button
                 type="button"

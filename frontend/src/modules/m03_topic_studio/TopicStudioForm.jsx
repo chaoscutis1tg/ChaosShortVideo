@@ -4,12 +4,14 @@ import {
   Edit3,
   FileText,
   Flame,
+  FolderTree,
   Image,
   KeyRound,
   Layers,
   Loader2,
   Play,
   RotateCcw,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Video,
@@ -23,7 +25,11 @@ import {
   ModeChoiceGrid,
   ParentGroupSelector,
   scrollToFirstValidationError,
+  StudioCollapsible,
   StudioLoadingBanner,
+  StudioPageHeader,
+  StudioStepFooter,
+  StudioStepNav,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 import MotionArtifactStudio, { MOTION_THEME_OPTIONS } from './MotionArtifactStudio';
@@ -48,7 +54,7 @@ const VISUAL_SOURCE_CHOICES = [
   },
   {
     value: 'MOTION_GRAPHICS',
-    title: '✨ Đồ họa chuyển động (Kiểu Claude / Remotion)',
+    title: 'Đồ họa chuyển động (Kiểu Claude / Remotion)',
     subtitle: 'Chữ động Kinetic, số liệu chạy, biểu đồ & bảng so sánh A/B kiểu Apple / Dan Koe',
     icon: Sparkles,
   },
@@ -92,6 +98,9 @@ export default function TopicStudioForm({
   projectGroups = [],
   onGroupsChanged,
   onProjectStarted,
+  onNavigateTab,
+  showAllSteps = false,
+  onToggleShowAllSteps,
   notify,
   apiKeyConfigured = false,
   onOpenApiSettings,
@@ -104,6 +113,7 @@ export default function TopicStudioForm({
   const savedDraft = loadTopicDraft();
   const rootRef = useRef(null);
 
+  const [activeStep, setActiveStep] = useState(1);
   const [topicTitle, setTopicTitle] = useState(savedDraft.topicTitle || '');
   const [shortBrief, setShortBrief] = useState(savedDraft.shortBrief || '');
   const [keyPoints, setKeyPoints] = useState(savedDraft.keyPoints || '');
@@ -152,10 +162,76 @@ export default function TopicStudioForm({
     updateTopicLayout({ motion_preview_active: visualMode === 'MOTION_GRAPHICS' });
   }, [visualMode]);
 
+  const clearError = (...keys) => {
+    setErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((k) => {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          TOPIC_DRAFT_KEY,
+          JSON.stringify({
+            topicTitle,
+            shortBrief,
+            keyPoints,
+            parentGroupId,
+            visualMode,
+            subtitleStyle,
+            durationSec,
+            partCount,
+            tone,
+          })
+        );
+      } catch {
+        // ignore storage quota
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [
+    topicTitle,
+    shortBrief,
+    keyPoints,
+    parentGroupId,
+    visualMode,
+    subtitleStyle,
+    durationSec,
+    partCount,
+    tone,
+  ]);
+
+  const clearDraft = () => {
+    setTopicTitle('');
+    setShortBrief('');
+    setKeyPoints('');
+    setAiAnalysis(null);
+    setPreviousTitle('');
+    setMotionScenes([]);
+    try {
+      localStorage.removeItem(TOPIC_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+    if (notify) notify('Đã làm mới nội dung nháp.');
+  };
+
   const handleBuildMotionStoryboard = async () => {
     const effTitle = topicTitle.trim() || shortBrief.trim().slice(0, 90);
     if (effTitle.length < 3) {
-      setErrors({ topicTitle: 'Vui lòng nhập tiêu đề hoặc ý tưởng ngắn ở Bước 1 trước khi dựng phân cảnh đồ họa.' });
+      setActiveStep(1);
+      setErrors({
+        topicTitle: 'Vui lòng nhập tiêu đề hoặc ý tưởng ngắn ở Bước 1 trước khi dựng phân cảnh đồ họa.',
+      });
       scrollToFirstValidationError(rootRef);
       notify('Vui lòng nhập tiêu đề chủ đề ở Bước 1 trước.');
       return;
@@ -172,7 +248,9 @@ export default function TopicStudioForm({
       });
       setMotionScenes(res.scenes || []);
       setMotionBrainUsed(res.used_llm_brain || 'Claude / Gemini');
-      notify(`Đã dựng ${(res.scenes || []).length} phân cảnh Đồ họa chuyển động — mời xem thử & gõ lệnh sửa trực tiếp!`);
+      notify(
+        `Đã dựng ${(res.scenes || []).length} phân cảnh Đồ họa chuyển động — mời xem thử & gõ lệnh sửa trực tiếp!`
+      );
     } catch (err) {
       notify(`Lỗi dựng phân cảnh đồ họa: ${err.message}`);
     } finally {
@@ -215,69 +293,6 @@ export default function TopicStudioForm({
     }
   };
 
-  const clearError = (...keys) => {
-    setErrors((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      keys.forEach((k) => {
-        if (next[k]) {
-          delete next[k];
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  };
-
-  // Debounced auto-save form draft (450ms) so typing never blocks the UI thread
-  useEffect(() => {
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          TOPIC_DRAFT_KEY,
-          JSON.stringify({
-            topicTitle,
-            shortBrief,
-            keyPoints,
-            parentGroupId,
-            visualMode,
-            subtitleStyle,
-            durationSec,
-            partCount,
-            tone,
-          })
-        );
-      } catch {
-        // ignore storage quota
-      }
-    }, 450);
-    return () => clearTimeout(t);
-  }, [
-    topicTitle,
-    shortBrief,
-    keyPoints,
-    parentGroupId,
-    visualMode,
-    subtitleStyle,
-    durationSec,
-    partCount,
-    tone,
-  ]);
-
-  const clearDraft = () => {
-    setTopicTitle('');
-    setShortBrief('');
-    setKeyPoints('');
-    setAiAnalysis(null);
-    setPreviousTitle('');
-    try {
-      localStorage.removeItem(TOPIC_DRAFT_KEY);
-    } catch {
-      // ignore
-    }
-    if (notify) notify('Đã làm mới nội dung nháp.');
-  };
-
   const handleAnalyzeBrief = async () => {
     const cleanTitle = topicTitle.trim();
     const cleanBrief = shortBrief.trim();
@@ -297,6 +312,8 @@ export default function TopicStudioForm({
 
     if (Object.keys(nextErrs).length > 0) {
       setErrors(nextErrs);
+      if (nextErrs.topicTitle) setActiveStep(1);
+      else if (nextErrs.partCount) setActiveStep(3);
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
       return;
@@ -340,7 +357,7 @@ export default function TopicStudioForm({
       setAiAnalysis(res);
       notify(
         res.used_api_key
-          ? 'Đã gọi API Key phân tích & triển khai đầy đủ chủ đề, dàn ý chi tiết và cấu hình tối ưu!'
+          ? 'Đã phân tích chuyên sâu qua API AI & tối ưu cấu hình!'
           : 'Đã mở rộng dàn ý chi tiết thành công!'
       );
     } catch (err) {
@@ -366,6 +383,8 @@ export default function TopicStudioForm({
 
     if (Object.keys(nextErrs).length > 0) {
       setErrors(nextErrs);
+      if (nextErrs.topicTitle) setActiveStep(1);
+      else if (nextErrs.partCount) setActiveStep(3);
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
       return;
@@ -417,13 +436,19 @@ export default function TopicStudioForm({
       .map((s) => s.trim())
       .filter((s) => s.length >= 4);
     if (lines.length === 0) {
-      setErrors({ batchTopics: 'Vui lòng nhập ít nhất 1 chủ đề (mỗi dòng 1 chủ đề, ít nhất 4 ký tự).' });
+      setActiveStep(1);
+      setErrors({
+        batchTopics: 'Vui lòng nhập ít nhất 1 chủ đề (mỗi dòng 1 chủ đề, ít nhất 4 ký tự).',
+      });
       scrollToFirstValidationError(rootRef);
       notify('Vui lòng nhập danh sách chủ đề cần chạy hàng loạt.');
       return;
     }
     if (lines.length > 15) {
-      setErrors({ batchTopics: 'Mỗi mẻ chạy tối đa 15 chủ đề để đảm bảo tốc độ và độ ổn định GPU.' });
+      setActiveStep(1);
+      setErrors({
+        batchTopics: 'Mỗi mẻ chạy tối đa 15 chủ đề để đảm bảo tốc độ và độ ổn định GPU.',
+      });
       notify('Tối đa 15 chủ đề mỗi mẻ chạy.');
       return;
     }
@@ -462,7 +487,6 @@ export default function TopicStudioForm({
     }
   };
 
-  // Studio Shortcut: Ctrl+Enter starts automatic video generation when this tab is visible
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -477,703 +501,752 @@ export default function TopicStudioForm({
   });
 
   const hasDraftText = Boolean((topicTitle + shortBrief + keyPoints).trim());
+  const selectedVisualLabel =
+    VISUAL_SOURCE_CHOICES.find((c) => c.value === visualMode)?.title || visualMode;
+
+  const stepItems = [
+    {
+      title: 'Nội dung & Dàn ý AI',
+      meta: topicTitle.trim() ? topicTitle.trim().slice(0, 32) : 'Nhập chủ đề hoặc chọn mẫu',
+      done: Boolean((topicTitle + shortBrief).trim().length >= 3),
+    },
+    {
+      title: 'Hình ảnh & Giọng đọc',
+      meta: visualMode === 'MOTION_GRAPHICS' ? 'Motion Graphics 9:16' : selectedVisualLabel.slice(0, 26),
+      done: activeStep > 2,
+    },
+    {
+      title: 'Hoàn tất & Xuất bản',
+      meta: `~${durationSec}s • ${partCount} tập`,
+      done: false,
+    },
+  ];
+
+  const showStep1 = showAllSteps || activeStep === 1;
+  const showStep2 = showAllSteps || activeStep === 2;
+  const showStep3 = showAllSteps || activeStep === 3;
 
   return (
     <div ref={rootRef} className="card">
-      <div className="page-header">
-        <div>
-          <div className="page-title">
-            <FileText size={20} strokeWidth={2} /> Tạo Video Mới Từ Chủ Đề & Ý Tưởng Ngắn
-          </div>
-          <div className="page-subtitle">
-            Viết tiêu đề kèm vài dòng mô tả ngắn → Bấm <strong>Phân tích &amp; Triển khai chi tiết (AI)</strong> để hệ thống hoàn thiện kịch bản sâu sắc nhất rồi chạy tạo video
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span className={`badge ${apiKeyConfigured ? 'badge-ok' : 'badge-warn'}`}>
-            <KeyRound size={12} /> {apiKeyConfigured ? 'API Key AI sẵn sàng' : 'Chưa gắn API Key'}
-          </span>
-          <span className="badge badge-info">Thời lượng: ~{durationSec}s</span>
-          <span className="badge">{partCount} tập</span>
-          {visualMode === 'MOTION_GRAPHICS' && (
-            <span className="badge badge-ok">🎬 Motion Graphics</span>
-          )}
-          {layoutConfig?.ambience_overlay && layoutConfig.ambience_overlay !== 'NONE' && (
-            <span className="badge badge-ok">✨ Không khí: {layoutConfig.ambience_overlay}</span>
-          )}
-          {layoutConfig?.story_progress_bar_enabled && (
-            <span className="badge badge-info">Thanh đốt truyện</span>
-          )}
-        </div>
-      </div>
-
-      {/* QUICK STARTER CHIPS */}
-      <div className="summary-bar">
-        <span style={{ fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Sparkles size={14} style={{ color: 'var(--brand-text)' }} /> Điền nhanh ý tưởng mẫu:
-        </span>
-        {QUICK_TOPICS.map((qt, idx) => (
-          <button
-            key={idx}
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              setTopicTitle(qt.title);
-              setShortBrief(qt.shortBrief);
-              setKeyPoints('');
-              setAiAnalysis(null);
-            }}
-          >
-            Mẫu {idx + 1}: {qt.title.slice(0, 32)}...
-          </button>
-        ))}
-      </div>
-
-      {/* STEP 1: SHORT BRIEF -> AI EXPAND -> READY TO RUN */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">1</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">Nhập tiêu đề &amp; mô tả ngắn → Bấm Phân tích AI để triển khai chi tiết</div>
-            <div className="step-desc">
-              Chỉ cần gõ ý tưởng ngắn gọn — API AI sẽ tự nâng cấp tiêu đề, viết dàn ý từng phân cảnh, định hướng hình ảnh và chọn sẵn giọng đọc phù hợp nhất
-            </div>
-          </div>
-          {!apiKeyConfigured && onOpenApiSettings && (
+      <StudioPageHeader
+        icon={FileText}
+        title="Tạo Video Từ Chủ Đề & Ý Tưởng"
+        subtitle="Nhập ý tưởng ngắn để AI triển khai kịch bản chi tiết, chọn hình ảnh / Motion Graphics và lồng giọng đọc tự động"
+        badges={[
+          {
+            label: apiKeyConfigured ? 'AI sẵn sàng' : 'Chưa gắn API Key',
+            cls: apiKeyConfigured ? 'badge-ok' : 'badge-warn',
+            icon: KeyRound,
+          },
+          { label: `~${durationSec}s • ${partCount} tập`, cls: 'badge-info' },
+          visualMode === 'MOTION_GRAPHICS'
+            ? { label: 'Motion Graphics', cls: 'badge-ok' }
+            : null,
+        ]}
+        actions={
+          !apiKeyConfigured && onOpenApiSettings ? (
             <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
-              <KeyRound size={13} /> Nhập API Key AI
+              <KeyRound size={13} /> Cấu hình API
             </button>
-          )}
-        </div>
+          ) : null
+        }
+      />
 
-        <ParentGroupSelector
-          projectGroups={projectGroups}
-          value={parentGroupId}
-          onChange={setParentGroupId}
-          onGroupsChanged={onGroupsChanged}
-          notify={notify}
-        />
+      <StudioStepNav
+        steps={stepItems}
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
+        showAllSteps={showAllSteps}
+        onToggleShowAll={onToggleShowAllSteps}
+      />
 
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${!batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setBatchMode(false)}
-          >
-            Tạo 1 chủ đề chi tiết
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setBatchMode(true)}
-          >
-            Chạy hàng loạt nhiều chủ đề (Batch Queue)
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ marginLeft: 'auto', borderColor: 'var(--brand-border)' }}
-            onClick={() => (radarOpen ? setRadarOpen(false) : handleOpenTopicRadar('ALL_HOT'))}
-          >
-            <Flame size={13} /> {radarOpen ? 'Đóng Radar Viral' : 'Săn Chủ Đề Đang Viral'}
-          </button>
-        </div>
-
-        {radarOpen && (
-          <div
-            className="surface-box fade-slide-in"
-            style={{
-              marginBottom: 12,
-              borderColor: 'rgba(245, 158, 11, 0.5)',
-              background: 'rgba(245, 158, 11, 0.05)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <strong style={{ fontSize: 12.8 }}>🔥 Chủ đề thảo luận sôi nổi dễ lên xu hướng</strong>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {[
-                  ['ALL_HOT', 'Đang Hot'],
-                  ['CRUSH_LOVE', 'Tình cảm'],
-                  ['WORK_CAREER', 'Công sở'],
-                  ['MUSIC_HOBBY', 'Nhạc cụ'],
-                ].map(([nid, nlbl]) => (
-                  <button
-                    key={nid}
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: 11.4, padding: '2px 8px' }}
-                    disabled={loadingRadar}
-                    onClick={() => handleOpenTopicRadar(nid)}
-                  >
-                    {nlbl}
-                  </button>
-                ))}
+      {/* ==================== BƯỚC 1: NỘI DUNG & DÀN Ý AI ==================== */}
+      {showStep1 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">1</span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">Ý tưởng chủ đề &amp; Triển khai dàn ý bằng AI</div>
+              <div className="step-desc">
+                Chỉ cần gõ tiêu đề hoặc vài câu ngắn — AI tự tối ưu câu mở đầu 3 giây, dàn ý phân cảnh và đề xuất giọng đọc hợp nhất
               </div>
             </div>
-            {loadingRadar ? (
-              <div className="text-sub" style={{ fontSize: 12 }}>
-                <Loader2 size={14} className="spin" /> Đang quét chủ đề...
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
-                {radarItems.map((it) => (
-                  <div
-                    key={it.item_id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '7px 9px',
-                      borderRadius: 7,
-                      background: 'var(--bg-panel)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <div style={{ fontSize: 12.5, flex: 1 }}>
-                      <span className="badge badge-info" style={{ fontSize: 10.5, marginRight: 6 }}>
-                        {it.community_label}
-                      </span>
-                      <strong>{it.title_vi}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => {
-                        setBatchMode(false);
-                        setTopicTitle(it.title_vi);
-                        setShortBrief(it.preview_snippet || it.title_vi);
-                        setRadarOpen(false);
-                        notify('Đã điền chủ đề Viral — bấm Phân tích AI để triển khai kịch bản!');
-                      }}
-                    >
-                      Chọn chủ đề
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
-        {batchMode ? (
-          <div className="surface-box" style={{ marginBottom: 12, borderColor: 'var(--brand)' }}>
-            <label className="form-label">
-              Danh sách chủ đề chạy tự động lần lượt (Mỗi dòng 1 chủ đề, tối đa 15 dòng — có thể ghi <code>Tiêu đề | Ý chính</code>)
-            </label>
-            <textarea
-              className={`textarea ${errors.batchTopics ? 'input-error' : ''}`}
-              style={{ minHeight: 130 }}
-              placeholder={`4 cấp độ chơi đàn Guitar | Cách nhận biết trình độ từ sơ cấp tới tự cảm âm\n3 sai lầm khiến người mới tập Violin hay mỏi vai | Cách cầm vĩ và đặt kê vai chuẩn\nTại sao nghe nhạc Lofi giúp não tập trung sâu hơn? | Cơ chế sóng âm ổn định nhịp thở`}
-              value={batchTopicsText}
-              onChange={(e) => {
-                setBatchTopicsText(e.target.value);
-                clearError('batchTopics');
-              }}
-            />
-            <FieldError message={errors.batchTopics} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-              <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
-                Tự xoay vòng đổi bài Nhạc nền Lofi CC0 cho mỗi video trong lô
-              </SwitchCard>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 40, fontWeight: 700 }}
-                disabled={submitting}
-                onClick={handleStartBatchTopics}
-              >
-                {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}{' '}
-                {submitting ? 'Đang xếp hàng...' : 'Xếp hàng chạy toàn bộ danh sách'}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Tiêu đề hoặc chủ đề của video
-            </label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ padding: '3px 9px', fontSize: 11.8, borderColor: 'var(--brand-border)' }}
-                disabled={scoringHook}
-                onClick={handleScoreTopicHook}
-              >
-                {scoringHook ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{' '}
-                {scoringHook ? 'Đang chấm điểm...' : '🎯 Chấm điểm Hook 3 giây & Gợi ý A/B'}
-              </button>
-              {previousTitle && previousTitle !== topicTitle && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="studio-segmented">
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '3px 9px', fontSize: 11.8 }}
-                  onClick={() => setTopicTitle(previousTitle)}
+                  className={`studio-seg-btn ${!batchMode ? 'active' : ''}`}
+                  onClick={() => setBatchMode(false)}
                 >
-                  <RotateCcw size={12} /> Khôi phục tiêu đề ban đầu
+                  Làm 1 chủ đề
                 </button>
-              )}
+                <button
+                  type="button"
+                  className={`studio-seg-btn ${batchMode ? 'active' : ''}`}
+                  onClick={() => setBatchMode(true)}
+                >
+                  Chạy hàng loạt (Batch)
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${radarOpen ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => (radarOpen ? setRadarOpen(false) : handleOpenTopicRadar('ALL_HOT'))}
+              >
+                <Flame size={14} /> {radarOpen ? 'Đóng xu hướng' : 'Gợi ý xu hướng'}
+              </button>
             </div>
           </div>
-          <input
-            className={`input ${errors.topicTitle ? 'input-error' : ''}`}
-            placeholder="VD: 4 cấp độ chơi đàn Guitar — Bạn đang ở đâu? (hoặc gõ vắn tắt chủ đề)"
-            value={topicTitle}
-            onChange={(e) => {
-              setTopicTitle(e.target.value);
-              clearError('topicTitle');
-            }}
-          />
-          <FieldError message={errors.topicTitle} />
-          {hookScoreRes && (
-            <div
-              className="surface-box fade-slide-in"
-              style={{
-                marginTop: 8,
-                padding: '9px 11px',
-                borderColor: 'rgba(14, 165, 233, 0.5)',
-                background: 'rgba(14, 165, 233, 0.07)',
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 12.6, marginBottom: 4 }}>
-                Điểm Hook 3 Giây Đầu: <span style={{ color: '#38bdf8' }}>{hookScoreRes.overall_score}/100</span> — {hookScoreRes.verdict_label}
-              </div>
-              {hookScoreRes.weakness_note && (
-                <div className="text-sub" style={{ fontSize: 11.8, marginBottom: 6 }}>
-                  💡 {hookScoreRes.weakness_note}
-                </div>
-              )}
-              <div style={{ display: 'grid', gap: 5 }}>
-                {(hookScoreRes.variants || []).map((v, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '5px 8px',
-                      borderRadius: 6,
-                      background: 'var(--bg-panel)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <span style={{ fontSize: 12 }}>
-                      <strong style={{ color: 'var(--brand-text)' }}>[{v.style_label}]</strong> {v.hook_text}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      style={{ fontSize: 11.2, whiteSpace: 'nowrap' }}
-                      onClick={() => {
-                        setPreviousTitle(topicTitle);
-                        setTopicTitle(v.hook_text.slice(0, 175));
-                        notify(`Đã đổi sang Hook "${v.style_label}"!`);
-                      }}
-                    >
-                      Dùng câu này
-                    </button>
-                  </div>
-                ))}
-              </div>
+
+          {/* QUICK STARTER CHIPS */}
+          {!batchMode && (
+            <div className="summary-bar">
+              <span
+                className="text-xs fw-600 text-brand"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              >
+                <Sparkles size={14} /> Điền nhanh mẫu thử:
+              </span>
+              {QUICK_TOPICS.map((qt, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className="filter-pill"
+                  onClick={() => {
+                    setTopicTitle(qt.title);
+                    setShortBrief(qt.shortBrief);
+                    setKeyPoints('');
+                    setAiAnalysis(null);
+                  }}
+                >
+                  Mẫu {idx + 1}: {qt.title.slice(0, 34)}...
+                </button>
+              ))}
             </div>
           )}
-        </div>
 
-        <div className="form-group">
-          <label className="form-label">
-            Mô tả ngắn / Ý tưởng sơ lược ban đầu (1 – 3 câu ngắn gọn)
-          </label>
-          <textarea
-            className="textarea"
-            style={{ minHeight: 74 }}
-            placeholder="VD: Làm sao biết mình đang ở cấp độ nào khi tập Guitar, từ lúc mới bấm hợp âm bị rè cho tới lúc tự cảm âm đệm hát..."
-            value={shortBrief}
-            onChange={(e) => {
-              setShortBrief(e.target.value);
-              clearError('topicTitle');
-            }}
-          />
-        </div>
-
-        {/* PROMINENT ANALYZE & EXPAND ACTION BAR */}
-        <div
-          className="surface-box"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-            borderColor: 'var(--brand)',
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ minWidth: 220, flex: 1 }}>
-            <div style={{ fontSize: 13.3, fontWeight: 700, color: 'var(--text-primary)' }}>
-              Bước 1A: Gọi API AI phân tích &amp; viết nội dung chi tiết từ ý tưởng ngắn
-            </div>
-            <div className="text-sub" style={{ fontSize: 12.2, marginTop: 2 }}>
-              Tự động tối ưu từ tiêu đề, câu mở đầu 3 giây, dàn ý phân cảnh cho tới bối cảnh hình ảnh để video xuất ra đạt chất lượng tốt nhất
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ minHeight: 40, padding: '8px 16px', fontWeight: 700 }}
-            disabled={analyzing || submitting}
-            onClick={handleAnalyzeBrief}
-          >
-            {analyzing ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}{' '}
-            {analyzing ? 'Đang gọi API phân tích chi tiết...' : 'Phân tích & Triển khai chi tiết (AI)'}
-          </button>
-        </div>
-
-        <StudioLoadingBanner
-          loading={analyzing}
-          showSkeleton={!aiAnalysis}
-          title="Đang gọi API AI phân tích chủ đề & viết dàn ý kịch bản chi tiết..."
-          subtitle="Hệ thống đang tối ưu tiêu đề, câu Hook 3 giây đầu và đề xuất giọng đọc phù hợp nhất"
-          steps={[
-            'Phân tích ý tưởng gốc & tâm lý người xem',
-            'Triển khai dàn ý từng phân cảnh & mô tả hình ảnh',
-            'Chọn giọng đọc & nhạc nền tối ưu',
-          ]}
-          stepIntervalMs={2400}
-        />
-
-        {/* AI EXPANSION RESULT SUMMARY & 1-CLICK NEXT RUN */}
-        {aiAnalysis && (
-          <div
-            className={`surface-box ${analyzing ? 'is-reloading-dim' : 'fade-slide-in'}`}
-            style={{
-              marginBottom: 14,
-              borderColor: 'rgba(16, 185, 129, 0.45)',
-              background: 'rgba(16, 185, 129, 0.07)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, fontSize: 13.4, color: 'var(--success-text)' }}>
-                <CheckCircle2 size={16} />
-                {aiAnalysis.used_api_key
-                  ? 'Đã phân tích chuyên sâu qua API Key & cập nhật cấu hình tối ưu'
-                  : 'Đã mở rộng dàn ý chi tiết (Gắn thêm API Key để AI viết sâu hơn)'}
-              </div>
-              <span className="badge badge-info">
-                Đề xuất: ~{aiAnalysis.recommended_duration_sec}s • {aiAnalysis.recommended_part_count} tập
-              </span>
-            </div>
-
-            {aiAnalysis.analysis_summary && (
-              <div className="text-sub" style={{ fontSize: 12.8, marginBottom: 8 }}>
-                {aiAnalysis.analysis_summary}
-              </div>
-            )}
-
-            {aiAnalysis.hook_opening && (
-              <div style={{ fontSize: 12.8, marginBottom: 8, padding: '7px 10px', borderRadius: 7, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-                <strong>Câu mở đầu 3s giữ chân người xem:</strong> &ldquo;{aiAnalysis.hook_opening}&rdquo;
-              </div>
-            )}
-
-            {aiAnalysis.alternative_titles?.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div className="text-sub" style={{ fontSize: 12, fontWeight: 600, marginBottom: 5 }}>
-                  Bấm để đổi nhanh sang phương án tiêu đề khác nếu thích:
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {aiAnalysis.alternative_titles.map((alt, idx) => (
+          {/* VIRAL RADAR DRAWER */}
+          {radarOpen && (
+            <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 10,
+                }}
+              >
+                <strong className="text-sm">Chủ đề thảo luận đang thu hút nhiều tương tác</strong>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {[
+                    ['ALL_HOT', 'Đang Hot'],
+                    ['CRUSH_LOVE', 'Tình cảm'],
+                    ['WORK_CAREER', 'Công sở'],
+                    ['MUSIC_HOBBY', 'Nhạc cụ'],
+                  ].map(([nid, nlbl]) => (
                     <button
-                      key={idx}
+                      key={nid}
                       type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: 12, textAlign: 'left' }}
-                      onClick={() => setTopicTitle(alt)}
+                      className="filter-pill"
+                      disabled={loadingRadar}
+                      onClick={() => handleOpenTopicRadar(nid)}
                     >
-                      {alt}
+                      {nlbl}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 40, fontWeight: 700 }}
-                disabled={submitting || analyzing}
-                onClick={() => handleStart(true)}
-              >
-                <Play size={15} /> Tiếp theo: Chạy tạo video tự động ngay
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ minHeight: 40 }}
-                disabled={submitting || analyzing}
-                onClick={() => handleStart(false)}
-              >
-                <Edit3 size={14} /> Xem &amp; duyệt từng câu kịch bản trước khi xuất
-              </button>
+              {loadingRadar ? (
+                <div className="text-xs text-sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Loader2 size={14} className="spin" /> Đang quét chủ đề...
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                  {radarItems.map((it) => (
+                    <div
+                      key={it.item_id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        background: 'var(--bg-panel)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <div className="text-sm" style={{ flex: 1 }}>
+                        <span className="badge badge-info" style={{ marginRight: 8 }}>
+                          {it.community_label}
+                        </span>
+                        <span className="fw-600">{it.title_vi}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setBatchMode(false);
+                          setTopicTitle(it.title_vi);
+                          setShortBrief(it.preview_snippet || it.title_vi);
+                          setRadarOpen(false);
+                          notify('Đã điền chủ đề — bấm Phân tích AI để triển khai kịch bản!');
+                        }}
+                      >
+                        Chọn
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">
-            Mô tả chi tiết &amp; dàn ý từng phân cảnh (AI tự điền sau khi phân tích — bạn có thể chỉnh sửa thêm)
-          </label>
-          <textarea
-            className="textarea"
-            style={{ minHeight: 138 }}
-            placeholder="- Mở đầu Hook 3s gây tò mò...&#10;- Diễn biến / Ý chính 1...&#10;- Diễn biến / Ý chính 2...&#10;- Cao trào & Thông điệp kết...&#10;(Hoặc bấm nút 'Phân tích & Triển khai chi tiết (AI)' ở trên để hệ thống tự viết đầy đủ)"
-            value={keyPoints}
-            onChange={(e) => setKeyPoints(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* STEP 2 */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">2</span>
-          <div>
-            <div className="step-title">Nguồn hình ảnh minh họa, giọng đọc &amp; nhạc nền</div>
-            <div className="step-desc">
-              Tự động chọn sẵn giọng và nhạc hợp chủ đề sau khi phân tích — bạn vẫn có thể nghe thử hoặc đổi tùy ý
+          {batchMode ? (
+            <div className="studio-callout studio-callout-brand" style={{ marginBottom: 16 }}>
+              <label className="form-label">
+                Danh sách chủ đề chạy tự động lần lượt (Mỗi dòng 1 chủ đề, tối đa 15 dòng — có thể ghi{' '}
+                <code>Tiêu đề | Ý chính</code>)
+              </label>
+              <textarea
+                className={`textarea ${errors.batchTopics ? 'input-error' : ''}`}
+                style={{ minHeight: 136 }}
+                placeholder={`4 cấp độ chơi đàn Guitar | Cách nhận biết trình độ từ sơ cấp tới tự cảm âm\n3 sai lầm khiến người mới tập Violin hay mỏi vai | Cách cầm vĩ và đặt kê vai chuẩn\nTại sao nghe nhạc Lofi giúp não tập trung sâu hơn? | Cơ chế sóng âm ổn định nhịp thở`}
+                value={batchTopicsText}
+                onChange={(e) => {
+                  setBatchTopicsText(e.target.value);
+                  clearError('batchTopics');
+                }}
+              />
+              <FieldError message={errors.batchTopics} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  marginTop: 12,
+                }}
+              >
+                <SwitchCard checked={rotateLofiBgm} onChange={setRotateLofiBgm}>
+                  Tự xoay vòng đổi bài Nhạc nền Lofi CC0 cho mỗi video trong lô
+                </SwitchCard>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={submitting}
+                  onClick={handleStartBatchTopics}
+                >
+                  {submitting ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
+                  <span>{submitting ? 'Đang xếp hàng...' : 'Xếp hàng chạy toàn bộ danh sách'}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    marginBottom: 6,
+                  }}
+                >
+                  <label className="form-label" style={{ marginBottom: 0 }}>
+                    Tiêu đề hoặc chủ đề chính của video
+                  </label>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={scoringHook}
+                      onClick={handleScoreTopicHook}
+                    >
+                      {scoringHook ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}
+                      <span>{scoringHook ? 'Đang chấm...' : 'Chấm điểm Hook 3 giây & Gợi ý A/B'}</span>
+                    </button>
+                    {previousTitle && previousTitle !== topicTitle && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setTopicTitle(previousTitle)}
+                      >
+                        <RotateCcw size={13} /> Hoàn tác tiêu đề
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  className={`input ${errors.topicTitle ? 'input-error' : ''}`}
+                  placeholder="VD: 4 cấp độ chơi đàn Guitar — Bạn đang ở đâu?"
+                  value={topicTitle}
+                  onChange={(e) => {
+                    setTopicTitle(e.target.value);
+                    clearError('topicTitle');
+                  }}
+                />
+                <FieldError message={errors.topicTitle} />
 
-        <div style={{ marginBottom: 14 }}>
-          <ModeChoiceGrid
-            options={VISUAL_SOURCE_CHOICES}
-            value={visualMode}
-            onChange={(nextMode) => {
-              setVisualMode(nextMode);
-              if (nextMode === 'MOTION_GRAPHICS' && subtitleStyle === 'KARAOKE_CAPCUT') {
-                setSubtitleStyle('CINEMA');
-              }
-            }}
-          />
-        </div>
+                {hookScoreRes && (
+                  <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginTop: 10 }}>
+                    <div className="text-sm fw-700" style={{ marginBottom: 4 }}>
+                      Điểm Hook 3 Giây Đầu:{' '}
+                      <span className="text-brand">{hookScoreRes.overall_score}/100</span> —{' '}
+                      {hookScoreRes.verdict_label}
+                    </div>
+                    {hookScoreRes.weakness_note && (
+                      <div className="text-xs text-sub" style={{ marginBottom: 8 }}>
+                        Gợi ý cải thiện: {hookScoreRes.weakness_note}
+                      </div>
+                    )}
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {(hookScoreRes.variants || []).map((v, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '7px 10px',
+                            borderRadius: 8,
+                            background: 'var(--bg-panel)',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
+                          <span className="text-xs">
+                            <strong className="text-brand">[{v.style_label}]</strong> {v.hook_text}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            style={{ whiteSpace: 'nowrap' }}
+                            onClick={() => {
+                              setPreviousTitle(topicTitle);
+                              setTopicTitle(v.hook_text.slice(0, 175));
+                              notify(`Đã đổi sang Hook "${v.style_label}"!`);
+                            }}
+                          >
+                            Áp dụng
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        {visualMode === 'MOTION_GRAPHICS' && (
-          <div
-            className="surface-box fade-slide-in"
-            style={{
-              marginBottom: 14,
-              borderColor: 'var(--brand)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
+              <div className="form-group">
+                <label className="form-label">Mô tả ngắn / Ý tưởng sơ lược (1 – 3 câu)</label>
+                <textarea
+                  className="textarea"
+                  style={{ minHeight: 78 }}
+                  placeholder="VD: Làm sao biết mình đang ở cấp độ nào khi tập Guitar, từ lúc mới bấm hợp âm bị rè cho tới lúc tự cảm âm đệm hát..."
+                  value={shortBrief}
+                  onChange={(e) => {
+                    setShortBrief(e.target.value);
+                    clearError('topicTitle');
+                  }}
+                />
+              </div>
+
+              {/* PROMINENT ANALYZE & EXPAND ACTION BAR */}
+              <div
+                className="studio-callout studio-callout-brand"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ minWidth: 220, flex: 1 }}>
+                  <div className="text-sm fw-700 text-main">
+                    Gọi AI phân tích &amp; viết dàn ý kịch bản chi tiết từ ý tưởng ngắn
+                  </div>
+                  <div className="text-xs text-sub" style={{ marginTop: 2 }}>
+                    Tự động nâng cấp tiêu đề, câu mở đầu 3 giây, dàn ý phân cảnh và chọn sẵn giọng đọc tối ưu
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={analyzing || submitting}
+                  onClick={handleAnalyzeBrief}
+                >
+                  {analyzing ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
+                  <span>{analyzing ? 'Đang phân tích...' : 'Phân tích & Viết dàn ý (AI)'}</span>
+                </button>
+              </div>
+
+              <StudioLoadingBanner
+                loading={analyzing}
+                showSkeleton={!aiAnalysis}
+                title="Đang phân tích chủ đề & viết dàn ý kịch bản chi tiết..."
+                subtitle="Hệ thống đang tối ưu tiêu đề, câu Hook 3 giây đầu và đề xuất giọng đọc phù hợp nhất"
+                steps={[
+                  'Phân tích ý tưởng gốc & tâm lý người xem',
+                  'Triển khai dàn ý từng phân cảnh & mô tả hình ảnh',
+                  'Chọn giọng đọc & nhạc nền tối ưu',
+                ]}
+                stepIntervalMs={2400}
+              />
+
+              {aiAnalysis && (
+                <div
+                  className={`studio-callout studio-callout-success ${
+                    analyzing ? 'is-reloading-dim' : 'fade-slide-in'
+                  }`}
+                  style={{ marginBottom: 16 }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div
+                      className="text-sm fw-700 text-success"
+                      style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>
+                        {aiAnalysis.used_api_key
+                          ? 'Đã phân tích chuyên sâu qua AI & cập nhật cấu hình tối ưu'
+                          : 'Đã mở rộng dàn ý chi tiết'}
+                      </span>
+                    </div>
+                    <span className="badge badge-info">
+                      Đề xuất: ~{aiAnalysis.recommended_duration_sec}s • {aiAnalysis.recommended_part_count} tập
+                    </span>
+                  </div>
+
+                  {aiAnalysis.analysis_summary && (
+                    <div className="text-sm text-sub" style={{ marginBottom: 8 }}>
+                      {aiAnalysis.analysis_summary}
+                    </div>
+                  )}
+
+                  {aiAnalysis.hook_opening && (
+                    <div
+                      className="surface-box text-sm"
+                      style={{ marginBottom: 10 }}
+                    >
+                      <strong>Câu mở đầu 3s giữ chân người xem:</strong> &ldquo;{aiAnalysis.hook_opening}&rdquo;
+                    </div>
+                  )}
+
+                  {aiAnalysis.alternative_titles?.length > 0 && (
+                    <div>
+                      <div className="text-xs fw-600 text-sub" style={{ marginBottom: 6 }}>
+                        Đổi nhanh phương án tiêu đề khác:
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {aiAnalysis.alternative_titles.map((alt, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="filter-pill"
+                            onClick={() => setTopicTitle(alt)}
+                          >
+                            {alt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">
+                  Dàn ý chi tiết từng phân cảnh (AI tự điền hoặc bạn tự biên tập)
+                </label>
+                <textarea
+                  className="textarea"
+                  style={{ minHeight: 132 }}
+                  placeholder={`- Mở đầu Hook 3s gây tò mò...\n- Diễn biến / Ý chính 1...\n- Diễn biến / Ý chính 2...\n- Cao trào & Thông điệp kết...`}
+                  value={keyPoints}
+                  onChange={(e) => setKeyPoints(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          <StudioCollapsible
+            icon={FolderTree}
+            title="Quản lý theo Nhóm Dự Án Cha (Series / Chiến dịch)"
+            subtitle="Tùy chọn gom các tập video cùng chủ đề vào một thư mục Series"
+            badge={parentGroupId ? 'Đã chọn nhóm' : ''}
           >
-            <div style={{ flex: 1, minWidth: 240 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.3, marginBottom: 4 }}>
-                🎬 Chế độ Đồ Họa Chuyển Động (Motion Graphics kiểu Claude / Remotion / Dan Koe)
-              </div>
-              <div className="text-sub" style={{ fontSize: 12.1 }}>
-                AI tự dựng hoạt ảnh chữ Kinetic, đồng hồ số chạy, biểu đồ cột &amp; bảng đối chiếu A/B khớp từng câu đọc — có thể bấm xem thử &amp; gõ lệnh sửa từng phân cảnh ngay bên dưới!
+            <ParentGroupSelector
+              projectGroups={projectGroups}
+              value={parentGroupId}
+              onChange={setParentGroupId}
+              onGroupsChanged={onGroupsChanged}
+              notify={notify}
+            />
+          </StudioCollapsible>
+        </div>
+      )}
+
+      {/* ==================== BƯỚC 2: HÌNH ẢNH & GIỌNG ĐỌC ==================== */}
+      {showStep2 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">2</span>
+            <div>
+              <div className="step-title">Phong cách hình ảnh, Giọng đọc &amp; Nhạc nền</div>
+              <div className="step-desc">
+                Chọn kiểu hình ảnh minh họa hoặc Đồ họa chuyển động kiểu Claude / Remotion, kết hợp nghe thử giọng đọc trực tiếp
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <ModeChoiceGrid
+              options={VISUAL_SOURCE_CHOICES}
+              value={visualMode}
+              onChange={(nextMode) => {
+                setVisualMode(nextMode);
+                if (nextMode === 'MOTION_GRAPHICS' && subtitleStyle === 'KARAOKE_CAPCUT') {
+                  setSubtitleStyle('CINEMA');
+                }
+              }}
+            />
+          </div>
+
+          {visualMode === 'MOTION_GRAPHICS' && (
+            <div
+              className="studio-callout studio-callout-brand fade-slide-in"
+              style={{
+                marginBottom: 16,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <div className="text-sm fw-700" style={{ marginBottom: 4 }}>
+                  Bàn dựng Đồ Họa Chuyển Động (Motion Graphics kiểu Claude / Remotion)
+                </div>
+                <div className="text-xs text-sub">
+                  AI tự dựng hoạt ảnh chữ Kinetic, bộ đếm số, biểu đồ cột &amp; bảng đối chiếu A/B khớp từng câu đọc — xem trước 60fps &amp; gõ lệnh sửa trực tiếp
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  className="select"
+                  style={{ width: 'auto', minWidth: 235 }}
+                  value={motionTheme}
+                  onChange={(e) => updateTopicLayout({ motion_theme: e.target.value })}
+                >
+                  {MOTION_THEME_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={loadingMotionStoryboard || submitting}
+                  onClick={handleBuildMotionStoryboard}
+                >
+                  {loadingMotionStoryboard ? (
+                    <Loader2 size={15} className="spin" />
+                  ) : (
+                    <Sparkles size={15} />
+                  )}
+                  <span>
+                    {loadingMotionStoryboard
+                      ? 'Đang dựng phân cảnh...'
+                      : motionScenes.length > 0
+                      ? 'Tạo lại Storyboard'
+                      : 'Dựng Storyboard Tương Tác'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {visualMode === 'MOTION_GRAPHICS' && motionScenes.length > 0 && (
+            <MotionArtifactStudio
+              scenes={motionScenes}
+              setScenes={setMotionScenes}
+              motionTheme={motionTheme}
+              onChangeTheme={(nextT) => updateTopicLayout({ motion_theme: nextT })}
+              usedBrainLabel={motionBrainUsed}
+              submitting={submitting}
+              onRenderMp4={(editedScenes) => handleStart(true, editedScenes)}
+              notify={notify}
+            />
+          )}
+
+          <div className="form-grid">
+            <InlineVoiceSelector
+              voices={voices}
+              voiceId={voiceId}
+              onChange={setVoiceId}
+              voiceSpeed={voiceSpeed}
+              onSpeedChange={setVoiceSpeed}
+              voicePitch={voicePitch}
+              onPitchChange={setVoicePitch}
+              defaultCategory="TIKTOK_SHORT"
+              onOpenVoiceLab={onNavigateTab ? () => onNavigateTab('voices') : null}
+              label="Giọng đọc dẫn chuyện"
+              sampleText={
+                aiAnalysis?.hook_opening ||
+                'Chỉ với ba lưu ý đơn giản dưới đây, bạn sẽ nắm bắt trọn vẹn điểm mấu chốt ngay từ lần đầu tiên.'
+              }
+              notify={notify}
+            />
+            <InlineBgmSelector
+              bgmPresets={bgmPresets}
+              bgmPresetId={bgmPresetId}
+              onSelectPreset={setBgmPresetId}
+              bgmVolume={bgmVolume}
+              onVolumeChange={setBgmVolume}
+              customBgmPath={customBgmPath}
+              onCustomBgmChange={setCustomBgmPath}
+              notify={notify}
+              label="Nhạc nền kể chuyện / Acoustic"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ==================== BƯỚC 3: HOÀN TẤT & XUẤT BẢN ==================== */}
+      {showStep3 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">3</span>
+            <div>
+              <div className="step-title">Thời lượng, Chia tập &amp; Phụ đề</div>
+              <div className="step-desc">
+                Kiểm tra thông số độ dài video và phụ đề trước khi đưa vào tiến trình kết xuất tự động
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">
+                Thời lượng dự kiến mỗi tập: <strong>{durationSec} giây</strong>
+              </label>
+              <input
+                type="range"
+                min="30"
+                max="160"
+                step="5"
+                style={{ width: '100%', marginTop: 8 }}
+                value={durationSec}
+                onChange={(e) => setDurationSec(Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Số tập muốn chia liên tiếp (1 – 10 tập)</label>
+              <input
+                type="number"
+                className={`input ${errors.partCount ? 'input-error' : ''}`}
+                min={1}
+                max={10}
+                value={partCount}
+                onChange={(e) => {
+                  setPartCount(e.target.value);
+                  clearError('partCount');
+                }}
+                onBlur={() => {
+                  const n = Number(partCount);
+                  if (!Number.isFinite(n) || n < 1) setPartCount(1);
+                  else if (n > 10) setPartCount(10);
+                  else setPartCount(Math.round(n));
+                }}
+              />
+              <FieldError message={errors.partCount} />
+            </div>
+          </div>
+
+          <div className="form-grid" style={{ marginBottom: 16 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Kiểu chữ phụ đề trên video</label>
               <select
                 className="select"
-                style={{ width: 'auto', minWidth: 235 }}
-                value={motionTheme}
-                onChange={(e) => updateTopicLayout({ motion_theme: e.target.value })}
+                value={subtitleStyle}
+                onChange={(e) => setSubtitleStyle(e.target.value)}
               >
-                {MOTION_THEME_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
+                <option value="KARAOKE_CAPCUT">Chữ chạy nổi bật từng từ (Karaoke CapCut)</option>
+                <option value="CINEMA">Phụ đề câu thanh lịch dưới màn hình</option>
+                <option value="NONE">Không hiển thị chữ phụ đề</option>
               </select>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ minHeight: 39, fontWeight: 700 }}
-                disabled={loadingMotionStoryboard || submitting}
-                onClick={handleBuildMotionStoryboard}
-              >
-                {loadingMotionStoryboard ? (
-                  <Loader2 size={15} className="spin" />
-                ) : (
-                  <Sparkles size={15} />
-                )}{' '}
-                {loadingMotionStoryboard
-                  ? 'Đang dựng phân cảnh...'
-                  : motionScenes.length > 0
-                  ? 'Tạo lại Phân cảnh Đồ họa'
-                  : 'Dựng thử & Sửa từng cảnh (Artifacts)'}
-              </button>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Ghi chú giọng văn mong muốn</label>
+              <input className="input" value={tone} onChange={(e) => setTone(e.target.value)} />
             </div>
           </div>
-        )}
 
-        {visualMode === 'MOTION_GRAPHICS' && motionScenes.length > 0 && (
-          <MotionArtifactStudio
-            scenes={motionScenes}
-            setScenes={setMotionScenes}
-            motionTheme={motionTheme}
-            onChangeTheme={(nextT) => updateTopicLayout({ motion_theme: nextT })}
-            usedBrainLabel={motionBrainUsed}
-            submitting={submitting}
-            onRenderMp4={(editedScenes) => handleStart(true, editedScenes)}
-            notify={notify}
-          />
-        )}
+          <div className="toggle-grid">
+            <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
+              Âm hiệu điểm nhấn tinh tế (Chuông mở đầu 3s &amp; Whoosh chuyển cảnh)
+            </SwitchCard>
+            <SwitchCard checked={smartKeywordHighlight} onChange={setSmartKeywordHighlight}>
+              Tự tô sáng từ khóa đắt giá &amp; con số trên phụ đề
+            </SwitchCard>
+          </div>
 
-        <div className="form-grid">
-          <InlineVoiceSelector
-            voices={voices}
-            voiceId={voiceId}
-            onChange={setVoiceId}
-            voiceSpeed={voiceSpeed}
-            onSpeedChange={setVoiceSpeed}
-            voicePitch={voicePitch}
-            onPitchChange={setVoicePitch}
-            defaultCategory="TIKTOK_SHORT"
-            label="Giọng đọc dẫn chuyện (Short TikTok / YouTube Shorts / Phim)"
-            sampleText={
-              aiAnalysis?.hook_opening ||
-              'Chỉ với ba lưu ý đơn giản dưới đây, bạn sẽ nắm bắt trọn vẹn điểm mấu chốt ngay từ lần đầu tiên.'
+          <StudioCollapsible
+            icon={SlidersHorizontal}
+            title="Hiệu ứng không khí điện ảnh & Thanh đốt truyện (Tùy chọn)"
+            subtitle="Mặc định tắt để giữ khung hình sạch — bật khi cần hiệu ứng Bokeh / Mưa đêm / Phim 35mm"
+            badge={
+              (layoutConfig?.ambience_overlay && layoutConfig.ambience_overlay !== 'NONE') ||
+              layoutConfig?.story_progress_bar_enabled
+                ? 'Đang bật'
+                : ''
             }
-            notify={notify}
-          />
-          <InlineBgmSelector
-            bgmPresets={bgmPresets}
-            bgmPresetId={bgmPresetId}
-            onSelectPreset={setBgmPresetId}
-            bgmVolume={bgmVolume}
-            onVolumeChange={setBgmVolume}
-            customBgmPath={customBgmPath}
-            onCustomBgmChange={setCustomBgmPath}
-            notify={notify}
-            label="Nhạc nền kể chuyện / Acoustic"
-          />
-        </div>
-      </div>
-
-      {/* STEP 3: CLEAR VISIBLE DURATION, PARTS & SUBTITLES */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">3</span>
-          <div>
-            <div className="step-title">Thời lượng, chia tập &amp; phong cách hiển thị phụ đề</div>
-            <div className="step-desc">
-              Cấu hình trực quan ngay trên màn hình để kiểm soát chính xác độ dài video xuất ra
-            </div>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">
-              Thời lượng dự kiến mỗi tập: <strong>{durationSec} giây</strong>
-            </label>
-            <input
-              type="range"
-              min="30"
-              max="160"
-              step="5"
-              style={{ width: '100%', marginTop: 8 }}
-              value={durationSec}
-              onChange={(e) => setDurationSec(Number(e.target.value))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Số tập muốn chia liên tiếp (1 – 10 tập)</label>
-            <input
-              type="number"
-              className={`input ${errors.partCount ? 'input-error' : ''}`}
-              min={1}
-              max={10}
-              value={partCount}
-              onChange={(e) => {
-                setPartCount(e.target.value);
-                clearError('partCount');
-              }}
-              onBlur={() => {
-                const n = Number(partCount);
-                if (!Number.isFinite(n) || n < 1) setPartCount(1);
-                else if (n > 10) setPartCount(10);
-                else setPartCount(Math.round(n));
-              }}
-            />
-            <FieldError message={errors.partCount} />
-          </div>
-        </div>
-
-        <div className="form-grid" style={{ marginBottom: 12 }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Kiểu chữ phụ đề trên video</label>
-            <select
-              className="select"
-              value={subtitleStyle}
-              onChange={(e) => setSubtitleStyle(e.target.value)}
-            >
-              <option value="KARAOKE_CAPCUT">Chữ chạy nổi bật từng từ</option>
-              <option value="CINEMA">Phụ đề câu thanh lịch dưới màn hình</option>
-              <option value="NONE">Không hiển thị chữ phụ đề</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Ghi chú giọng văn mong muốn</label>
-            <input className="input" value={tone} onChange={(e) => setTone(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="toggle-grid" style={{ marginBottom: 12 }}>
-          <SwitchCard checked={enableSmartSfx} onChange={setEnableSmartSfx}>
-            Âm hiệu điểm nhấn tinh tế (Micro-SFX: Chuông ấm mở đầu 3s &amp; Whoosh chuyển cảnh)
-          </SwitchCard>
-          <SwitchCard checked={smartKeywordHighlight} onChange={setSmartKeywordHighlight}>
-            Tự tô sáng từ khóa đắt giá &amp; con số trên phụ đề
-          </SwitchCard>
-        </div>
-
-        {/* SYNCED OPT-IN CINEMATIC POLISH (DEFAULT OFF) */}
-        <div
-          className="surface-box"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-            gap: 10,
-            alignItems: 'end',
-          }}
-        >
-          <div>
-            <label className="form-label" style={{ fontSize: 12.2, marginBottom: 4 }}>
-              ✨ Lớp phủ không khí điện ảnh (Tùy chọn — Mặc định Tắt)
-            </label>
-            <select
-              className="select"
-              value={layoutConfig?.ambience_overlay || 'NONE'}
-              onChange={(e) => updateTopicLayout({ ambience_overlay: e.target.value })}
-            >
-              <option value="NONE">Tắt hiệu ứng (Giữ nguyên bản 100%)</option>
-              <option value="GOLDEN_BOKEH">✨ Hạt bụi nắng vàng (Golden Bokeh)</option>
-              <option value="NIGHT_RAIN">🌧️ Mưa đêm phố thị (Night Rain)</option>
-              <option value="WARM_LIGHT_LEAK">🌅 Vệt nắng chiều ấm (Warm Light Leak)</option>
-              <option value="VINTAGE_FILM_35MM">🎞️ Phim nhựa cổ điển 35mm</option>
-            </select>
-          </div>
-          <SwitchCard
-            checked={Boolean(layoutConfig?.story_progress_bar_enabled)}
-            onChange={(val) => updateTopicLayout({ story_progress_bar_enabled: val })}
           >
-            Thanh tiến trình đốt truyện trên đỉnh theo từng câu (Mặc định Tắt)
-          </SwitchCard>
+            <div className="form-grid" style={{ alignItems: 'end' }}>
+              <div>
+                <label className="form-label">Lớp phủ không khí điện ảnh</label>
+                <select
+                  className="select"
+                  value={layoutConfig?.ambience_overlay || 'NONE'}
+                  onChange={(e) => updateTopicLayout({ ambience_overlay: e.target.value })}
+                >
+                  <option value="NONE">Tắt hiệu ứng (Giữ nguyên bản 100%)</option>
+                  <option value="GOLDEN_BOKEH">Hạt bụi nắng vàng (Golden Bokeh)</option>
+                  <option value="NIGHT_RAIN">Mưa đêm phố thị (Night Rain)</option>
+                  <option value="WARM_LIGHT_LEAK">Vệt nắng chiều ấm (Warm Light Leak)</option>
+                  <option value="VINTAGE_FILM_35MM">Phim nhựa cổ điển 35mm</option>
+                </select>
+              </div>
+              <SwitchCard
+                checked={Boolean(layoutConfig?.story_progress_bar_enabled)}
+                onChange={(val) => updateTopicLayout({ story_progress_bar_enabled: val })}
+              >
+                Thanh tiến trình đốt truyện trên đỉnh theo từng câu
+              </SwitchCard>
+            </div>
+          </StudioCollapsible>
         </div>
-      </div>
+      )}
 
       <StudioLoadingBanner
         loading={submitting}
@@ -1186,43 +1259,35 @@ export default function TopicStudioForm({
         stepIntervalMs={1800}
       />
 
-      <div className="sticky-action-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="text-sub" style={{ fontSize: 12.2 }}>
-            Tự động lưu nháp • Bấm <strong>Ctrl + Enter</strong> để chạy ngay
-          </span>
-          {hasDraftText && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              style={{ padding: '4px 10px', minHeight: 30, fontSize: 11.8 }}
-              onClick={clearDraft}
-            >
-              <Trash2 size={12} /> Làm mới form
+      <StudioStepFooter
+        activeStep={activeStep}
+        totalSteps={3}
+        showAllSteps={showAllSteps}
+        onStepChange={setActiveStep}
+        nextStepLabel={
+          activeStep === 1 ? 'Tiếp tục: Chọn Hình & Giọng' : 'Tiếp tục: Hoàn tất & Xuất'
+        }
+        hintText="Tự động lưu nháp • Bấm Ctrl + Enter để chạy ngay"
+        extraLeft={
+          hasDraftText ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={clearDraft}>
+              <Trash2 size={13} /> Làm mới
             </button>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ minHeight: 42 }}
-            disabled={submitting || analyzing}
-            onClick={() => handleStart(false)}
-          >
-            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
-            Xem &amp; sửa kịch bản trước
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
-            disabled={submitting || analyzing}
-            onClick={() => handleStart(true)}
-          >
-            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
-            {submitting ? 'Đang khởi tạo...' : 'Bắt đầu tạo video tự động'}
-          </button>
-        </div>
-      </div>
+          ) : null
+        }
+        secondaryAction={{
+          label: 'Duyệt kịch bản trước',
+          icon: submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />,
+          disabled: submitting || analyzing,
+          onClick: () => handleStart(false),
+        }}
+        primaryAction={{
+          label: submitting ? 'Đang khởi tạo...' : 'Bắt đầu tạo video tự động',
+          icon: submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />,
+          disabled: submitting || analyzing,
+          onClick: () => handleStart(true),
+        }}
+      />
     </div>
   );
 }

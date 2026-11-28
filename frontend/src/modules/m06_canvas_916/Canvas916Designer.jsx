@@ -307,30 +307,26 @@ export default function Canvas916Designer({
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: 6,
-            marginBottom: 10,
+            marginBottom: 12,
           }}
         >
-          <span style={{ fontWeight: 700, fontSize: 14.2, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Smartphone size={16} strokeWidth={2} /> Mô phỏng khung xuất
+          <span className="text-sm fw-700" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Smartphone size={16} strokeWidth={2} style={{ color: 'var(--brand-text)' }} /> Mô phỏng khung xuất
           </span>
           <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <span className="badge badge-info" style={{ fontSize: 11, padding: '2px 8px' }}>
-              {dynamicModeBadge}
-            </span>
-            <span className="badge" style={{ fontSize: 11, padding: '2px 8px' }}>
-              {aspectInfo.res}
-            </span>
+            <span className="badge badge-info">{dynamicModeBadge}</span>
+            <span className="badge">{aspectInfo.res}</span>
           </div>
         </div>
 
         {/* Aspect Ratio Selector Pills */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 12 }}>
+        <div className="studio-segmented" style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 14 }}>
           {Object.entries(ASPECT_META).map(([ratioKey, meta]) => (
             <button
               key={ratioKey}
               type="button"
-              className={`btn btn-sm ${aspectKey === ratioKey ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '5px 6px', minHeight: 31, fontSize: 12 }}
+              className={`studio-seg-btn ${aspectKey === ratioKey ? 'active' : ''}`}
+              style={{ justifyContent: 'center', padding: '5px 6px' }}
               onClick={() => update({ aspect_ratio: ratioKey })}
             >
               {meta.label}
@@ -1138,27 +1134,25 @@ export default function Canvas916Designer({
             )}
         </div>
 
-        {/* TRUE 1080P FRAME & COVER SNAPSHOT BUTTONS (ITEM 5) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+        {/* TRUE 1080P FRAME & COVER SNAPSHOT BUTTONS */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            style={{ fontSize: 11.8, padding: '6px 8px' }}
             disabled={renderingSnapshot}
             onClick={() => handleRenderTrueSnapshot(false)}
-            title="Xuất thử 1 bức ảnh Full HD qua đúng bộ dựng thật (tách nền, làm mờ, cỡ chữ phụ đề)"
+            title="Xuất thử 1 bức ảnh Full HD qua đúng bộ dựng thật"
           >
-            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Eye size={13} />} Xem khung thật 1080p
+            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Eye size={13} />} Khung thật 1080p
           </button>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            style={{ fontSize: 11.8, padding: '6px 8px' }}
             disabled={renderingSnapshot}
             onClick={() => handleRenderTrueSnapshot(true)}
             title="Xem trước Ảnh Bìa TikTok / Shorts thực tế"
           >
-            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Camera size={13} />} Xem thử Ảnh bìa
+            {renderingSnapshot ? <Loader2 size={13} className="spin" /> : <Camera size={13} />} Xem Ảnh bìa
           </button>
         </div>
 
@@ -1169,18 +1163,17 @@ export default function Canvas916Designer({
         />
 
         {/* Subtitle Size & Position Quick Control */}
-        <div className="surface-box" style={{ padding: '9px 11px', marginBottom: 10 }}>
+        <div className="surface-box" style={{ padding: '10px 12px', marginBottom: 12 }}>
           <div
-            className="text-sub"
+            className="text-xs text-sub"
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              fontSize: 12,
-              marginBottom: 3,
+              marginBottom: 4,
             }}
           >
             <span>
-              Cỡ chữ phụ đề: <strong>{subFontSize}px</strong>
+              Cỡ phụ đề: <strong>{subFontSize}px</strong>
             </span>
             <span>
               Vị trí dọc: <strong>{Math.round(subPosY * 100)}%</strong>
@@ -1199,63 +1192,54 @@ export default function Canvas916Designer({
 
         {/* Mode-Specific Framing & Transition Controls */}
         {!isMovieMode && !isThreadsMode && (
-          <div className="form-group" style={{ marginBottom: 10 }}>
-            <label className="form-label" style={{ fontSize: 12.2 }}>
-              Đạo diễn chuyển cảnh mượt chuẩn CapCut
-            </label>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label text-xs">Chuyển cảnh mượt chuẩn CapCut</label>
             <select
-              className="select"
-              style={{ fontSize: 12.8, minHeight: 37, padding: '6px 10px' }}
+              className="select select-sm"
               value={layoutConfig.transition_style || 'AUTO_DIRECTOR'}
               onChange={(e) => update({ transition_style: e.target.value })}
             >
-              <option value="AUTO_DIRECTOR">✨ Đạo diễn tự động theo mạch nội dung (Khuyên dùng)</option>
+              <option value="AUTO_DIRECTOR">Đạo diễn tự động theo mạch nội dung</option>
               <option value="CAPCUT_DISSOLVE">Mờ chồng êm ái (Mượt chuẩn CapCut)</option>
               <option value="CAPCUT_SMOOTH_SLIDE">Lướt ngang mượt mà (Smooth Slide)</option>
               <option value="CAPCUT_ZOOM_FLOW">Thu phóng mềm mại (Zoom Flow)</option>
               <option value="CAPCUT_FLASH_BEAT">Chớp sáng tinh tế (Soft Flash)</option>
-              <option value="STATIC_LOOKBOOK">Đứng tĩnh 100% (Không zoom, không rung)</option>
+              <option value="STATIC_LOOKBOOK">Đứng tĩnh 100%</option>
             </select>
           </div>
         )}
 
         {isProductMode && (
-          <div className="form-group" style={{ marginBottom: 10 }}>
-            <label className="form-label" style={{ fontSize: 12.2 }}>
-              Kiểu nền tôn dáng sản phẩm
-            </label>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label text-xs">Kiểu nền tôn dáng sản phẩm</label>
             <select
-              className="select"
-              style={{ fontSize: 12.8, minHeight: 37, padding: '6px 10px' }}
+              className="select select-sm"
               value={layoutConfig.product_framing || 'BLURRED_STUDIO_CARD'}
               onChange={(e) => update({ product_framing: e.target.value })}
             >
-              <option value="BLURRED_STUDIO_CARD">Thẻ nguyên vẹn trên nền mờ nghệ thuật</option>
+              <option value="BLURRED_STUDIO_CARD">Thẻ nguyên vẹn trên nền mờ</option>
               <option value="VELVET_DARK_LUXURY">Thẻ nguyên vẹn trên nền Đen Nhung</option>
-              <option value="FULL_BLEED_LUXURY">Phóng vừa tràn khung (Ảnh dọc)</option>
+              <option value="FULL_BLEED_LUXURY">Phóng vừa tràn khung</option>
             </select>
           </div>
         )}
 
         {isMovieMode && (
-          <div className="form-group" style={{ marginBottom: 10 }}>
-            <label className="form-label" style={{ fontSize: 12.2 }}>
-              Bố cục dựng phim dọc
-            </label>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label text-xs">Bố cục dựng phim dọc</label>
             <select
-              className="select"
-              style={{ fontSize: 12.8, minHeight: 37, padding: '6px 10px' }}
+              className="select select-sm"
               value={layoutConfig.layout_type}
               onChange={(e) => update({ layout_type: e.target.value })}
             >
-              <option value="BLUR_CENTER">Khung ngang ở giữa + Nền mờ (Khuyên dùng)</option>
+              <option value="BLUR_CENTER">Khung ngang ở giữa + Nền mờ</option>
               <option value="FACE_TRACK_FULL">Phóng toàn màn hình dọc bám khuôn mặt</option>
               <option value="SPLIT_RETENTION">Chia đôi màn hình trên - dưới</option>
             </select>
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
           <SwitchCard
             checked={showTopBanner}
             onChange={(val) => update({ show_top_banner: val })}
@@ -1283,51 +1267,45 @@ export default function Canvas916Designer({
           )}
         </div>
 
-        {/* OPT-IN CINEMATIC AMBIENCE & STORY PROGRESS BAR (DEFAULT OFF / NONE) */}
-        <div className="surface-box" style={{ padding: '9px 11px', marginBottom: 10 }}>
-          <label className="form-label" style={{ fontSize: 12, marginBottom: 5 }}>
-            ✨ Lớp phủ không khí điện ảnh (Mặc định Tắt)
-          </label>
-          <select
-            className="select"
-            style={{ fontSize: 12.5, minHeight: 35, padding: '5px 9px', marginBottom: 7 }}
-            value={ambienceMode}
-            onChange={(e) => update({ ambience_overlay: e.target.value })}
-          >
-            {AMBIENCE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <SwitchCard
-            checked={storyBarEnabled}
-            onChange={(val) => update({ story_progress_bar_enabled: val })}
-          >
-            Thanh tiến trình đốt truyện trên đỉnh (Mặc định Tắt)
-          </SwitchCard>
-        </div>
-
-        {/* SMART HUMAN-EYE EDITING DRAWER */}
+        {/* SMART HUMAN-EYE EDITING & AMBIENCE DRAWER */}
         <button
           type="button"
           className="adv-toggle"
-          style={{ marginBottom: 8, padding: '8px 12px', fontSize: 12.5 }}
           onClick={() => setShowSmartEdit((p) => !p)}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles size={15} style={{ color: 'var(--brand-text)' }} /> Dựng thông minh cho mắt nhìn (Smart Edit)
+            <Sparkles size={15} style={{ color: 'var(--brand-text)' }} /> Smart Edit &amp; Không khí
           </span>
           {showSmartEdit ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </button>
 
         {showSmartEdit && (
-          <div className="adv-body" style={{ padding: 11, marginBottom: 8, display: 'grid', gap: 7 }}>
+          <div className="adv-body" style={{ padding: 12, display: 'grid', gap: 8 }}>
+            <div>
+              <label className="form-label text-xs">Lớp phủ không khí điện ảnh</label>
+              <select
+                className="select select-sm"
+                value={ambienceMode}
+                onChange={(e) => update({ ambience_overlay: e.target.value })}
+              >
+                {AMBIENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <SwitchCard
+              checked={storyBarEnabled}
+              onChange={(val) => update({ story_progress_bar_enabled: val })}
+            >
+              Thanh tiến trình đốt truyện trên đỉnh
+            </SwitchCard>
             <SwitchCard
               checked={layoutConfig.safe_zone_guard !== false}
               onChange={(val) => update({ safe_zone_guard: val })}
             >
-              Khóa vùng an toàn TikTok/Shorts (né nút Tim &amp; Caption)
+              Khóa vùng an toàn TikTok/Shorts
             </SwitchCard>
 
             {!isMovieMode && !isThreadsMode && (
@@ -1336,13 +1314,13 @@ export default function Canvas916Designer({
                   checked={layoutConfig.smart_camera_motion !== false}
                   onChange={(val) => update({ smart_camera_motion: val })}
                 >
-                  Góc máy bám tâm chủ thể (luân phiên 5 hướng mượt)
+                  Góc máy bám tâm chủ thể (5 hướng mượt)
                 </SwitchCard>
                 <SwitchCard
                   checked={layoutConfig.smart_micro_punch_in !== false}
                   onChange={(val) => update({ smart_micro_punch_in: val })}
                 >
-                  Nhịp cận cảnh nhẹ (106%) ở câu dài &gt;6s chống nhàm mắt
+                  Nhịp cận cảnh nhẹ (106%) ở câu dài &gt;6s
                 </SwitchCard>
               </>
             )}
@@ -1352,7 +1330,7 @@ export default function Canvas916Designer({
                 checked={layoutConfig.auto_skip_black_intro !== false}
                 onChange={(val) => update({ auto_skip_black_intro: val })}
               >
-                Tự bỏ 1–3s đầu tối đen (giữ 100% màu gốc video)
+                Tự bỏ 1–3s đầu tối đen
               </SwitchCard>
             )}
 
@@ -1361,7 +1339,7 @@ export default function Canvas916Designer({
                 checked={layoutConfig.dynamic_face_tracking !== false}
                 onChange={(val) => update({ dynamic_face_tracking: val })}
               >
-                Bám khuôn mặt động êm ái theo nhân vật đang nói
+                Bám khuôn mặt động theo nhân vật
               </SwitchCard>
             )}
           </div>
@@ -1371,11 +1349,11 @@ export default function Canvas916Designer({
         <button
           type="button"
           className="adv-toggle"
-          style={{ marginBottom: showBrandKit || isMovieMode ? 8 : 0, padding: '8px 12px', fontSize: 12.5 }}
+          style={{ marginBottom: showBrandKit || isMovieMode ? 8 : 0 }}
           onClick={() => setShowBrandKit((p) => !p)}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Award size={15} style={{ color: 'var(--brand-text)' }} /> Bộ nhận diện (Brand Kit) & Thẻ kết
+            <Award size={15} style={{ color: 'var(--brand-text)' }} /> Brand Kit &amp; Thẻ kết
           </span>
           {showBrandKit ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </button>
@@ -1387,14 +1365,13 @@ export default function Canvas916Designer({
                 checked={Boolean(layoutConfig.outro_card_enabled)}
                 onChange={(val) => update({ outro_card_enabled: val })}
               >
-                Bật thẻ kết sang trọng 2.5s ở cuối video
+                Bật thẻ kết sang trọng 2.5s cuối video
               </SwitchCard>
             </div>
 
             <div className="form-group" style={{ marginBottom: 8 }}>
               <input
-                className="input"
-                style={{ minHeight: 35, padding: '6px 10px', fontSize: 12.6 }}
+                className="input input-sm"
                 placeholder="Tên cửa hàng / kênh (VD: Sơn Music Violin)"
                 value={layoutConfig.outro_brand_title || ''}
                 onChange={(e) => update({ outro_brand_title: e.target.value })}
@@ -1402,17 +1379,15 @@ export default function Canvas916Designer({
             </div>
             <div className="form-group" style={{ marginBottom: 8 }}>
               <input
-                className="input"
-                style={{ minHeight: 35, padding: '6px 10px', fontSize: 12.6 }}
+                className="input input-sm"
                 placeholder="Địa chỉ Showroom (VD: Test đàn trực tiếp tại Hà Nội)"
                 value={layoutConfig.outro_subtitle || ''}
                 onChange={(e) => update({ outro_subtitle: e.target.value })}
               />
             </div>
-            <div className="form-group" style={{ marginBottom: 9 }}>
+            <div className="form-group" style={{ marginBottom: 10 }}>
               <input
-                className="input"
-                style={{ minHeight: 35, padding: '6px 10px', fontSize: 12.6 }}
+                className="input input-sm"
                 placeholder="Website / Liên hệ (VD: www.sonmusic.vn)"
                 value={layoutConfig.outro_contact_line || ''}
                 onChange={(e) => update({ outro_contact_line: e.target.value })}
@@ -1445,10 +1420,10 @@ export default function Canvas916Designer({
             <button
               type="button"
               className="adv-toggle"
-              style={{ marginBottom: showLayoutSettings ? 8 : 0, padding: '8px 12px', fontSize: 12.5 }}
+              style={{ marginBottom: showLayoutSettings ? 8 : 0 }}
               onClick={() => setShowLayoutSettings((p) => !p)}
             >
-              <span>Kiểu che chữ gốc & lật khung lách bản quyền</span>
+              <span>Che chữ gốc &amp; lật khung</span>
               {showLayoutSettings ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button>
 
@@ -1456,9 +1431,9 @@ export default function Canvas916Designer({
               <div className="adv-body" style={{ padding: 12, marginBottom: 0 }}>
                 {layoutConfig.hardsub_mask_enabled && (
                   <div className="form-group" style={{ marginBottom: 9 }}>
-                    <label className="form-label">Kiểu thanh che chữ ngoại ngữ gốc</label>
+                    <label className="form-label text-xs">Kiểu thanh che chữ ngoại ngữ gốc</label>
                     <select
-                      className="select"
+                      className="select select-sm"
                       value={rect.mode}
                       onChange={(e) => updateRect({ mode: e.target.value })}
                     >
@@ -1473,14 +1448,14 @@ export default function Canvas916Designer({
                     checked={layoutConfig.anti_copyright_enabled}
                     onChange={(val) => update({ anti_copyright_enabled: val })}
                   >
-                    Biến đổi tốc độ & màu ({layoutConfig.speed_factor}x)
+                    Biến đổi tốc độ &amp; màu ({layoutConfig.speed_factor}x)
                   </SwitchCard>
                 </div>
 
                 {layoutConfig.anti_copyright_enabled && (
                   <div className="form-grid">
                     <div>
-                      <label className="form-label">Tốc độ: {layoutConfig.speed_factor}x</label>
+                      <label className="form-label text-xs">Tốc độ: {layoutConfig.speed_factor}x</label>
                       <input
                         type="range"
                         min="1.00"
@@ -1517,22 +1492,21 @@ export default function Canvas916Designer({
             marginBottom: 10,
           }}
         >
-          <span style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Cpu size={16} strokeWidth={2} /> Phần cứng ({gpus.length} GPU)
+          <span className="text-sm fw-700" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Cpu size={16} strokeWidth={2} style={{ color: 'var(--brand-text)' }} /> Phần cứng ({gpus.length} GPU)
           </span>
           <span className={`badge ${systemStatus?.cuda_available ? 'badge-ok' : 'badge-warn'}`}>
             {systemStatus?.active_gpu_owner
               ? `Đang chạy: ${systemStatus.active_gpu_owner}`
               : systemStatus?.nvenc_available
-              ? 'NVENC GPU Sẵn sàng'
+              ? 'NVENC Sẵn sàng'
               : 'Sẵn sàng'}
           </span>
         </div>
 
         <div className="form-group" style={{ marginBottom: 10 }}>
           <select
-            className="select"
-            style={{ fontSize: 13 }}
+            className="select select-sm"
             disabled={switchingGpu}
             value={systemStatus?.preferred_device || 'auto'}
             onChange={(e) => handleSelectGpu(e.target.value)}
@@ -1556,17 +1530,17 @@ export default function Canvas916Designer({
           return (
             <div key={g.device_id} className="gpu-card-item">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                <strong style={{ fontSize: 12.8 }}>
+                <strong className="text-xs">
                   #{g.index} {g.name}
                 </strong>
-                <span className="badge" style={{ fontSize: 10.8, padding: '1px 7px' }}>
+                <span className="badge">
                   {g.vendor} {g.temperature_c !== null ? `• ${g.temperature_c}°C` : ''}
                 </span>
               </div>
 
               {g.vram_total_mb > 0 && (
                 <div style={{ marginTop: 6 }}>
-                  <div className="text-sub" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
+                  <div className="text-xs text-sub" style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>
                       VRAM: {(g.vram_used_mb / 1024).toFixed(1)} / {(g.vram_total_mb / 1024).toFixed(1)} GB
                     </span>
@@ -1593,7 +1567,7 @@ export default function Canvas916Designer({
             flexWrap: 'wrap',
           }}
         >
-          <div className="text-sub" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div className="text-xs text-sub" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <HardDrive size={14} /> Trống <strong>{storage.disk_free_gb ?? '--'} GB</strong> • Nháp{' '}
             <strong>{storage.work_temp_mb ?? 0} MB</strong>
           </div>
@@ -1608,35 +1582,23 @@ export default function Canvas916Designer({
         </div>
       </div>
 
-      {/* TRUE 1080P COMPOSITOR SNAPSHOT MODAL (ITEM 5) */}
+      {/* TRUE 1080P COMPOSITOR SNAPSHOT MODAL */}
       {snapshotModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(2, 6, 23, 0.82)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 130,
-            padding: 16,
-          }}
-          onClick={() => setSnapshotModal(null)}
-        >
+        <div className="modal-backdrop" onClick={() => setSnapshotModal(null)}>
           <div
             className="card"
             onClick={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: 480, marginBottom: 0 }}
           >
-            <div className="page-header" style={{ marginBottom: 10 }}>
+            <div className="page-header" style={{ marginBottom: 12 }}>
               <div>
-                <div className="page-title" style={{ fontSize: 16 }}>
+                <div className="text-md fw-700" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Camera size={18} />{' '}
                   {snapshotModal.asCover
                     ? 'Ảnh Bìa Kết Xuất Thật (Cover Studio)'
                     : 'Khung Hình Kết Xuất Thật 100%'}
                 </div>
-                <div className="page-subtitle" style={{ fontSize: 12 }}>
+                <div className="text-xs text-sub" style={{ marginTop: 3 }}>
                   {snapshotModal.width}×{snapshotModal.height}px • Dựng trong{' '}
                   {snapshotModal.elapsed_ms}ms •{' '}
                   {snapshotModal.nvenc_active ? 'Tăng tốc GPU h264_nvenc' : 'CPU x264'}
@@ -1696,7 +1658,6 @@ export default function Canvas916Designer({
                 href={snapshotModal.image_url}
                 download={snapshotModal.asCover ? 'Anh_Bia_Thu.jpg' : 'Khung_Xem_Thu_1080p.jpg'}
                 className="btn btn-secondary btn-sm"
-                style={{ textDecoration: 'none' }}
               >
                 <Download size={14} /> Tải ảnh
               </a>

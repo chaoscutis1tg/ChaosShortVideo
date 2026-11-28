@@ -15,6 +15,7 @@ import {
   Globe,
   HelpCircle,
   Images,
+  KeyRound,
   Layers,
   Loader2,
   MessageSquareHeart,
@@ -27,6 +28,7 @@ import {
   Scissors,
   ShieldCheck,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Trash2,
@@ -45,7 +47,11 @@ import {
   ModeChoiceGrid,
   ParentGroupSelector,
   scrollToFirstValidationError,
+  StudioCollapsible,
   StudioLoadingBanner,
+  StudioPageHeader,
+  StudioStepFooter,
+  StudioStepNav,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
 
@@ -62,9 +68,6 @@ function loadProductDraft() {
 
 const VIDEO_EXT_RE = /\.(mp4|mov|mkv|webm|avi|flv|ts)$/i;
 
-/**
- * Interactive Trim In / Out bar for picking the exact best segment of a demo audio or video clip (`Item 3`).
- */
 function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
   const totalSecRaw = Math.max(2, Number(((mediaItem?.duration_ms || 20000) / 1000).toFixed(1)));
   const [totalSec, setTotalSec] = useState(totalSecRaw);
@@ -119,15 +122,7 @@ function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
   };
 
   return (
-    <div
-      style={{
-        marginTop: 8,
-        padding: '9px 11px',
-        borderRadius: 8,
-        background: 'var(--bg-step)',
-        border: '1px solid var(--brand-border)',
-      }}
-    >
+    <div className="studio-callout studio-callout-brand" style={{ marginTop: 10 }}>
       <div
         style={{
           display: 'flex',
@@ -135,24 +130,20 @@ function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
           alignItems: 'center',
           gap: 6,
           flexWrap: 'wrap',
-          marginBottom: 6,
+          marginBottom: 8,
         }}
       >
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand-text)' }}>
-          <Scissors size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+        <span className="text-xs fw-700 text-brand">
+          <Scissors size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />
           Chọn đoạn hay nhất: {startSec.toFixed(1)}s → {endSec.toFixed(1)}s (Lấy{' '}
           {Math.max(0, endSec - startSec).toFixed(1)}s / {totalSec.toFixed(1)}s)
         </span>
-        {mediaItem?.trimmedDone && (
-          <span className="badge badge-ok" style={{ fontSize: 10.5, padding: '1px 7px' }}>
-            Đã cắt chuẩn
-          </span>
-        )}
+        {mediaItem?.trimmedDone && <span className="badge badge-ok">Đã cắt chuẩn</span>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
+      <div className="form-grid" style={{ marginBottom: 8 }}>
         <div>
-          <div className="text-sub" style={{ fontSize: 11.2 }}>
+          <div className="text-xs text-sub">
             Bắt đầu từ: <strong>{startSec.toFixed(1)} giây</strong>
           </div>
           <input
@@ -170,7 +161,7 @@ function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
           />
         </div>
         <div>
-          <div className="text-sub" style={{ fontSize: 11.2 }}>
+          <div className="text-xs text-sub">
             Kết thúc tại: <strong>{endSec.toFixed(1)} giây</strong>
           </div>
           <input
@@ -192,7 +183,7 @@ function InlineClipTrimmer({ mediaItem, playerRef, onTrimApplied, notify }) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {playerRef && (
           <button type="button" className="btn btn-secondary btn-sm" onClick={handlePreviewSlice}>
-            <Play size={12} /> Nghe / Xem thử đoạn chọn
+            <Play size={12} /> Nghe / Xem thử
           </button>
         )}
         <button
@@ -265,6 +256,9 @@ export default function ProductStudioForm({
   onGroupsChanged,
   onPreviewFrameReady,
   onProjectStarted,
+  onNavigateTab,
+  showAllSteps = false,
+  onToggleShowAllSteps,
   notify,
   apiKeyConfigured = false,
   onOpenApiSettings,
@@ -272,6 +266,7 @@ export default function ProductStudioForm({
   const savedDraft = loadProductDraft();
   const rootRef = useRef(null);
 
+  const [activeStep, setActiveStep] = useState(1);
   const [templates, setTemplates] = useState([]);
   const [selectedTplId, setSelectedTplId] = useState('');
   const [parentGroupId, setParentGroupId] = useState(savedDraft.parentGroupId || '');
@@ -396,7 +391,6 @@ export default function ProductStudioForm({
     }));
   }, []);
 
-  // Global Ctrl+V Clipboard Image Paste Listener (only active when ProductStudioForm is visible!)
   useEffect(() => {
     const onWindowPaste = (e) => {
       if (!rootRef.current || rootRef.current.offsetParent === null) return;
@@ -429,6 +423,7 @@ export default function ProductStudioForm({
     const clean = scrapeUrl.trim();
     if (!isValidHttpUrl(clean)) {
       const msg = 'Vui lòng dán đường dẫn sản phẩm hợp lệ (bắt đầu bằng https://...).';
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, scrapeUrl: msg }));
       scrollToFirstValidationError(rootRef);
       notify(msg);
@@ -470,6 +465,7 @@ export default function ProductStudioForm({
 
     if (urls.length === 0) {
       const msg = 'Vui lòng dán ít nhất 1 đường dẫn sản phẩm hợp lệ (mỗi dòng 1 link https://...).';
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, batchUrls: msg }));
       scrollToFirstValidationError(rootRef);
       notify(msg);
@@ -477,6 +473,7 @@ export default function ProductStudioForm({
     }
     if (invalidCount > 0) {
       const msg = `Có ${invalidCount} dòng chưa đúng chuẩn URL https://... — vui lòng kiểm tra lại.`;
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, batchUrls: msg }));
       scrollToFirstValidationError(rootRef);
       notify(msg);
@@ -484,6 +481,7 @@ export default function ProductStudioForm({
     }
     if (urls.length > 20) {
       const msg = `Tối đa 20 link sản phẩm mỗi đợt (hiện đang có ${urls.length} link).`;
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, batchUrls: msg }));
       scrollToFirstValidationError(rootRef);
       notify(msg);
@@ -739,6 +737,7 @@ export default function ProductStudioForm({
       nextErrs.productName = 'Tên sản phẩm tối đa 160 ký tự.';
     }
     if (Object.keys(nextErrs).length > 0) {
+      setActiveStep(1);
       setErrors((prev) => ({ ...prev, ...nextErrs }));
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
@@ -774,7 +773,7 @@ export default function ProductStudioForm({
       setProductAiAnalysis(res);
       notify(
         res.used_api_key
-          ? 'Đã gọi API Key phân tích & viết chi tiết mô tả sản phẩm chuẩn bán hàng!'
+          ? 'Đã phân tích chuyên sâu & viết chi tiết mô tả sản phẩm chuẩn bán hàng!'
           : 'Đã mở rộng mô tả chi tiết cho sản phẩm!'
       );
     } catch (err) {
@@ -794,7 +793,7 @@ export default function ProductStudioForm({
         'Bắt buộc tải lên hoặc dán (Ctrl+V) ít nhất 1 ảnh hoặc video sản phẩm ở Bước 1.';
     } else if (Boolean(layoutConfig.comparison_split_enabled) && uploadedPhotos.length < 2) {
       nextErrs.photos =
-        'Bạn đang bật chế độ "Chia đôi so sánh A/B" — vui lòng tải lên ít nhất 2 ảnh sản phẩm (hoặc tắt công tắc So sánh A/B ở Bước 3).';
+        'Bạn đang bật chế độ "Chia đôi so sánh A/B" — vui lòng tải lên ít nhất 2 ảnh sản phẩm.';
     }
 
     if (cleanName.length < 2) {
@@ -809,6 +808,7 @@ export default function ProductStudioForm({
     }
 
     if (Object.keys(nextErrs).length > 0) {
+      setActiveStep(1);
       setErrors(nextErrs);
       scrollToFirstValidationError(rootRef);
       notify(Object.values(nextErrs)[0]);
@@ -871,1194 +871,1081 @@ export default function ProductStudioForm({
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
+  const stepItems = [
+    {
+      title: 'Ảnh / Clip & Sản phẩm',
+      meta:
+        uploadedPhotos.length > 0
+          ? `${uploadedPhotos.length} tệp • ${productName.trim().slice(0, 22)}`
+          : 'Tải ảnh/video hoặc dán Ctrl+V',
+      done: uploadedPhotos.length > 0 && productName.trim().length >= 2,
+    },
+    {
+      title: 'Khung CapCut & Giọng đọc',
+      meta: `${layoutConfig.aspect_ratio || '9:16'} • Chuyển cảnh mượt`,
+      done: activeStep > 2,
+    },
+    {
+      title: 'Ảnh bìa & Xuất bản',
+      meta: `~${durationSec}s • ${variantCount} bản`,
+      done: false,
+    },
+  ];
+
+  const showStep1 = showAllSteps || activeStep === 1;
+  const showStep2 = showAllSteps || activeStep === 2;
+  const showStep3 = showAllSteps || activeStep === 3;
+
   return (
     <div ref={rootRef} className="card">
-      <div className="page-header">
-        <div>
-          <div className="page-title">
-            <ShoppingBag size={20} strokeWidth={2} /> Làm Video Giới Thiệu & Bán Sản Phẩm Chuyên Nghiệp
-          </div>
-          <div className="page-subtitle">
-            Dán ảnh thẳng từ Zalo (Ctrl+V), hút thông tin từ website, trộn đa clip + ảnh, tách nền Studio, so sánh 2 phiên bản & vẽ sóng âm đàn mộc
-          </div>
-        </div>
-        <span className="badge badge-ok">Chuẩn CapCut • Giữ nguyên 100% khung hình</span>
-      </div>
+      <StudioPageHeader
+        icon={ShoppingBag}
+        title="Video Giới Thiệu & Bán Sản Phẩm"
+        subtitle="Dán ảnh từ Zalo (Ctrl+V), hút dữ liệu từ Website, trộn đa clip + ảnh, tách nền Studio & vẽ sóng âm thực tế"
+        badges={[
+          {
+            label: apiKeyConfigured ? 'AI sẵn sàng' : 'Chưa gắn API Key',
+            cls: apiKeyConfigured ? 'badge-ok' : 'badge-warn',
+            icon: KeyRound,
+          },
+          { label: `${uploadedPhotos.length} tư liệu`, cls: 'badge-info' },
+          { label: `~${durationSec}s`, cls: '' },
+        ]}
+        actions={
+          !apiKeyConfigured && onOpenApiSettings ? (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
+              <KeyRound size={13} /> Cấu hình API
+            </button>
+          ) : null
+        }
+      />
 
-      {/* BAR 1: QUICK AUTO-SCRAPE PRODUCT URL & SAVED STORE CATALOG */}
-      <div
-        className="step-box"
-        style={{
-          display: 'grid',
-          gap: 10,
-          padding: '13px 15px',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span
-            style={{
-              fontSize: 12.8,
-              fontWeight: 700,
-              color: 'var(--brand-text)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 165,
-            }}
-          >
-            <Globe size={15} /> Hút nhanh từ Website:
-          </span>
-          <input
-            className={`input ${errors.scrapeUrl ? 'input-error' : ''}`}
-            style={{ flex: 1, minWidth: 220, minHeight: 37, padding: '6px 12px', fontSize: 13.2 }}
-            placeholder="Dán link sản phẩm (VD: https://www.sonmusic.vn/...) để tự lấy tên, mô tả & bộ ảnh..."
-            value={scrapeUrl}
-            onChange={(e) => {
-              setScrapeUrl(e.target.value);
-              clearError('scrapeUrl');
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && handleScrapeProductUrl()}
-          />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            style={{ minHeight: 37 }}
-            disabled={scrapingUrl}
-            onClick={handleScrapeProductUrl}
-          >
-            {scrapingUrl ? <Loader2 size={14} className="spin" /> : <Globe size={14} />}{' '}
-            {scrapingUrl ? 'Đang hút dữ liệu...' : 'Hút 1 link'}
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${showBatchPanel ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ minHeight: 37 }}
-            onClick={() => setShowBatchPanel((p) => !p)}
-          >
-            <Layers size={14} /> Tạo hàng loạt (Nhiều link)
-          </button>
-        </div>
-        <FieldError message={errors.scrapeUrl} />
+      <StudioStepNav
+        steps={stepItems}
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
+        showAllSteps={showAllSteps}
+        onToggleShowAll={onToggleShowAllSteps}
+      />
 
-        <StudioLoadingBanner
-          loading={scrapingUrl}
-          title="Đang hút thông tin & tải bộ ảnh gốc từ trang sản phẩm..."
-          subtitle="Hệ thống đang bóc tách tên sản phẩm, thông số kỹ thuật và ảnh độ phân giải cao"
-          steps={['Kết nối Website sản phẩm', 'Trích xuất mô tả & tải bộ ảnh về máy']}
-          stepIntervalMs={2400}
-        />
-
-        {/* ITEM 6: BATCH STORE URL PRODUCER */}
-        {showBatchPanel && (
-          <div className="surface-box fade-slide-in" style={{ borderColor: 'var(--brand)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-              <strong style={{ fontSize: 13.2, color: 'var(--brand-text)' }}>
-                Sản xuất hàng loạt từ danh sách Link sản phẩm trên Website (1 – 20 sản phẩm/lần)
-              </strong>
-              <span className="badge badge-info">
-                Đã nhận{' '}
-                {
-                  batchUrlsText
-                    .split(/\r?\n/)
-                    .map((s) => s.trim())
-                    .filter((s) => isValidHttpUrl(s)).length
-                }
-                /20 link hợp lệ
-              </span>
+      {/* ==================== BƯỚC 1: ẢNH / CLIP & THÔNG TIN SẢN PHẨM ==================== */}
+      {showStep1 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">1</span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">Tư liệu hình ảnh &amp; Nội dung giới thiệu sản phẩm</div>
+              <div className="step-desc">
+                Thả trộn lẫn ảnh chụp và video quay cận, hút nhanh từ Website cửa hàng hoặc chọn từ Kho mẫu đã lưu
+              </div>
             </div>
-            <textarea
-              className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
-              style={{ minHeight: 92, marginBottom: 6, fontSize: 13 }}
-              placeholder={`Dán mỗi dòng 1 đường dẫn sản phẩm:\nhttps://www.sonmusic.vn/dan-violin-avaro-s2\nhttps://www.sonmusic.vn/dan-violin-avaro-s2s\n...`}
-              value={batchUrlsText}
-              onChange={(e) => {
-                setBatchUrlsText(e.target.value);
-                clearError('batchUrls');
-              }}
-            />
-            <FieldError message={errors.batchUrls} />
+            <span className="badge badge-info">
+              <ClipboardPaste size={12} /> Dán nhanh Ctrl+V từ Zalo
+            </span>
+          </div>
+
+          {/* QUICK IMPORT & CATALOG STRIP */}
+          <div className="surface-box" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Globe size={16} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
+              <input
+                className={`input ${errors.scrapeUrl ? 'input-error' : ''}`}
+                style={{ flex: 1, minWidth: 220 }}
+                placeholder="Dán link sản phẩm trên Website để tự lấy tên, mô tả & bộ ảnh..."
+                value={scrapeUrl}
+                onChange={(e) => {
+                  setScrapeUrl(e.target.value);
+                  clearError('scrapeUrl');
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleScrapeProductUrl()}
+              />
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ minHeight: 40 }}
+                disabled={scrapingUrl}
+                onClick={handleScrapeProductUrl}
+              >
+                {scrapingUrl ? <Loader2 size={14} className="spin" /> : <Globe size={14} />}
+                <span>{scrapingUrl ? 'Đang hút...' : 'Hút 1 link'}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${showBatchPanel ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ minHeight: 40 }}
+                onClick={() => setShowBatchPanel((p) => !p)}
+              >
+                <Layers size={14} /> Nhiều link
+              </button>
+            </div>
+            <FieldError message={errors.scrapeUrl} />
+
             <StudioLoadingBanner
-              loading={startingBatch}
-              title="Đang quét danh sách sản phẩm & khởi tạo hàng đợi xuất loạt video..."
-              steps={['Đọc dữ liệu từng trang sản phẩm', 'Xếp lịch dựng video tự động']}
-              stepIntervalMs={2800}
+              loading={scrapingUrl}
+              title="Đang hút thông tin & tải bộ ảnh gốc từ trang sản phẩm..."
+              subtitle="Hệ thống đang bóc tách tên sản phẩm, thông số kỹ thuật và ảnh độ phân giải cao"
+              steps={['Kết nối Website sản phẩm', 'Trích xuất mô tả & tải bộ ảnh về máy']}
+              stepIntervalMs={2400}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-              <SwitchCard checked={batchDiversify} onChange={setBatchDiversify}>
-                Tự xoay vòng 4 góc kịch bản để các video không lặp câu chữ
-              </SwitchCard>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={startingBatch}
-                onClick={handleStartBatchFromUrls}
-              >
-                {startingBatch ? <Loader2 size={15} className="spin" /> : <Layers size={15} />}{' '}
-                {startingBatch ? 'Đang hút danh sách sản phẩm...' : 'Hút & Xếp hàng xuất loạt Video'}
-              </button>
-            </div>
-          </div>
-        )}
 
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            paddingTop: 8,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 12.8,
-              color: 'var(--text-primary)',
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 165,
-            }}
-          >
-            <Package size={15} style={{ color: 'var(--brand-text)' }} /> Kho mẫu lưu sẵn:
-          </span>
-          <select
-            className="select"
-            style={{ flex: 1, minWidth: 200, minHeight: 36, padding: '5px 11px', fontSize: 13 }}
-            value={selectedTplId}
-            onChange={(e) => {
-              const id = e.target.value;
-              setSelectedTplId(id);
-              const found = templates.find((t) => t.template_id === id);
-              if (found) handleApplyTemplate(found);
-            }}
-          >
-            <option value="">Chọn nhanh sản phẩm đã lưu trong kho ({templates.length})</option>
-            {templates.map((t) => (
-              <option key={t.template_id} value={t.template_id}>
-                {t.product_name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            style={{ minHeight: 36 }}
-            onClick={handleSaveCurrentAsTemplate}
-          >
-            <BookmarkPlus size={14} /> Lưu mẫu hiện tại
-          </button>
-          {selectedTplId && (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              style={{ minHeight: 36 }}
-              onClick={handleDeleteTemplate}
-              title="Xóa mẫu này khỏi kho"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
-
-        <div style={{ paddingTop: 4 }}>
-          <ParentGroupSelector
-            projectGroups={projectGroups}
-            value={parentGroupId}
-            onChange={setParentGroupId}
-            onGroupsChanged={onGroupsChanged}
-            notify={notify}
-            label="Thuộc Dự Án Cha (Gom theo Bộ sưu tập / Chiến dịch bán hàng)"
-          />
-        </div>
-      </div>
-
-      {/* STEP 1: MULTI-CLIP VIDEO + PHOTO TIMELINE, CTRL+V ZALO PASTE & STUDIO CUTOUT */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">1</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">
-              Bộ ảnh & clip quay cận cảnh ({uploadedPhotos.length} mục) + Âm thanh tiếng đàn mộc
-            </div>
-            <div className="step-desc">
-              Thả trộn lẫn cả <strong>ảnh chụp</strong> lẫn <strong>nhiều video quay cận ngắn</strong> trên cùng dòng thời gian, hoặc copy ảnh từ Zalo rồi bấm <strong>Ctrl + V</strong> thẳng vào trang.
-            </div>
-          </div>
-          <span className="badge badge-info">
-            <ClipboardPaste size={12} /> Dán nhanh Ctrl+V từ Zalo
-          </span>
-          {uploadedPhotos.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => setUploadedPhotos([])}
-            >
-              <Trash2 size={13} /> Xóa hết
-            </button>
-          )}
-        </div>
-
-        <MediaDropzone
-          accept="image/*,video/*"
-          multiple
-          disabled={uploadingPhotos}
-          loading={uploadingPhotos}
-          error={errors.photos}
-          icon={Images}
-          title={
-            uploadingPhotos
-              ? 'Đang tải tệp đa phương tiện lên...'
-              : 'Kéo thả nhiều Ảnh + Video quay cận vào đây, bấm chọn tệp, hoặc bấm Ctrl+V dán ảnh Zalo'
-          }
-          hint="Hỗ trợ JPG, PNG, WEBP và MP4, MOV — lên hình đủ 100% số lượng theo đúng thứ tự bạn sắp xếp"
-          onFilesSelected={(fl) => handlePhotosSelected(fl, false)}
-        />
-
-        {uploadedPhotos.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(146px, 1fr))',
-              gap: 10,
-              marginTop: 14,
-            }}
-          >
-            {uploadedPhotos.map((ph, idx) => (
-              <div
-                key={`${ph.local_path}_${idx}`}
-                draggable
-                onDragStart={() => setDragPhotoIdx(idx)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (dragPhotoIdx !== null) movePhoto(dragPhotoIdx, idx);
-                  setDragPhotoIdx(null);
-                }}
-                style={{
-                  background: 'var(--bg-panel)',
-                  border: idx === 0 ? '1.5px solid var(--brand)' : '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: 7,
-                }}
-              >
-                <div
-                  onClick={() => !ph.isVideo && onPreviewFrameReady && onPreviewFrameReady(ph.media_url)}
-                  title="Bấm để xem thử trên khung điện thoại • Kéo thả để đổi thứ tự"
-                  style={{
-                    position: 'relative',
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                    aspectRatio: '3 / 4',
-                    cursor: 'grab',
-                    marginBottom: 6,
-                    background: '#080a0f',
-                  }}
-                >
-                  {ph.isVideo ? (
-                    <video
-                      src={ph.media_url}
-                      muted
-                      loop
-                      playsInline
-                      onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
-                      onMouseLeave={(e) => e.currentTarget.pause()}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    />
-                  ) : (
-                    <img
-                      src={ph.media_url}
-                      alt={ph.original_name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    />
-                  )}
-                  <span
-                    style={{
-                      position: 'absolute',
-                      left: 5,
-                      bottom: 5,
-                      background: ph.isVideo
-                        ? 'rgba(16, 185, 129, 0.92)'
-                        : idx === 0
-                        ? 'rgba(2, 132, 199, 0.94)'
-                        : 'rgba(15, 23, 42, 0.88)',
-                      color: '#ffffff',
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                    }}
-                  >
-                    {ph.isVideo ? `Cảnh ${idx + 1} • Video` : idx === 0 ? 'Mục 1 • Mở màn' : `Ảnh ${idx + 1}`}
-                  </span>
-
-                  {!ph.isVideo ? (
-                    <button
-                      type="button"
-                      disabled={cutoutBusyIdx === idx}
-                      title="Tách nền sang phông Studio cho riêng bức ảnh này"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        handleSinglePhotoCutout(idx);
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: 5,
-                        left: 5,
-                        height: 22,
-                        padding: '0 7px',
-                        borderRadius: 5,
-                        border: '1px solid rgba(245, 158, 11, 0.65)',
-                        background: ph.cutoutDone
-                          ? 'rgba(5, 150, 105, 0.92)'
-                          : 'rgba(15, 23, 42, 0.9)',
-                        color: '#fef3c7',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Wand2 size={10} /> {cutoutBusyIdx === idx ? '...' : ph.cutoutDone ? 'Đã tách' : 'Tách nền'}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      title="Cắt chọn đúng đoạn giây đẹp nhất của clip này"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setTrimOpenIdx((prev) => (prev === idx ? null : idx));
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: 5,
-                        left: 5,
-                        height: 22,
-                        padding: '0 7px',
-                        borderRadius: 5,
-                        border: '1px solid rgba(56, 189, 248, 0.75)',
-                        background: ph.trimmedDone
-                          ? 'rgba(5, 150, 105, 0.92)'
-                          : 'rgba(15, 23, 42, 0.9)',
-                        color: '#e0f2fe',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Scissors size={10} /> {ph.trimmedDone ? 'Đã cắt' : 'Cắt đoạn'}
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx));
-                    }}
-                    style={{
-                      position: 'absolute',
-                      top: 5,
-                      right: 5,
-                      width: 22,
-                      height: 22,
-                      borderRadius: 5,
-                      border: 'none',
-                      background: 'rgba(15, 23, 42, 0.88)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-
-                {/* Reorder Quick Controls */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 4,
-                    marginBottom: layoutConfig.show_photo_callouts && !ph.isVideo ? 6 : 0,
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 7px', minHeight: 26 }}
-                    disabled={idx === 0}
-                    title="Đẩy sang trước"
-                    onClick={() => movePhoto(idx, idx - 1)}
-                  >
-                    <ArrowLeft size={12} />
-                  </button>
-                  {idx > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ padding: '2px 6px', minHeight: 26, fontSize: 11, flex: 1 }}
-                      title="Đưa lên làm cảnh đầu tiên mở màn"
-                      onClick={() => movePhoto(idx, 0)}
-                    >
-                      <Star size={11} /> Lên đầu
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 7px', minHeight: 26 }}
-                    disabled={idx === uploadedPhotos.length - 1}
-                    title="Đẩy ra sau"
-                    onClick={() => movePhoto(idx, idx + 1)}
-                  >
-                    <ArrowRight size={12} />
-                  </button>
-                </div>
-
-                {layoutConfig.show_photo_callouts && !ph.isVideo && (
-                  <input
-                    className="input"
-                    style={{ minHeight: 29, padding: '3px 8px', fontSize: 11.5 }}
-                    placeholder="Nhãn ngắn trên ảnh..."
-                    value={ph.note}
-                    onChange={(e) => handlePhotoNoteChange(idx, e.target.value)}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Inline Video Clip Trimmer when user clicks "Cắt đoạn" on any timeline video */}
-        {trimOpenIdx !== null && uploadedPhotos[trimOpenIdx]?.isVideo && (
-          <InlineClipTrimmer
-            mediaItem={uploadedPhotos[trimOpenIdx]}
-            playerRef={null}
-            notify={notify}
-            onTrimApplied={(trimmedRes) => {
-              setUploadedPhotos((prev) =>
-                prev.map((it, idx) =>
-                  idx !== trimOpenIdx
-                    ? it
-                    : {
-                        ...it,
-                        local_path: trimmedRes.local_path,
-                        media_url: trimmedRes.media_url,
-                        duration_ms: trimmedRes.duration_ms,
-                        trimmedDone: true,
-                      }
-                )
-              );
-              setTrimOpenIdx(null);
-            }}
-          />
-        )}
-
-        {/* Real Acoustic Sound / Demo + Customer Feedback Social Proof Row */}
-        <div className="form-grid" style={{ marginTop: 14 }}>
-          <div className="surface-box">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: 13.2, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Thu âm tiếng đàn mộc / Clip test âm (5–20s)
-                </div>
-                <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
-                  Tự ngắt giọng đọc & vẽ sóng âm vàng kim theo tiếng đàn thực tế
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-                  <Music2 size={14} />{' '}
-                  {uploadingDemo ? 'Đang tải...' : demoClip ? 'Đổi tệp' : 'Chọn tiếng đàn / clip'}
-                  <input
-                    type="file"
-                    accept="video/*,audio/*"
-                    hidden
-                    disabled={uploadingDemo}
-                    onChange={handleDemoUpload}
-                  />
-                </label>
-                {demoClip && (
-                  <button type="button" className="btn btn-danger btn-sm" onClick={() => setDemoClip(null)}>
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-            </div>
-            {demoClip?.media_url && (
-              <div style={{ marginTop: 10 }}>
-                {demoClip.isVideo ? (
-                  <video
-                    ref={demoPlayerRef}
-                    controls
-                    src={demoClip.media_url}
-                    onLoadedMetadata={(e) => {
-                      const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
-                      if (dMs > 500 && !demoClip.duration_ms) {
-                        setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
-                      }
-                    }}
-                    style={{ width: '100%', maxHeight: 145, borderRadius: 7, background: '#000' }}
-                  />
-                ) : (
-                  <audio
-                    ref={demoPlayerRef}
-                    controls
-                    src={demoClip.media_url}
-                    onLoadedMetadata={(e) => {
-                      const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
-                      if (dMs > 500 && !demoClip.duration_ms) {
-                        setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
-                      }
-                    }}
-                    style={{ width: '100%', height: 36 }}
-                  />
-                )}
-                <InlineClipTrimmer
-                  mediaItem={demoClip}
-                  playerRef={demoPlayerRef}
-                  notify={notify}
-                  onTrimApplied={(trimmedRes) =>
-                    setDemoClip((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            local_path: trimmedRes.local_path,
-                            media_url: trimmedRes.media_url,
-                            duration_ms: trimmedRes.duration_ms,
-                            trimmedDone: true,
-                          }
-                        : prev
-                    )
-                  }
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="surface-box">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: 13.2, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Ảnh khách khen / Feedback thực tế (tùy chọn)
-                </div>
-                <div className="text-sub" style={{ fontSize: 12, marginTop: 2 }}>
-                  Chèn 1–2 ảnh chụp tin nhắn khách phản hồi ở gần cuối video
-                </div>
-              </div>
-              <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-                <MessageSquarePlus size={14} />{' '}
-                {uploadingFeedback ? 'Đang tải...' : `Đính kèm (${feedbackPhotos.length}/2)`}
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  hidden
-                  disabled={uploadingFeedback}
-                  onChange={handleFeedbackUpload}
-                />
-              </label>
-            </div>
-            {feedbackPhotos.length > 0 && (
-              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                {feedbackPhotos.map((fb, fIdx) => (
-                  <div key={fIdx} style={{ position: 'relative', width: 60, height: 60 }}>
-                    <img
-                      src={fb.media_url}
-                      alt="Feedback"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        borderRadius: 7,
-                        border: '1.5px solid var(--gold-border)',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setFeedbackPhotos((prev) => prev.filter((_, i) => i !== fIdx))}
-                      style={{
-                        position: 'absolute',
-                        top: -5,
-                        right: -5,
-                        width: 19,
-                        height: 19,
-                        borderRadius: 99,
-                        border: 'none',
-                        background: 'var(--danger)',
-                        color: '#fff',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* STEP 2: NATURAL COPYWRITING TONE & PRODUCT INFO */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">2</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">Chọn giọng văn truyền cảm & nhập thông tin sản phẩm</div>
-            <div className="step-desc">
-              Tự chuyển hóa thông số kỹ thuật thành lời kể tự nhiên có hồn, không đọc dấu hai chấm hay ký hiệu khô cứng
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={checkingPolicy}
-            onClick={() => handleCheckCompliance(false)}
-          >
-            <ShieldCheck size={14} />{' '}
-            {checkingPolicy ? 'Đang kiểm tra...' : 'Kiểm tra từ hạn chế TikTok'}
-          </button>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Phong cách lời bình & văn phong giới thiệu</label>
-          <ModeChoiceGrid
-            options={TONE_CHOICES}
-            value={copywritingTone}
-            onChange={setCopywritingTone}
-          />
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">Tên sản phẩm</label>
-            <input
-              className={`input ${errors.productName ? 'input-error' : ''}`}
-              value={productName}
-              onChange={(e) => {
-                setProductName(e.target.value);
-                clearError('productName');
-              }}
-            />
-            <FieldError message={errors.productName} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Nhóm mặt hàng</label>
-            <select
-              className="select"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option value="MUSICAL_INSTRUMENT">Nhạc cụ (Đàn Violin, Guitar, Piano...)</option>
-              <option value="FASHION_APPAREL">Thời trang, Quần áo & Phụ kiện</option>
-              <option value="GENERAL_PRODUCT">Sản phẩm tiêu dùng chung</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Trọng tâm nội dung muốn nhấn mạnh</label>
-          <ModeChoiceGrid
-            options={ANGLE_CHOICES}
-            value={salesAngle}
-            onChange={setSalesAngle}
-          />
-        </div>
-
-        <div className="form-group" style={{ marginBottom: complianceReport || productAiAnalysis ? 10 : 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Mô tả ngắn hoặc thông số sản phẩm (Gõ vài ý ngắn rồi bấm Phân tích AI để tự viết chi tiết)
-            </label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {!apiKeyConfigured && onOpenApiSettings && (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenApiSettings}>
-                  Gắn API Key AI
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={analyzingBrief || submitting}
-                onClick={handleExpandProductBrief}
-              >
-                {analyzingBrief ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}{' '}
-                {analyzingBrief ? 'Đang gọi API phân tích...' : 'Phân tích & Viết chi tiết (AI)'}
-              </button>
-            </div>
-          </div>
-          <textarea
-            className={`textarea ${errors.rawDescription ? 'input-error' : ''}`}
-            style={{ minHeight: 124 }}
-            placeholder="Chỉ cần gõ ngắn gọn vài từ (VD: Đàn Guitar gỗ thông nguyên tấm cho người mới tập, âm ấm, tặng kèm bao da) rồi bấm nút 'Phân tích & Viết chi tiết (AI)'..."
-            value={rawDescription}
-            onChange={(e) => {
-              setRawDescription(e.target.value);
-              clearError('rawDescription');
-              if (complianceReport) setComplianceReport(null);
-            }}
-          />
-          <FieldError message={errors.rawDescription} />
-        </div>
-
-        <StudioLoadingBanner
-          loading={analyzingBrief}
-          showSkeleton={!productAiAnalysis}
-          title="Đang gọi API AI phân tích sản phẩm & viết lời bình bán hàng truyền cảm..."
-          subtitle="Hệ thống đang chuyển hóa thông số khô cứng thành lời kể tự nhiên có chiều sâu"
-          steps={[
-            'Phân tích điểm đắt giá của sản phẩm',
-            'Viết kịch bản lời bình & câu kêu gọi hành động (CTA)',
-          ]}
-          stepIntervalMs={2400}
-        />
-
-        {productAiAnalysis && (
-          <div
-            className="surface-box"
-            style={{
-              marginTop: 8,
-              marginBottom: complianceReport ? 10 : 0,
-              borderColor: 'rgba(16, 185, 129, 0.45)',
-              background: 'rgba(16, 185, 129, 0.07)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-              <strong style={{ color: 'var(--success-text)', fontSize: 13.1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircle2 size={15} />
-                {productAiAnalysis.used_api_key
-                  ? 'AI đã nâng cấp tiêu đề, mô tả chi tiết & chọn giọng tư vấn tối ưu'
-                  : 'Đã chuẩn hóa mô tả chi tiết cho sản phẩm'}
-              </strong>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={submitting || analyzingBrief}
-                onClick={() => handleStart(true)}
-              >
-                <Play size={13} /> Tiếp theo: Chạy tạo video ngay
-              </button>
-            </div>
-            {productAiAnalysis.analysis_summary && (
-              <div className="text-sub" style={{ fontSize: 12.5, marginBottom: productAiAnalysis.alternative_titles?.length ? 6 : 0 }}>
-                {productAiAnalysis.analysis_summary}
-              </div>
-            )}
-            {productAiAnalysis.alternative_titles?.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {productAiAnalysis.alternative_titles.map((alt, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: 11.8 }}
-                    onClick={() => setProductName(alt)}
-                  >
-                    Đổi tiêu đề: {alt}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {complianceReport && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: '11px 14px',
-              borderRadius: 9,
-              background: complianceReport.is_safe
-                ? 'rgba(16, 185, 129, 0.12)'
-                : 'var(--gold-soft)',
-              border: complianceReport.is_safe
-                ? '1px solid rgba(16, 185, 129, 0.4)'
-                : '1px solid var(--gold-border)',
-              fontSize: 13,
-            }}
-          >
-            {complianceReport.is_safe ? (
-              <div style={{ color: 'var(--success-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7 }}>
-                <CheckCircle2 size={16} /> Đạt {complianceReport.safety_score}/100 điểm — Không có từ khóa vi phạm chính sách hiển thị.
-              </div>
-            ) : (
-              <div>
+            {showBatchPanel && (
+              <div className="studio-callout studio-callout-brand fade-slide-in" style={{ marginTop: 12 }}>
                 <div
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     gap: 8,
-                    marginBottom: 6,
                     flexWrap: 'wrap',
+                    marginBottom: 8,
                   }}
                 >
-                  <strong style={{ color: 'var(--gold-text)' }}>
-                    Phát hiện {complianceReport.issues.length} cụm từ dễ bị hạn chế phân phối:
+                  <strong className="text-sm text-brand">
+                    Sản xuất hàng loạt từ danh sách Link sản phẩm (1 – 20 link/lần)
                   </strong>
+                  <span className="badge badge-info">
+                    {
+                      batchUrlsText
+                        .split(/\r?\n/)
+                        .map((s) => s.trim())
+                        .filter((s) => isValidHttpUrl(s)).length
+                    }
+                    /20 link hợp lệ
+                  </span>
+                </div>
+                <textarea
+                  className={`textarea ${errors.batchUrls ? 'input-error' : ''}`}
+                  style={{ minHeight: 92, marginBottom: 8 }}
+                  placeholder={`Dán mỗi dòng 1 đường dẫn sản phẩm:\nhttps://www.sonmusic.vn/dan-violin-avaro-s2\nhttps://www.sonmusic.vn/dan-violin-avaro-s2s`}
+                  value={batchUrlsText}
+                  onChange={(e) => {
+                    setBatchUrlsText(e.target.value);
+                    clearError('batchUrls');
+                  }}
+                />
+                <FieldError message={errors.batchUrls} />
+                <StudioLoadingBanner
+                  loading={startingBatch}
+                  title="Đang quét danh sách sản phẩm & khởi tạo hàng đợi xuất loạt video..."
+                  steps={['Đọc dữ liệu từng trang sản phẩm', 'Xếp lịch dựng video tự động']}
+                  stepIntervalMs={2800}
+                />
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                    marginTop: 8,
+                  }}
+                >
+                  <SwitchCard checked={batchDiversify} onChange={setBatchDiversify}>
+                    Tự xoay vòng 4 góc kịch bản để các video không lặp câu chữ
+                  </SwitchCard>
                   <button
                     type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleCheckCompliance(true)}
+                    className="btn btn-primary"
+                    disabled={startingBatch}
+                    onClick={handleStartBatchFromUrls}
                   >
-                    Tự động thay thế an toàn
+                    {startingBatch ? <Loader2 size={15} className="spin" /> : <Layers size={15} />}
+                    <span>{startingBatch ? 'Đang hút danh sách...' : 'Hút & Xếp hàng xuất loạt'}</span>
                   </button>
                 </div>
-                {complianceReport.issues.map((iss, i) => (
-                  <div key={i} className="text-sub" style={{ fontSize: 12.4, marginTop: 3 }}>
-                    - &quot;{iss.phrase}&quot; → Đổi thành: <strong>&quot;{iss.suggestion}&quot;</strong>
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop: '1px solid var(--border)',
+              }}
+            >
+              <Package size={16} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
+              <select
+                className="select"
+                style={{ flex: 1, minWidth: 200 }}
+                value={selectedTplId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedTplId(id);
+                  const found = templates.find((t) => t.template_id === id);
+                  if (found) handleApplyTemplate(found);
+                }}
+              >
+                <option value="">Chọn nhanh sản phẩm đã lưu trong kho ({templates.length})</option>
+                {templates.map((t) => (
+                  <option key={t.template_id} value={t.template_id}>
+                    {t.product_name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ minHeight: 40 }}
+                onClick={handleSaveCurrentAsTemplate}
+              >
+                <BookmarkPlus size={14} /> Lưu mẫu
+              </button>
+              {selectedTplId && (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  style={{ minHeight: 40 }}
+                  onClick={handleDeleteTemplate}
+                  title="Xóa mẫu này khỏi kho"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* PHOTO & CLIP UPLOADER */}
+          <div style={{ marginBottom: 18 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <label className="form-label" style={{ marginBottom: 0 }}>
+                Bộ ảnh &amp; clip sản phẩm ({uploadedPhotos.length} mục)
+              </label>
+              {uploadedPhotos.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setUploadedPhotos([])}
+                >
+                  <Trash2 size={13} /> Xóa hết
+                </button>
+              )}
+            </div>
+
+            <MediaDropzone
+              accept="image/*,video/*"
+              multiple
+              disabled={uploadingPhotos}
+              loading={uploadingPhotos}
+              error={errors.photos}
+              icon={Images}
+              title={
+                uploadingPhotos
+                  ? 'Đang tải tệp đa phương tiện lên...'
+                  : 'Kéo thả nhiều Ảnh + Video quay cận vào đây, bấm chọn tệp, hoặc bấm Ctrl+V dán ảnh Zalo'
+              }
+              hint="Hỗ trợ JPG, PNG, WEBP và MP4, MOV — lên hình đủ 100% số lượng theo đúng thứ tự sắp xếp"
+              onFilesSelected={(fl) => handlePhotosSelected(fl, false)}
+            />
+
+            {uploadedPhotos.length > 0 && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+                  gap: 10,
+                  marginTop: 14,
+                }}
+              >
+                {uploadedPhotos.map((ph, idx) => (
+                  <div
+                    key={`${ph.local_path}_${idx}`}
+                    draggable
+                    onDragStart={() => setDragPhotoIdx(idx)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragPhotoIdx !== null) movePhoto(dragPhotoIdx, idx);
+                      setDragPhotoIdx(null);
+                    }}
+                    style={{
+                      background: 'var(--bg-panel)',
+                      border: idx === 0 ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+                      borderRadius: 10,
+                      padding: 8,
+                    }}
+                  >
+                    <div
+                      onClick={() =>
+                        !ph.isVideo && onPreviewFrameReady && onPreviewFrameReady(ph.media_url)
+                      }
+                      title="Bấm để xem thử trên khung điện thoại • Kéo thả để đổi thứ tự"
+                      style={{
+                        position: 'relative',
+                        borderRadius: 7,
+                        overflow: 'hidden',
+                        aspectRatio: '3 / 4',
+                        cursor: 'grab',
+                        marginBottom: 6,
+                        background: '#080a0f',
+                      }}
+                    >
+                      {ph.isVideo ? (
+                        <video
+                          src={ph.media_url}
+                          muted
+                          loop
+                          playsInline
+                          onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                          onMouseLeave={(e) => e.currentTarget.pause()}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                      ) : (
+                        <img
+                          src={ph.media_url}
+                          alt={ph.original_name}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                      )}
+                      <span
+                        className="text-xs fw-700"
+                        style={{
+                          position: 'absolute',
+                          left: 6,
+                          bottom: 6,
+                          background: ph.isVideo
+                            ? 'rgba(16, 185, 129, 0.92)'
+                            : idx === 0
+                            ? 'rgba(79, 70, 229, 0.94)'
+                            : 'rgba(9, 9, 11, 0.86)',
+                          color: '#ffffff',
+                          padding: '2px 7px',
+                          borderRadius: 5,
+                        }}
+                      >
+                        {ph.isVideo
+                          ? `Cảnh ${idx + 1} • Video`
+                          : idx === 0
+                          ? 'Mở màn'
+                          : `Ảnh ${idx + 1}`}
+                      </span>
+
+                      {!ph.isVideo ? (
+                        <button
+                          type="button"
+                          disabled={cutoutBusyIdx === idx}
+                          title="Tách nền sang phông Studio cho riêng bức ảnh này"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            handleSinglePhotoCutout(idx);
+                          }}
+                          className="text-xs fw-600"
+                          style={{
+                            position: 'absolute',
+                            top: 6,
+                            left: 6,
+                            height: 24,
+                            padding: '0 8px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(255,255,255,0.22)',
+                            background: ph.cutoutDone
+                              ? 'rgba(5, 150, 105, 0.92)'
+                              : 'rgba(9, 9, 11, 0.88)',
+                            color: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Wand2 size={11} />{' '}
+                          {cutoutBusyIdx === idx ? '...' : ph.cutoutDone ? 'Đã tách' : 'Tách nền'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Cắt chọn đúng đoạn giây đẹp nhất của clip này"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            setTrimOpenIdx((prev) => (prev === idx ? null : idx));
+                          }}
+                          className="text-xs fw-600"
+                          style={{
+                            position: 'absolute',
+                            top: 6,
+                            left: 6,
+                            height: 24,
+                            padding: '0 8px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(255,255,255,0.22)',
+                            background: ph.trimmedDone
+                              ? 'rgba(5, 150, 105, 0.92)'
+                              : 'rgba(9, 9, 11, 0.88)',
+                            color: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Scissors size={11} /> {ph.trimmedDone ? 'Đã cắt' : 'Cắt đoạn'}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx));
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: 6,
+                          right: 6,
+                          width: 24,
+                          height: 24,
+                          borderRadius: 6,
+                          border: 'none',
+                          background: 'rgba(9, 9, 11, 0.86)',
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 4,
+                        marginBottom: layoutConfig.show_photo_callouts && !ph.isVideo ? 6 : 0,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '2px 7px', minHeight: 28 }}
+                        disabled={idx === 0}
+                        title="Đẩy sang trước"
+                        onClick={() => movePhoto(idx, idx - 1)}
+                      >
+                        <ArrowLeft size={12} />
+                      </button>
+                      {idx > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '2px 6px', minHeight: 28, flex: 1 }}
+                          title="Đưa lên làm cảnh đầu tiên mở màn"
+                          onClick={() => movePhoto(idx, 0)}
+                        >
+                          <Star size={11} /> Lên đầu
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '2px 7px', minHeight: 28 }}
+                        disabled={idx === uploadedPhotos.length - 1}
+                        title="Đẩy ra sau"
+                        onClick={() => movePhoto(idx, idx + 1)}
+                      >
+                        <ArrowRight size={12} />
+                      </button>
+                    </div>
+
+                    {layoutConfig.show_photo_callouts && !ph.isVideo && (
+                      <input
+                        className="input input-sm"
+                        placeholder="Nhãn ngắn trên ảnh..."
+                        value={ph.note}
+                        onChange={(e) => handlePhotoNoteChange(idx, e.target.value)}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
-      </div>
 
-      {/* STEP 3: CAPCUT SMOOTH EDITING, STUDIO CUTOUT, A/B SPLIT & CLEAR SWITCH CARDS */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">3</span>
-          <div style={{ flex: 1 }}>
-            <div className="step-title">
-              <Film size={15} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-              Dựng hình CapCut, Tách nền Studio, So sánh A/B & Công tắc hiển thị
+            {trimOpenIdx !== null && uploadedPhotos[trimOpenIdx]?.isVideo && (
+              <InlineClipTrimmer
+                mediaItem={uploadedPhotos[trimOpenIdx]}
+                playerRef={null}
+                notify={notify}
+                onTrimApplied={(trimmedRes) => {
+                  setUploadedPhotos((prev) =>
+                    prev.map((it, idx) =>
+                      idx !== trimOpenIdx
+                        ? it
+                        : {
+                            ...it,
+                            local_path: trimmedRes.local_path,
+                            media_url: trimmedRes.media_url,
+                            duration_ms: trimmedRes.duration_ms,
+                            trimmedDone: true,
+                          }
+                    )
+                  );
+                  setTrimOpenIdx(null);
+                }}
+              />
+            )}
+          </div>
+
+          {/* PRODUCT COPYWRITING & DESCRIPTION */}
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Tên sản phẩm</label>
+              <input
+                className={`input ${errors.productName ? 'input-error' : ''}`}
+                value={productName}
+                onChange={(e) => {
+                  setProductName(e.target.value);
+                  clearError('productName');
+                }}
+              />
+              <FieldError message={errors.productName} />
             </div>
-            <div className="step-desc">
-              Mặc định giữ khung sạch sang trọng. Bấm trực tiếp các thẻ công tắc bên dưới để bật/tắt thành phần mong muốn.
-            </div>
-          </div>
-        </div>
-
-        <div className="form-grid" style={{ marginBottom: 14 }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Hiệu ứng chuyển cảnh mượt (Không rung giật)</label>
-            <select
-              className="select"
-              value={layoutConfig.transition_style || 'CAPCUT_DISSOLVE'}
-              onChange={(e) => updateSalesLayout({ transition_style: e.target.value })}
-            >
-              <option value="CAPCUT_DISSOLVE">Mờ chồng êm ái chuẩn CapCut (Khuyên dùng)</option>
-              <option value="CAPCUT_SMOOTH_SLIDE">Lướt ngang mượt mà (Smooth Slide)</option>
-              <option value="CAPCUT_ZOOM_FLOW">Thu phóng mềm mại (Zoom Flow)</option>
-              <option value="CAPCUT_FLASH_BEAT">Chớp sáng tinh tế (Soft Flash)</option>
-              <option value="STATIC_LOOKBOOK">Đứng tĩnh 100% (Không chuyển động zoom)</option>
-            </select>
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Kiểu nền & tỷ lệ khung xuất</label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="form-group">
+              <label className="form-label">Nhóm mặt hàng</label>
               <select
                 className="select"
-                style={{ flex: 1 }}
-                value={layoutConfig.product_framing || 'BLURRED_STUDIO_CARD'}
-                onChange={(e) => updateSalesLayout({ product_framing: e.target.value })}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
               >
-                <option value="BLURRED_STUDIO_CARD">Thẻ nguyên vẹn + Nền mờ</option>
-                <option value="VELVET_DARK_LUXURY">Thẻ nguyên vẹn + Nền Đen Nhung</option>
-                <option value="FULL_BLEED_LUXURY">Phóng vừa tràn khung</option>
-              </select>
-              <select
-                className="select"
-                style={{ width: 132 }}
-                value={layoutConfig.aspect_ratio || '9:16'}
-                onChange={(e) => updateSalesLayout({ aspect_ratio: e.target.value })}
-              >
-                <option value="9:16">9:16 TikTok</option>
-                <option value="4:5">4:5 Facebook</option>
-                <option value="1:1">1:1 Zalo</option>
+                <option value="MUSICAL_INSTRUMENT">Nhạc cụ (Đàn Violin, Guitar, Piano...)</option>
+                <option value="FASHION_APPAREL">Thời trang, Quần áo &amp; Phụ kiện</option>
+                <option value="GENERAL_PRODUCT">Sản phẩm tiêu dùng chung</option>
               </select>
             </div>
           </div>
-        </div>
 
-        {/* Group A: Studio Processing Switches */}
-        <div className="form-group">
-          <label className="form-label">Xử lý hình ảnh & hiệu ứng âm thanh Studio</label>
-          <div className="toggle-grid">
-            <SwitchCard
-              icon={Wand2}
-              checked={Boolean(layoutConfig.studio_cutout_enabled)}
-              onChange={(val) => updateSalesLayout({ studio_cutout_enabled: val })}
-            >
-              Tự tách nền sang phông Đen Nhung
-            </SwitchCard>
-            <SwitchCard
-              icon={Columns}
-              checked={Boolean(layoutConfig.comparison_split_enabled)}
-              onChange={(val) => updateSalesLayout({ comparison_split_enabled: val })}
-            >
-              Chia đôi so sánh A/B (Ảnh 1 & 2)
-            </SwitchCard>
-            <SwitchCard
-              icon={Music2}
-              checked={layoutConfig.soundwave_enabled !== false}
-              onChange={(val) => updateSalesLayout({ soundwave_enabled: val })}
-            >
-              Vẽ sóng âm vàng kim theo tiếng đàn
-            </SwitchCard>
-          </div>
-        </div>
-
-        {layoutConfig.comparison_split_enabled && (
-          <div className="form-grid" style={{ marginBottom: 14 }}>
-            <input
-              className="input"
-              placeholder="Nhãn cột trái (VD: Bản S2 • Giữ dây kim loại)"
-              value={layoutConfig.comparison_label_a || ''}
-              onChange={(e) => updateSalesLayout({ comparison_label_a: e.target.value })}
-            />
-            <input
-              className="input"
-              placeholder="Nhãn cột phải (VD: Bản S2S • Giữ dây gỗ)"
-              value={layoutConfig.comparison_label_b || ''}
-              onChange={(e) => updateSalesLayout({ comparison_label_b: e.target.value })}
+          <div className="form-group">
+            <label className="form-label">Phong cách lời bình &amp; Trọng tâm nội dung</label>
+            <ModeChoiceGrid
+              options={TONE_CHOICES}
+              value={copywritingTone}
+              onChange={setCopywritingTone}
             />
           </div>
-        )}
 
-        {/* Group B: Clean Overlay Visibility Switches */}
-        <div className="form-group" style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Thành phần chữ & thẻ hiển thị trên video
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-              <span className="text-sub">Số phiên bản kịch bản A/B:</span>
+          <div className="form-group">
+            <label className="form-label">Góc tiếp cận tư vấn khách hàng</label>
+            <ModeChoiceGrid
+              options={ANGLE_CHOICES}
+              value={salesAngle}
+              onChange={setSalesAngle}
+            />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                marginBottom: 6,
+              }}
+            >
+              <label className="form-label" style={{ marginBottom: 0 }}>
+                Mô tả sản phẩm &amp; điểm nổi bật
+              </label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={checkingPolicy}
+                  onClick={() => handleCheckCompliance(false)}
+                >
+                  <ShieldCheck size={14} />
+                  <span>{checkingPolicy ? 'Đang kiểm tra...' : 'Kiểm tra từ hạn chế TikTok'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={analyzingBrief || submitting}
+                  onClick={handleExpandProductBrief}
+                >
+                  {analyzingBrief ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}
+                  <span>{analyzingBrief ? 'Đang viết...' : 'Phân tích & Viết chi tiết (AI)'}</span>
+                </button>
+              </div>
+            </div>
+            <textarea
+              className={`textarea ${errors.rawDescription ? 'input-error' : ''}`}
+              style={{ minHeight: 124 }}
+              placeholder="Gõ ngắn gọn vài thông số (VD: Đàn Guitar gỗ thông nguyên tấm cho người mới tập, âm ấm, tặng kèm bao da) rồi bấm Phân tích AI..."
+              value={rawDescription}
+              onChange={(e) => {
+                setRawDescription(e.target.value);
+                clearError('rawDescription');
+                if (complianceReport) setComplianceReport(null);
+              }}
+            />
+            <FieldError message={errors.rawDescription} />
+          </div>
+
+          <StudioLoadingBanner
+            loading={analyzingBrief}
+            showSkeleton={!productAiAnalysis}
+            title="Đang phân tích sản phẩm & viết lời bình bán hàng truyền cảm..."
+            subtitle="Hệ thống đang chuyển hóa thông số khô cứng thành lời kể tự nhiên có chiều sâu"
+            steps={[
+              'Phân tích điểm đắt giá của sản phẩm',
+              'Viết kịch bản lời bình & câu kêu gọi hành động (CTA)',
+            ]}
+            stepIntervalMs={2400}
+          />
+
+          {productAiAnalysis && (
+            <div className="studio-callout studio-callout-success fade-slide-in" style={{ marginTop: 12 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 6,
+                }}
+              >
+                <strong
+                  className="text-sm text-success"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <CheckCircle2 size={15} />
+                  <span>
+                    {productAiAnalysis.used_api_key
+                      ? 'AI đã nâng cấp tiêu đề, mô tả chi tiết & chọn giọng tư vấn tối ưu'
+                      : 'Đã chuẩn hóa mô tả chi tiết cho sản phẩm'}
+                  </span>
+                </strong>
+              </div>
+              {productAiAnalysis.analysis_summary && (
+                <div className="text-xs text-sub" style={{ marginBottom: 6 }}>
+                  {productAiAnalysis.analysis_summary}
+                </div>
+              )}
+              {productAiAnalysis.alternative_titles?.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {productAiAnalysis.alternative_titles.map((alt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="filter-pill"
+                      onClick={() => setProductName(alt)}
+                    >
+                      Đổi tên: {alt}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {complianceReport && (
+            <div
+              className={`studio-callout ${
+                complianceReport.is_safe ? 'studio-callout-success' : ''
+              } fade-slide-in`}
+              style={{
+                marginTop: 12,
+                borderColor: complianceReport.is_safe ? undefined : 'var(--gold-border)',
+                background: complianceReport.is_safe ? undefined : 'var(--gold-soft)',
+              }}
+            >
+              {complianceReport.is_safe ? (
+                <div
+                  className="text-sm fw-600 text-success"
+                  style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+                >
+                  <CheckCircle2 size={16} /> Đạt {complianceReport.safety_score}/100 điểm — Không có từ khóa vi phạm chính sách hiển thị.
+                </div>
+              ) : (
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginBottom: 6,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <strong className="text-sm" style={{ color: 'var(--gold-text)' }}>
+                      Phát hiện {complianceReport.issues.length} cụm từ dễ bị hạn chế phân phối:
+                    </strong>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleCheckCompliance(true)}
+                    >
+                      Tự động thay thế an toàn
+                    </button>
+                  </div>
+                  {complianceReport.issues.map((iss, i) => (
+                    <div key={i} className="text-xs text-sub" style={{ marginTop: 3 }}>
+                      - &quot;{iss.phrase}&quot; → Đổi thành: <strong>&quot;{iss.suggestion}&quot;</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <StudioCollapsible
+            icon={Music2}
+            title="Đính kèm Tiếng đàn mộc, Ảnh Feedback khách hàng & Nhóm Dự Án Cha"
+            subtitle="Tùy chọn chèn đoạn thu âm mộc 5–20s, ảnh đánh giá thực tế hoặc gán vào Bộ sưu tập"
+            defaultOpen={Boolean(demoClip || feedbackPhotos.length > 0)}
+            badge={
+              demoClip || feedbackPhotos.length > 0
+                ? `${demoClip ? '1 clip mộc ' : ''}${
+                    feedbackPhotos.length > 0 ? `• ${feedbackPhotos.length} feedback` : ''
+                  }`
+                : ''
+            }
+          >
+            <div className="form-grid" style={{ marginBottom: 14 }}>
+              <div className="surface-box">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div className="text-sm fw-600">Tiếng đàn mộc / Clip test âm (5–20s)</div>
+                    <div className="text-xs text-sub" style={{ marginTop: 2 }}>
+                      Tự ngắt giọng đọc &amp; vẽ sóng âm vàng kim theo tiếng đàn thực
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                      <Music2 size={14} />{' '}
+                      {uploadingDemo ? 'Đang tải...' : demoClip ? 'Đổi tệp' : 'Chọn tệp mộc'}
+                      <input
+                        type="file"
+                        accept="video/*,audio/*"
+                        hidden
+                        disabled={uploadingDemo}
+                        onChange={handleDemoUpload}
+                      />
+                    </label>
+                    {demoClip && (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() => setDemoClip(null)}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {demoClip?.media_url && (
+                  <div style={{ marginTop: 10 }}>
+                    {demoClip.isVideo ? (
+                      <video
+                        ref={demoPlayerRef}
+                        controls
+                        src={demoClip.media_url}
+                        onLoadedMetadata={(e) => {
+                          const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
+                          if (dMs > 500 && !demoClip.duration_ms) {
+                            setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
+                          }
+                        }}
+                        style={{ width: '100%', maxHeight: 145, borderRadius: 8, background: '#000' }}
+                      />
+                    ) : (
+                      <audio
+                        ref={demoPlayerRef}
+                        controls
+                        src={demoClip.media_url}
+                        onLoadedMetadata={(e) => {
+                          const dMs = Math.round((e.currentTarget.duration || 0) * 1000);
+                          if (dMs > 500 && !demoClip.duration_ms) {
+                            setDemoClip((prev) => (prev ? { ...prev, duration_ms: dMs } : prev));
+                          }
+                        }}
+                        style={{ width: '100%', height: 36 }}
+                      />
+                    )}
+                    <InlineClipTrimmer
+                      mediaItem={demoClip}
+                      playerRef={demoPlayerRef}
+                      notify={notify}
+                      onTrimApplied={(trimmedRes) =>
+                        setDemoClip((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                local_path: trimmedRes.local_path,
+                                media_url: trimmedRes.media_url,
+                                duration_ms: trimmedRes.duration_ms,
+                                trimmedDone: true,
+                              }
+                            : prev
+                        )
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="surface-box">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div className="text-sm fw-600">Ảnh khách khen / Feedback thực tế</div>
+                    <div className="text-xs text-sub" style={{ marginTop: 2 }}>
+                      Chèn 1–2 ảnh chụp tin nhắn khách phản hồi gần cuối video
+                    </div>
+                  </div>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                    <MessageSquarePlus size={14} />{' '}
+                    {uploadingFeedback ? 'Đang tải...' : `Đính kèm (${feedbackPhotos.length}/2)`}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      disabled={uploadingFeedback}
+                      onChange={handleFeedbackUpload}
+                    />
+                  </label>
+                </div>
+                {feedbackPhotos.length > 0 && (
+                  <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                    {feedbackPhotos.map((fb, fIdx) => (
+                      <div key={fIdx} style={{ position: 'relative', width: 60, height: 60 }}>
+                        <img
+                          src={fb.media_url}
+                          alt="Feedback"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid var(--border-strong)',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFeedbackPhotos((prev) => prev.filter((_, i) => i !== fIdx))
+                          }
+                          style={{
+                            position: 'absolute',
+                            top: -5,
+                            right: -5,
+                            width: 20,
+                            height: 20,
+                            borderRadius: 99,
+                            border: 'none',
+                            background: 'var(--danger)',
+                            color: '#fff',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <ParentGroupSelector
+              projectGroups={projectGroups}
+              value={parentGroupId}
+              onChange={setParentGroupId}
+              onGroupsChanged={onGroupsChanged}
+              notify={notify}
+              label="Thuộc Nhóm Dự Án Cha (Bộ sưu tập / Chiến dịch bán hàng)"
+            />
+          </StudioCollapsible>
+        </div>
+      )}
+
+      {/* ==================== BƯỚC 2: KHUNG HÌNH CAPCUT & GIỌNG ĐỌC ==================== */}
+      {showStep2 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">2</span>
+            <div>
+              <div className="step-title">Dựng hình CapCut, Giọng đọc &amp; Nhạc nền</div>
+              <div className="step-desc">
+                Chọn kiểu chuyển cảnh mượt, phông nền sản phẩm và giọng tư vấn truyền cảm
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid" style={{ marginBottom: 16 }}>
+            <div>
+              <label className="form-label">Hiệu ứng chuyển cảnh mượt</label>
+              <select
+                className="select"
+                value={layoutConfig.transition_style || 'CAPCUT_DISSOLVE'}
+                onChange={(e) => updateSalesLayout({ transition_style: e.target.value })}
+              >
+                <option value="CAPCUT_DISSOLVE">Mờ chồng êm ái chuẩn CapCut (Khuyên dùng)</option>
+                <option value="CAPCUT_SMOOTH_SLIDE">Lướt ngang mượt mà (Smooth Slide)</option>
+                <option value="CAPCUT_ZOOM_FLOW">Thu phóng mềm mại (Zoom Flow)</option>
+                <option value="CAPCUT_FLASH_BEAT">Chớp sáng tinh tế (Soft Flash)</option>
+                <option value="STATIC_LOOKBOOK">Đứng tĩnh 100% (Không chuyển động zoom)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="form-label">Kiểu nền &amp; Tỷ lệ khung xuất</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  className="select"
+                  style={{ flex: 1 }}
+                  value={layoutConfig.product_framing || 'BLURRED_STUDIO_CARD'}
+                  onChange={(e) => updateSalesLayout({ product_framing: e.target.value })}
+                >
+                  <option value="BLURRED_STUDIO_CARD">Thẻ nguyên vẹn + Nền mờ</option>
+                  <option value="VELVET_DARK_LUXURY">Thẻ nguyên vẹn + Nền Đen Nhung</option>
+                  <option value="FULL_BLEED_LUXURY">Phóng vừa tràn khung</option>
+                </select>
+                <select
+                  className="select"
+                  style={{ width: 136 }}
+                  value={layoutConfig.aspect_ratio || '9:16'}
+                  onChange={(e) => updateSalesLayout({ aspect_ratio: e.target.value })}
+                >
+                  <option value="9:16">9:16 TikTok</option>
+                  <option value="4:5">4:5 Facebook</option>
+                  <option value="1:1">1:1 Zalo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Xử lý hình ảnh &amp; Hiệu ứng âm thanh Studio</label>
+            <div className="toggle-grid">
+              <SwitchCard
+                icon={Wand2}
+                checked={Boolean(layoutConfig.studio_cutout_enabled)}
+                onChange={(val) => updateSalesLayout({ studio_cutout_enabled: val })}
+              >
+                Tự tách nền sang phông Đen Nhung
+              </SwitchCard>
+              <SwitchCard
+                icon={Columns}
+                checked={Boolean(layoutConfig.comparison_split_enabled)}
+                onChange={(val) => updateSalesLayout({ comparison_split_enabled: val })}
+              >
+                Chia đôi so sánh A/B (Ảnh 1 &amp; 2)
+              </SwitchCard>
+              <SwitchCard
+                icon={Music2}
+                checked={layoutConfig.soundwave_enabled !== false}
+                onChange={(val) => updateSalesLayout({ soundwave_enabled: val })}
+              >
+                Vẽ sóng âm vàng kim theo tiếng đàn
+              </SwitchCard>
+            </div>
+          </div>
+
+          {layoutConfig.comparison_split_enabled && (
+            <div className="form-grid" style={{ marginBottom: 16 }}>
+              <input
+                className="input"
+                placeholder="Nhãn cột trái (VD: Bản S2 • Giữ dây kim loại)"
+                value={layoutConfig.comparison_label_a || ''}
+                onChange={(e) => updateSalesLayout({ comparison_label_a: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Nhãn cột phải (VD: Bản S2S • Giữ dây gỗ)"
+                value={layoutConfig.comparison_label_b || ''}
+                onChange={(e) => updateSalesLayout({ comparison_label_b: e.target.value })}
+              />
+            </div>
+          )}
+
+          <div className="form-grid">
+            <InlineVoiceSelector
+              voices={voices}
+              voiceId={voiceId}
+              onChange={setVoiceId}
+              voiceSpeed={voiceSpeed}
+              onSpeedChange={setVoiceSpeed}
+              voicePitch={voicePitch}
+              onPitchChange={setVoicePitch}
+              defaultCategory="ECOMMERCE_SALES"
+              onOpenVoiceLab={onNavigateTab ? () => onNavigateTab('voices') : null}
+              label="Giọng đọc tư vấn sản phẩm"
+              sampleText="Điểm chạm cảm xúc đầu tiên của cây đàn này nằm ở mặt top gỗ thịt tự nhiên nguyên tấm, cho tiếng đàn ngân dày, ấm và có chiều sâu."
+              notify={notify}
+            />
+            <InlineBgmSelector
+              bgmPresets={bgmPresets}
+              bgmPresetId={bgmPresetId}
+              onSelectPreset={setBgmPresetId}
+              bgmVolume={bgmVolume}
+              onVolumeChange={setBgmVolume}
+              customBgmPath={customBgmPath}
+              onCustomBgmChange={setCustomBgmPath}
+              notify={notify}
+              label="Nhạc nền Violin / Acoustic"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ==================== BƯỚC 3: HOÀN TẤT, ẢNH BÌA & XUẤT BẢN ==================== */}
+      {showStep3 && (
+        <div className="step-box fade-slide-in">
+          <div className="step-header">
+            <span className="step-num">3</span>
+            <div style={{ flex: 1 }}>
+              <div className="step-title">Thời lượng, Lời kêu gọi (CTA) &amp; Thành phần hiển thị</div>
+              <div className="step-desc">
+                Mặc định giữ khung sạch sang trọng; bật thêm nhãn ưu đãi, ảnh bìa hoặc mã QR khi cần
+              </div>
+            </div>
+            <div className="studio-segmented">
               {[1, 2, 3].map((n) => (
                 <button
                   key={n}
                   type="button"
-                  className={`btn btn-sm ${variantCount === n ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`studio-seg-btn ${variantCount === n ? 'active' : ''}`}
                   onClick={() => setVariantCount(n)}
                 >
-                  {n} bản
+                  {n} bản A/B
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="toggle-grid">
-            <SwitchCard
-              checked={layoutConfig.show_top_banner !== false}
-              onChange={(val) => updateSalesLayout({ show_top_banner: val })}
-            >
-              Hiện tên sản phẩm đầu video
-            </SwitchCard>
-            <SwitchCard
-              checked={Boolean(layoutConfig.sales_badge_enabled)}
-              onChange={(val) => updateSalesLayout({ sales_badge_enabled: val })}
-            >
-              Hiện nhãn ưu đãi & địa chỉ
-            </SwitchCard>
-            <SwitchCard
-              checked={Boolean(layoutConfig.show_photo_callouts)}
-              onChange={(val) => updateSalesLayout({ show_photo_callouts: val })}
-            >
-              Hiện nhãn ghi chú trên từng ảnh
-            </SwitchCard>
-            <SwitchCard
-              checked={Boolean(layoutConfig.outro_card_enabled)}
-              onChange={(val) => updateSalesLayout({ outro_card_enabled: val })}
-            >
-              Thêm Thẻ kết 2.5s cuối video
-            </SwitchCard>
-          </div>
-        </div>
-
-        {layoutConfig.sales_badge_enabled && (
-          <div className="form-grid" style={{ marginBottom: 12 }}>
-            <input
-              className="input"
-              placeholder="Nhãn ưu đãi tinh tế (VD: Tặng trọn bộ phụ kiện)"
-              value={layoutConfig.sales_price_or_offer || ''}
-              onChange={(e) => updateSalesLayout({ sales_price_or_offer: e.target.value })}
-            />
-            <input
-              className="input"
-              placeholder="Địa chỉ / liên hệ (VD: Test đàn trực tiếp tại Hà Nội)"
-              value={layoutConfig.sales_contact_info || ''}
-              onChange={(e) => updateSalesLayout({ sales_contact_info: e.target.value })}
-            />
-          </div>
-        )}
-
-        {layoutConfig.outro_card_enabled && (
-          <div className="form-grid" style={{ marginBottom: 12 }}>
-            <input
-              className="input"
-              placeholder="Tên cửa hàng ở Thẻ kết 2.5s (VD: Sơn Music — Violin Tuyển Chọn)"
-              value={layoutConfig.outro_brand_title || ''}
-              onChange={(e) => updateSalesLayout({ outro_brand_title: e.target.value })}
-            />
-            <input
-              className="input"
-              placeholder="Địa chỉ & Website Thẻ kết (VD: Showroom Hà Nội • www.sonmusic.vn)"
-              value={layoutConfig.outro_contact_line || ''}
-              onChange={(e) => updateSalesLayout({ outro_contact_line: e.target.value })}
-            />
-          </div>
-        )}
-
-        <div className="surface-box" style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginBottom: 8,
-            }}
-          >
-            <strong style={{ fontSize: 13.2, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Camera size={15} style={{ color: 'var(--brand-text)' }} /> Thiết kế Ảnh Bìa TikTok / Shorts / Facebook (Cover Thumbnail)
-            </strong>
-            <span className="badge badge-info">Xuất kèm tự động trong gói .ZIP</span>
-          </div>
-
-          <div className="form-grid" style={{ marginBottom: layoutConfig.cover_style !== 'CLEAN_POSTER' ? 10 : 0 }}>
-            <div>
-              <label className="form-label">Kiểu trình bày Ảnh Bìa</label>
-              <select
-                className="select"
-                value={layoutConfig.cover_style || 'CLEAN_POSTER'}
-                onChange={(e) => updateSalesLayout({ cover_style: e.target.value })}
-              >
-                <option value="CLEAN_POSTER">Bìa sạch tinh tế (Không chèn chữ lớn)</option>
-                <option value="BOLD_HOOK">Chữ lớn nổi bật dễ đọc trên lưới 3 cột TikTok</option>
-                <option value="LUXURY_MAGAZINE">Khung tạp chí Đen Nhung & Vàng Champagne</option>
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Chọn tấm ảnh đẹp nhất làm nền Ảnh Bìa</label>
-              <select
-                className="select"
-                value={layoutConfig.cover_photo_index || 0}
-                onChange={(e) => updateSalesLayout({ cover_photo_index: Number(e.target.value) })}
-              >
-                {uploadedPhotos.filter((p) => !p.isVideo).length === 0 ? (
-                  <option value={0}>Mặc định lấy Ảnh mở màn đầu tiên</option>
-                ) : (
-                  uploadedPhotos
-                    .filter((p) => !p.isVideo)
-                    .map((ph, idx) => (
-                      <option key={`${ph.local_path}_cov_${idx}`} value={idx}>
-                        Ảnh {idx + 1} — {ph.original_name}
-                      </option>
-                    ))
-                )}
-              </select>
-            </div>
-          </div>
-
-          {layoutConfig.cover_style !== 'CLEAN_POSTER' && (
-            <div className="form-grid">
-              <input
-                className="input"
-                placeholder="Tiêu đề lớn trên Ảnh Bìa (VD: Test Âm Violin S2S Gỗ Thịt)"
-                value={layoutConfig.cover_headline || ''}
-                onChange={(e) => updateSalesLayout({ cover_headline: e.target.value })}
-              />
-              <input
-                className="input"
-                placeholder="Nhãn điểm nhấn trên bìa (VD: Nghe Thử Âm Mộc)"
-                value={layoutConfig.cover_badge_text || ''}
-                onChange={(e) => updateSalesLayout({ cover_badge_text: e.target.value })}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="surface-box">
           <div className="form-grid">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <QrCode size={17} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
-              <input
-                className="input"
-                placeholder="Tùy chọn: Dán link tạo Mã QR góc màn hình (Để trống = Không hiện QR)"
-                value={layoutConfig.qr_code_content || ''}
-                onChange={(e) => updateSalesLayout({ qr_code_content: e.target.value })}
-              />
-              {layoutConfig.qr_code_content && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  title="Bỏ Mã QR"
-                  onClick={() => updateSalesLayout({ qr_code_content: '' })}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <input
-              className="input"
-              placeholder="Chú thích dưới Mã QR (VD: Quét xem chi tiết)"
-              value={layoutConfig.qr_code_label || ''}
-              disabled={!layoutConfig.qr_code_content}
-              onChange={(e) => updateSalesLayout({ qr_code_label: e.target.value })}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* STEP 4: 13 EXPRESSIVE AI VOICES, VIOLIN BGM, DURATION & SUBTITLE STYLE */}
-      <div className="step-box">
-        <div className="step-header">
-          <span className="step-num">4</span>
-          <div>
-            <div className="step-title">
-              Giọng đọc truyền cảm ({voices.length} giọng), Nhạc nền Violin & Thời lượng xuất
-            </div>
-            <div className="step-desc">
-              Lọc nhanh theo nhóm Bán hàng / TikTok / YouTube Shorts; tinh chỉnh trực tiếp tốc độ đọc và độ trầm ấm
-            </div>
-          </div>
-        </div>
-
-        <div className="form-grid" style={{ marginBottom: 14 }}>
-          <InlineVoiceSelector
-            voices={voices}
-            voiceId={voiceId}
-            onChange={setVoiceId}
-            voiceSpeed={voiceSpeed}
-            onSpeedChange={setVoiceSpeed}
-            voicePitch={voicePitch}
-            onPitchChange={setVoicePitch}
-            defaultCategory="ECOMMERCE_SALES"
-            label={`Giọng đọc chia sẻ sản phẩm (${voices.length} giọng)`}
-            sampleText="Điểm chạm cảm xúc đầu tiên của cây đàn này nằm ở mặt top gỗ thịt tự nhiên nguyên tấm, cho tiếng đàn ngân dày, ấm và có chiều sâu."
-            notify={notify}
-          />
-          <InlineBgmSelector
-            bgmPresets={bgmPresets}
-            bgmPresetId={bgmPresetId}
-            onSelectPreset={setBgmPresetId}
-            bgmVolume={bgmVolume}
-            onVolumeChange={setBgmVolume}
-            customBgmPath={customBgmPath}
-            onCustomBgmChange={setCustomBgmPath}
-            notify={notify}
-            label="Nhạc nền Violin / Acoustic hoặc nhạc riêng"
-          />
-        </div>
-
-        <div className="surface-box">
-          <div className="form-grid">
-            <div className="form-group" style={{ marginBottom: 10 }}>
+            <div className="form-group">
               <label className="form-label">
                 Thời lượng dự kiến mỗi video: <strong>{durationSec} giây</strong>
               </label>
@@ -2067,12 +1954,12 @@ export default function ProductStudioForm({
                 min="25"
                 max="110"
                 step="5"
-                style={{ width: '100%', marginTop: 6 }}
+                style={{ width: '100%', marginTop: 8 }}
                 value={durationSec}
                 onChange={(e) => setDurationSec(Number(e.target.value))}
               />
             </div>
-            <div className="form-group" style={{ marginBottom: 10 }}>
+            <div className="form-group">
               <label className="form-label">Kiểu hiển thị chữ phụ đề dưới video</label>
               <select
                 className="select"
@@ -2086,16 +1973,170 @@ export default function ProductStudioForm({
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Lời nhắn kết cuối video</label>
+          <div className="form-group">
+            <label className="form-label">Lời nhắn kết cuối video (CTA)</label>
             <input
               className="input"
               value={ctaText}
               onChange={(e) => setCtaText(e.target.value)}
             />
           </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Thành phần chữ &amp; thẻ hiển thị trên video</label>
+            <div className="toggle-grid">
+              <SwitchCard
+                checked={layoutConfig.show_top_banner !== false}
+                onChange={(val) => updateSalesLayout({ show_top_banner: val })}
+              >
+                Hiện tên sản phẩm đầu video
+              </SwitchCard>
+              <SwitchCard
+                checked={Boolean(layoutConfig.sales_badge_enabled)}
+                onChange={(val) => updateSalesLayout({ sales_badge_enabled: val })}
+              >
+                Hiện nhãn ưu đãi &amp; địa chỉ
+              </SwitchCard>
+              <SwitchCard
+                checked={Boolean(layoutConfig.show_photo_callouts)}
+                onChange={(val) => updateSalesLayout({ show_photo_callouts: val })}
+              >
+                Hiện nhãn ghi chú trên từng ảnh
+              </SwitchCard>
+              <SwitchCard
+                checked={Boolean(layoutConfig.outro_card_enabled)}
+                onChange={(val) => updateSalesLayout({ outro_card_enabled: val })}
+              >
+                Thêm Thẻ kết 2.5s cuối video
+              </SwitchCard>
+            </div>
+          </div>
+
+          {layoutConfig.sales_badge_enabled && (
+            <div className="form-grid" style={{ marginTop: 12 }}>
+              <input
+                className="input"
+                placeholder="Nhãn ưu đãi tinh tế (VD: Tặng trọn bộ phụ kiện)"
+                value={layoutConfig.sales_price_or_offer || ''}
+                onChange={(e) => updateSalesLayout({ sales_price_or_offer: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Địa chỉ / liên hệ (VD: Test đàn trực tiếp tại Hà Nội)"
+                value={layoutConfig.sales_contact_info || ''}
+                onChange={(e) => updateSalesLayout({ sales_contact_info: e.target.value })}
+              />
+            </div>
+          )}
+
+          {layoutConfig.outro_card_enabled && (
+            <div className="form-grid" style={{ marginTop: 12 }}>
+              <input
+                className="input"
+                placeholder="Tên cửa hàng ở Thẻ kết 2.5s (VD: Sơn Music — Violin Tuyển Chọn)"
+                value={layoutConfig.outro_brand_title || ''}
+                onChange={(e) => updateSalesLayout({ outro_brand_title: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Địa chỉ & Website Thẻ kết (VD: Showroom Hà Nội • www.sonmusic.vn)"
+                value={layoutConfig.outro_contact_line || ''}
+                onChange={(e) => updateSalesLayout({ outro_contact_line: e.target.value })}
+              />
+            </div>
+          )}
+
+          <StudioCollapsible
+            icon={Camera}
+            title="Thiết kế Ảnh Bìa (Cover Thumbnail) & Mã QR góc màn hình"
+            subtitle="Tự động xuất kèm ảnh bìa đồng bộ trong gói .ZIP và tạo QR dẫn về trang sản phẩm"
+            badge={layoutConfig.qr_code_content ? 'Có QR' : ''}
+          >
+            <div
+              className="form-grid"
+              style={{ marginBottom: layoutConfig.cover_style !== 'CLEAN_POSTER' ? 12 : 14 }}
+            >
+              <div>
+                <label className="form-label">Kiểu trình bày Ảnh Bìa</label>
+                <select
+                  className="select"
+                  value={layoutConfig.cover_style || 'CLEAN_POSTER'}
+                  onChange={(e) => updateSalesLayout({ cover_style: e.target.value })}
+                >
+                  <option value="CLEAN_POSTER">Bìa sạch tinh tế (Không chèn chữ lớn)</option>
+                  <option value="BOLD_HOOK">Chữ lớn nổi bật dễ đọc trên lưới 3 cột TikTok</option>
+                  <option value="LUXURY_MAGAZINE">Khung tạp chí Đen Nhung &amp; Vàng Champagne</option>
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Tấm ảnh làm nền Ảnh Bìa</label>
+                <select
+                  className="select"
+                  value={layoutConfig.cover_photo_index || 0}
+                  onChange={(e) => updateSalesLayout({ cover_photo_index: Number(e.target.value) })}
+                >
+                  {uploadedPhotos.filter((p) => !p.isVideo).length === 0 ? (
+                    <option value={0}>Mặc định lấy Ảnh mở màn đầu tiên</option>
+                  ) : (
+                    uploadedPhotos
+                      .filter((p) => !p.isVideo)
+                      .map((ph, idx) => (
+                        <option key={`${ph.local_path}_cov_${idx}`} value={idx}>
+                          Ảnh {idx + 1} — {ph.original_name}
+                        </option>
+                      ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {layoutConfig.cover_style !== 'CLEAN_POSTER' && (
+              <div className="form-grid" style={{ marginBottom: 14 }}>
+                <input
+                  className="input"
+                  placeholder="Tiêu đề lớn trên Ảnh Bìa (VD: Test Âm Violin S2S Gỗ Thịt)"
+                  value={layoutConfig.cover_headline || ''}
+                  onChange={(e) => updateSalesLayout({ cover_headline: e.target.value })}
+                />
+                <input
+                  className="input"
+                  placeholder="Nhãn điểm nhấn trên bìa (VD: Nghe Thử Âm Mộc)"
+                  value={layoutConfig.cover_badge_text || ''}
+                  onChange={(e) => updateSalesLayout({ cover_badge_text: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="form-grid">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <QrCode size={17} style={{ color: 'var(--brand-text)', flexShrink: 0 }} />
+                <input
+                  className="input"
+                  placeholder="Dán link tạo Mã QR góc màn hình (Để trống = Không hiện QR)"
+                  value={layoutConfig.qr_code_content || ''}
+                  onChange={(e) => updateSalesLayout({ qr_code_content: e.target.value })}
+                />
+                {layoutConfig.qr_code_content && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => updateSalesLayout({ qr_code_content: '' })}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <input
+                className="input"
+                placeholder="Chú thích dưới Mã QR (VD: Quét xem chi tiết)"
+                value={layoutConfig.qr_code_label || ''}
+                disabled={!layoutConfig.qr_code_content}
+                onChange={(e) => updateSalesLayout({ qr_code_label: e.target.value })}
+              />
+            </div>
+          </StudioCollapsible>
         </div>
-      </div>
+      )}
 
       <StudioLoadingBanner
         loading={submitting}
@@ -2108,33 +2149,30 @@ export default function ProductStudioForm({
         stepIntervalMs={1800}
       />
 
-      <div className="sticky-action-bar">
-        <span className="text-sub" style={{ fontSize: 12.2 }}>
-          Tự động lưu nháp • Dán ảnh <strong>Ctrl + V</strong> • Xuất ngay <strong>Ctrl + Enter</strong>
-        </span>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ minHeight: 42 }}
-            disabled={submitting || uploadingPhotos || uploadingDemo || scrapingUrl}
-            onClick={() => handleStart(false)}
-          >
-            {submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />}{' '}
-            Xem kịch bản &amp; chỉnh giọng từng câu
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{ minWidth: 235, minHeight: 42, fontSize: 14 }}
-            disabled={submitting || uploadingPhotos || uploadingDemo || scrapingUrl}
-            onClick={() => handleStart(true)}
-          >
-            {submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}{' '}
-            {submitting
-              ? 'Đang khởi tạo...'
-              : `Tạo ${variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay`}
-          </button>
-        </div>
-      </div>
+      <StudioStepFooter
+        activeStep={activeStep}
+        totalSteps={3}
+        showAllSteps={showAllSteps}
+        onStepChange={setActiveStep}
+        nextStepLabel={
+          activeStep === 1 ? 'Tiếp tục: Khung hình & Giọng đọc' : 'Tiếp tục: Ảnh bìa & Xuất'
+        }
+        hintText="Tự động lưu nháp • Dán ảnh Ctrl + V • Xuất ngay Ctrl + Enter"
+        secondaryAction={{
+          label: 'Duyệt kịch bản trước',
+          icon: submitting ? <Loader2 size={15} className="spin" /> : <Edit3 size={15} />,
+          disabled: submitting || uploadingPhotos || uploadingDemo || scrapingUrl,
+          onClick: () => handleStart(false),
+        }}
+        primaryAction={{
+          label: submitting
+            ? 'Đang khởi tạo...'
+            : `Tạo ${variantCount > 1 ? `${variantCount} video bán hàng` : 'video bán hàng'} ngay`,
+          icon: submitting ? <Loader2 size={16} className="spin" /> : <Play size={16} />,
+          disabled: submitting || uploadingPhotos || uploadingDemo || scrapingUrl,
+          onClick: () => handleStart(true),
+        }}
+      />
     </div>
   );
 }

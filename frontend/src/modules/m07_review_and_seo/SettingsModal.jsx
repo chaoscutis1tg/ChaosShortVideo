@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Archive, CheckCircle2, Download, KeyRound, Loader2, Save, Upload, X } from 'lucide-react';
 import { studioApi } from '../m00_core_contracts/apiClient';
-import { FieldError, hasAllowedExtension } from '../m00_core_contracts/StudioWidgets';
+import { FieldError, hasAllowedExtension, StudioPageHeader } from '../m00_core_contracts/StudioWidgets';
 
 export default function SettingsModal({
   systemStatus,
@@ -10,6 +10,7 @@ export default function SettingsModal({
   onBackupRestored,
   notify,
 }) {
+  const [activeTab, setActiveTab] = useState('API');
   const [geminiKey, setGeminiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [preferredLlm, setPreferredLlm] = useState(systemStatus?.preferred_llm || 'AUTO');
@@ -105,249 +106,251 @@ export default function SettingsModal({
   const keys = systemStatus?.keys_configured || {};
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(2, 6, 23, 0.74)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 110,
-        padding: 16,
-      }}
-      onClick={onClose}
-    >
+    <div className="modal-backdrop" onClick={onClose}>
       <form
         className="card"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSave}
         style={{
           width: '100%',
-          maxWidth: 640,
+          maxWidth: 660,
           maxHeight: '92vh',
           overflowY: 'auto',
           marginBottom: 0,
         }}
       >
-        <div className="page-header" style={{ marginBottom: 14 }}>
-          <div>
-            <div className="page-title">
-              <KeyRound size={19} /> Cài đặt Kết nối API & Sao lưu Cửa hàng
-            </div>
-            <div className="page-subtitle">
-              Quản lý khóa bảo mật cục bộ (.env) và đóng gói dữ liệu cửa hàng mang sang máy khác
-            </div>
-          </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
-            <X size={15} /> Đóng
+        <StudioPageHeader
+          icon={KeyRound}
+          title="Cài Đặt Kết Nối API & Sao Lưu"
+          subtitle="Quản lý khóa bảo mật cục bộ (.env) và đóng gói dữ liệu mang sang máy khác"
+          actions={
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+              <X size={15} /> Đóng
+            </button>
+          }
+        />
+
+        <div className="studio-segmented" style={{ marginBottom: 18 }}>
+          <button
+            type="button"
+            className={`studio-seg-btn ${activeTab === 'API' ? 'active' : ''}`}
+            onClick={() => setActiveTab('API')}
+          >
+            <KeyRound size={14} /> Khóa API &amp; Não AI
+          </button>
+          <button
+            type="button"
+            className={`studio-seg-btn ${activeTab === 'BACKUP' ? 'active' : ''}`}
+            onClick={() => setActiveTab('BACKUP')}
+          >
+            <Archive size={14} /> Sao lưu &amp; Khôi phục (.ZIP)
           </button>
         </div>
 
-        {/* SECTION 1: MULTI-BRAIN AI KEYS (CLAUDE SONNET + GOOGLE GEMINI) */}
-        <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 6,
-            }}
-          >
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Anthropic Claude API Key (Claude Sonnet — Viết kịch bản tự nhiên &amp; Đạo diễn Motion Graphics)
-            </label>
-            <span className={`badge ${keys.anthropic ? 'badge-ok' : 'badge-warn'}`}>
-              {keys.anthropic ? (
-                <>
-                  <CheckCircle2 size={12} /> Đã kết nối Claude
-                </>
-              ) : (
-                'Tùy chọn'
-              )}
-            </span>
-          </div>
-          <input
-            type="password"
-            className="input"
-            style={{ marginBottom: 10 }}
-            placeholder="sk-ant-api03-... (để trống để giữ khóa hiện tại)"
-            value={anthropicKey}
-            onChange={(e) => setAnthropicKey(e.target.value)}
-          />
-
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 6,
-            }}
-          >
-            <label className="form-label" style={{ marginBottom: 0 }}>
-              Google Gemini API Key (Viết kịch bản, Nhìn ảnh sản phẩm &amp; Dịch phim)
-            </label>
-            <span className={`badge ${keys.gemini ? 'badge-ok' : 'badge-warn'}`}>
-              {keys.gemini ? (
-                <>
-                  <CheckCircle2 size={12} /> Đã kết nối Gemini
-                </>
-              ) : (
-                'Chưa nhập'
-              )}
-            </span>
-          </div>
-          <input
-            type="password"
-            className="input"
-            style={{ marginBottom: 10 }}
-            placeholder="Dán khóa Gemini mới nếu muốn cập nhật (để trống để giữ khóa hiện tại)..."
-            value={geminiKey}
-            onChange={(e) => setGeminiKey(e.target.value)}
-          />
-
-          <div>
-            <label className="form-label" style={{ fontSize: 12 }}>
-              Bộ não AI ưu tiên khi phân tích kịch bản &amp; dựng phân cảnh Motion Graphics
-            </label>
-            <select
-              className="select"
-              value={preferredLlm}
-              onChange={(e) => setPreferredLlm(e.target.value)}
-            >
-              <option value="AUTO">✨ Tự động ưu tiên Claude Sonnet (dự phòng sang Gemini)</option>
-              <option value="CLAUDE">Ưu tiên Anthropic Claude Sonnet</option>
-              <option value="GEMINI">Ưu tiên Google Gemini</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">
-              Pexels API Key ({keys.pexels ? 'Đã có' : 'Tùy chọn cho Video Chủ Đề'})
-            </label>
-            <input
-              type="password"
-              className="input"
-              placeholder="PEXELS_API_KEY"
-              value={pexelsKey}
-              onChange={(e) => setPexelsKey(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">
-              Pixabay API Key ({keys.pixabay ? 'Đã có' : 'Tùy chọn cho Video Chủ Đề'})
-            </label>
-            <input
-              type="password"
-              className="input"
-              placeholder="PIXABAY_API_KEY"
-              value={pixabayKey}
-              onChange={(e) => setPixabayKey(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">
-              ElevenLabs API Key ({keys.elevenlabs ? 'Đã có' : 'Tùy chọn'})
-            </label>
-            <input
-              type="password"
-              className="input"
-              placeholder="ELEVENLABS_API_KEY"
-              value={elevenKey}
-              onChange={(e) => setElevenKey(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">
-              FPT.AI TTS Key ({keys.fpt_ai ? 'Đã có' : 'Tùy chọn'})
-            </label>
-            <input
-              type="password"
-              className="input"
-              placeholder="FPT_AI_API_KEY"
-              value={fptKey}
-              onChange={(e) => setFptKey(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">
-              Vbee TTS API Key ({keys.vbee ? 'Đã có' : 'Tùy chọn'})
-            </label>
-            <input
-              type="password"
-              className="input"
-              placeholder="VBEE_API_KEY"
-              value={vbeeKey}
-              onChange={(e) => setVbeeKey(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">
-              Vbee App ID ({keys.vbee ? 'Đã có' : 'Đi kèm Vbee Key'})
-            </label>
-            <input
-              type="text"
-              className="input"
-              placeholder="VBEE_APP_ID"
-              value={vbeeAppId}
-              onChange={(e) => setVbeeAppId(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* SECTION 2: STORE BACKUP & RESTORE (.ZIP) — ITEM 8 */}
-        <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Archive size={16} style={{ color: 'var(--brand-text)' }} />
-            <strong style={{ fontSize: 13.8 }}>
-              Sao lưu & Khôi phục dữ liệu cửa hàng (Backup / Restore)
-            </strong>
-          </div>
-          <div className="text-sub" style={{ fontSize: 12.4, marginBottom: 10, lineHeight: 1.45 }}>
-            Đóng gói trọn bộ <strong>Kho mẫu sản phẩm</strong>, <strong>Bộ nhận diện thương hiệu (Brand Kit + Logo)</strong> và <strong>Giọng thu mẫu riêng</strong> ra 1 tệp <code>.ZIP</code> duy nhất để cất giữ an toàn hoặc chuyển sang máy tính khác.
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <a
-              href={studioApi.getStoreBackupExportUrl()}
-              download="ChaosShortVideo_StoreBackup.zip"
-              className="btn btn-secondary btn-sm"
-              style={{ textDecoration: 'none' }}
-            >
-              <Download size={14} /> Xuất gói Sao lưu (.ZIP)
-            </a>
-            <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-              {restoringBackup ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}{' '}
-              {restoringBackup ? 'Đang khôi phục...' : 'Khôi phục từ tệp Sao lưu (.ZIP)'}
+        {activeTab === 'API' ? (
+          <div className="fade-slide-in">
+            <div className="step-box">
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                }}
+              >
+                <label className="form-label" style={{ marginBottom: 0 }}>
+                  Anthropic Claude API Key (Claude Sonnet — Kịch bản &amp; Motion Graphics)
+                </label>
+                <span className={`badge ${keys.anthropic ? 'badge-ok' : 'badge-warn'}`}>
+                  {keys.anthropic ? (
+                    <>
+                      <CheckCircle2 size={12} /> Đã kết nối
+                    </>
+                  ) : (
+                    'Tùy chọn'
+                  )}
+                </span>
+              </div>
               <input
-                type="file"
-                accept=".zip,application/zip"
-                hidden
-                disabled={restoringBackup}
-                onChange={handleImportBackup}
+                type="password"
+                className="input"
+                style={{ marginBottom: 14 }}
+                placeholder="sk-ant-api03-... (để trống để giữ khóa hiện tại)"
+                value={anthropicKey}
+                onChange={(e) => setAnthropicKey(e.target.value)}
               />
-            </label>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                }}
+              >
+                <label className="form-label" style={{ marginBottom: 0 }}>
+                  Google Gemini API Key (Kịch bản, Sản phẩm &amp; Dịch phim)
+                </label>
+                <span className={`badge ${keys.gemini ? 'badge-ok' : 'badge-warn'}`}>
+                  {keys.gemini ? (
+                    <>
+                      <CheckCircle2 size={12} /> Đã kết nối
+                    </>
+                  ) : (
+                    'Chưa nhập'
+                  )}
+                </span>
+              </div>
+              <input
+                type="password"
+                className="input"
+                style={{ marginBottom: 14 }}
+                placeholder="Dán khóa Gemini mới nếu muốn cập nhật (để trống để giữ khóa hiện tại)..."
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+              />
+
+              <div>
+                <label className="form-label">Bộ não AI ưu tiên khi phân tích kịch bản</label>
+                <select
+                  className="select"
+                  value={preferredLlm}
+                  onChange={(e) => setPreferredLlm(e.target.value)}
+                >
+                  <option value="AUTO">Tự động ưu tiên Claude Sonnet (dự phòng sang Gemini)</option>
+                  <option value="CLAUDE">Ưu tiên Anthropic Claude Sonnet</option>
+                  <option value="GEMINI">Ưu tiên Google Gemini</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">
+                  Pexels API Key ({keys.pexels ? 'Đã có' : 'Tùy chọn Stock Video'})
+                </label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="PEXELS_API_KEY"
+                  value={pexelsKey}
+                  onChange={(e) => setPexelsKey(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Pixabay API Key ({keys.pixabay ? 'Đã có' : 'Tùy chọn Stock Video'})
+                </label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="PIXABAY_API_KEY"
+                  value={pixabayKey}
+                  onChange={(e) => setPixabayKey(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">
+                  ElevenLabs API Key ({keys.elevenlabs ? 'Đã có' : 'Tùy chọn'})
+                </label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="ELEVENLABS_API_KEY"
+                  value={elevenKey}
+                  onChange={(e) => setElevenKey(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  FPT.AI TTS Key ({keys.fpt_ai ? 'Đã có' : 'Tùy chọn'})
+                </label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="FPT_AI_API_KEY"
+                  value={fptKey}
+                  onChange={(e) => setFptKey(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">
+                  Vbee TTS API Key ({keys.vbee ? 'Đã có' : 'Tùy chọn'})
+                </label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="VBEE_API_KEY"
+                  value={vbeeKey}
+                  onChange={(e) => setVbeeKey(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Vbee App ID ({keys.vbee ? 'Đã có' : 'Đi kèm Vbee Key'})
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="VBEE_APP_ID"
+                  value={vbeeAppId}
+                  onChange={(e) => setVbeeAppId(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <FieldError message={formErr} />
+
+            <div className="btn-row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                Hủy
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? <Loader2 size={15} className="spin" /> : <Save size={15} />}
+                <span>{saving ? 'Đang lưu...' : 'Lưu cấu hình API'}</span>
+              </button>
+            </div>
           </div>
-        </div>
-
-        <FieldError message={formErr} />
-
-        <div className="btn-row" style={{ justifyContent: 'flex-end', marginTop: formErr ? 10 : 0 }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Đóng
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? <Loader2 size={15} className="spin" /> : <Save size={15} />}{' '}
-            {saving ? 'Đang lưu...' : 'Lưu khóa API'}
-          </button>
-        </div>
+        ) : (
+          <div className="step-box fade-slide-in" style={{ marginBottom: 0 }}>
+            <div className="text-md fw-600" style={{ marginBottom: 6 }}>
+              Đóng gói &amp; Khôi phục dữ liệu cửa hàng
+            </div>
+            <p className="text-sm text-sub" style={{ marginBottom: 16 }}>
+              Đóng gói trọn bộ <strong>Kho mẫu sản phẩm</strong>,{' '}
+              <strong>Bộ nhận diện thương hiệu (Brand Kit + Logo)</strong> và{' '}
+              <strong>Giọng thu mẫu riêng</strong> ra một tệp <code>.ZIP</code> duy nhất để cất giữ an toàn hoặc chuyển sang máy tính khác.
+            </p>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <a
+                href={studioApi.getStoreBackupExportUrl()}
+                download="ChaosShortVideo_StoreBackup.zip"
+                className="btn btn-primary"
+              >
+                <Download size={15} /> Xuất gói Sao lưu (.ZIP)
+              </a>
+              <label className="btn btn-secondary" style={{ cursor: 'pointer' }}>
+                {restoringBackup ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
+                <span>
+                  {restoringBackup ? 'Đang khôi phục...' : 'Khôi phục từ tệp Sao lưu (.ZIP)'}
+                </span>
+                <input
+                  type="file"
+                  accept=".zip,application/zip"
+                  hidden
+                  disabled={restoringBackup}
+                  onChange={handleImportBackup}
+                />
+              </label>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );

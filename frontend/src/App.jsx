@@ -33,14 +33,62 @@ import {
 import TopicStudioForm from './modules/m03_topic_studio/TopicStudioForm';
 import Canvas916Designer from './modules/m06_canvas_916/Canvas916Designer';
 
-const MovieStudioForm = lazy(() => import('./modules/m01_m04_movie_studio/MovieStudioForm'));
-const VoiceCloneLab = lazy(() => import('./modules/m05_voice_lab/VoiceCloneLab'));
-const ProjectWorkspaceView = lazy(() =>
-  import('./modules/m07_review_and_seo/ProjectWorkspaceView')
+function lazyWithAutoReload(importer, chunkKey) {
+  return lazy(async () => {
+    try {
+      const mod = await importer();
+      try {
+        sessionStorage.removeItem(`chaos_chunk_reload_${chunkKey}`);
+      } catch {
+        // ignore
+      }
+      return mod;
+    } catch (err) {
+      const flag = `chaos_chunk_reload_${chunkKey}`;
+      const alreadyReloaded = sessionStorage.getItem(flag);
+      if (!alreadyReloaded) {
+        sessionStorage.setItem(flag, '1');
+        window.location.reload();
+        return new Promise(() => {});
+      }
+      throw err;
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', () => {
+    if (!sessionStorage.getItem('chaos_vite_preload_reloaded')) {
+      sessionStorage.setItem('chaos_vite_preload_reloaded', '1');
+      window.location.reload();
+    }
+  });
+}
+
+const MovieStudioForm = lazyWithAutoReload(
+  () => import('./modules/m01_m04_movie_studio/MovieStudioForm'),
+  'movie'
 );
-const SettingsModal = lazy(() => import('./modules/m07_review_and_seo/SettingsModal'));
-const ProductStudioForm = lazy(() => import('./modules/m08_product_studio/ProductStudioForm'));
-const ThreadsStudioForm = lazy(() => import('./modules/m09_threads_studio/ThreadsStudioForm'));
+const VoiceCloneLab = lazyWithAutoReload(
+  () => import('./modules/m05_voice_lab/VoiceCloneLab'),
+  'voices'
+);
+const ProjectWorkspaceView = lazyWithAutoReload(
+  () => import('./modules/m07_review_and_seo/ProjectWorkspaceView'),
+  'workspace'
+);
+const SettingsModal = lazyWithAutoReload(
+  () => import('./modules/m07_review_and_seo/SettingsModal'),
+  'settings'
+);
+const ProductStudioForm = lazyWithAutoReload(
+  () => import('./modules/m08_product_studio/ProductStudioForm'),
+  'product'
+);
+const ThreadsStudioForm = lazyWithAutoReload(
+  () => import('./modules/m09_threads_studio/ThreadsStudioForm'),
+  'threads'
+);
 
 const ACTIVE_STATES = [
   'QUEUED',

@@ -3073,6 +3073,9 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             candidate = dist_dir / full_path
             if full_path and candidate.exists() and candidate.is_file():
                 return FileResponse(str(candidate))
+            # Never return text/html index.html for missing static asset chunks (.js/.css/.wasm/.map)
+            if full_path.startswith("assets/") or full_path.endswith((".js", ".mjs", ".css", ".wasm", ".map")):
+                raise HTTPException(status_code=404, detail="Static asset chunk not found.")
             return FileResponse(
                 str(dist_dir / "index.html"),
                 headers=no_cache_headers,

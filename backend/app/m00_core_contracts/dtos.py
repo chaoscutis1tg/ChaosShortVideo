@@ -28,7 +28,10 @@ from .enums import (
     ExportAspectRatio,
     HardsubMaskMode,
     LayoutType,
+    LLMBrainChoice,
     MotionEffect,
+    MotionSceneTemplate,
+    MotionThemeStyle,
     ProductCategory,
     ProductFramingStyle,
     ProjectMode,
@@ -146,6 +149,7 @@ class TopicPromptDTO(BaseContractDTO):
     topic_title: str = Field(min_length=3, max_length=200)
     key_points: str = Field(default="", max_length=6000)
     visual_mode: VisualMode = VisualMode.AI_IMAGE
+    motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
     target_duration_sec: int = Field(
         default=90, ge=MIN_ALLOWED_CLIP_SEC, le=MAX_ALLOWED_CLIP_SEC
     )
@@ -237,6 +241,24 @@ class CutConfigDTO(BaseContractDTO):
         return self
 
 
+class MotionSceneSpecDTO(BaseContractDTO):
+    """Declarative Remotion/Claude-style Motion Graphics scene specification (`M03 -> M04`)."""
+
+    template: MotionSceneTemplate = MotionSceneTemplate.KINETIC_HOOK
+    theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
+    badge_text: str = Field(default="", max_length=80)
+    headline: str = Field(default="", max_length=220)
+    subheadline: str = Field(default="", max_length=320)
+    stat_value: float = Field(default=85.0)
+    stat_prefix: str = Field(default="", max_length=20)
+    stat_suffix: str = Field(default="%", max_length=28)
+    items: List[str] = Field(default_factory=list)
+    left_title: str = Field(default="Phiên bản Chuẩn", max_length=80)
+    right_title: str = Field(default="Phổ thông", max_length=80)
+    left_points: List[str] = Field(default_factory=list)
+    right_points: List[str] = Field(default_factory=list)
+
+
 class NarrationLineDTO(BaseContractDTO):
     """Unified timed narration/subtitle line shared by Topic, Movie, and Product workflows."""
 
@@ -259,6 +281,7 @@ class NarrationLineDTO(BaseContractDTO):
     is_op_post: bool = False
     voice_speed_override: Optional[float] = Field(default=None, ge=0.70, le=1.50)
     voice_pitch_override: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
+    motion_spec: Optional[MotionSceneSpecDTO] = None
     words: List[WordTimestampDTO] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -495,10 +518,12 @@ class LayoutAndAntiCopyConfigDTO(BaseContractDTO):
     smart_micro_punch_in: bool = True
     dynamic_face_tracking: bool = True
 
-    # UC-19: Opt-in Creative Polish (Strictly OFF / NONE by default unless user explicitly enables)
+    # UC-19 & UC-20: Opt-in Creative Polish & Claude-style Motion Graphics (Strictly OFF / NONE by default)
     ambience_overlay: AmbienceOverlayStyle = AmbienceOverlayStyle.NONE
     story_progress_bar_enabled: bool = False
     quiz_countdown_sec: int = Field(default=3, ge=2, le=5)
+    motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
+    motion_preview_active: bool = False
 
     @field_validator("top_banner_template")
     @classmethod
@@ -823,6 +848,15 @@ class QuizGenerateRequestDTO(BaseContractDTO):
     countdown_sec: int = Field(default=3, ge=2, le=5)
     host_voice_id: str = "threads_nu_chinh"
     answer_voice_id: str = "threads_nam_chinh"
+
+
+class MotionSceneRefineRequestDTO(BaseContractDTO):
+    """Input contract for Claude Artifact-style single-scene natural language refinement."""
+
+    vi_text: str = Field(min_length=2, max_length=1200)
+    user_instruction: str = Field(min_length=2, max_length=1000)
+    current_spec: Optional[MotionSceneSpecDTO] = None
+    motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
 
 
 

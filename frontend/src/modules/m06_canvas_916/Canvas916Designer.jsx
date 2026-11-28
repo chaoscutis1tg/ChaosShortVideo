@@ -291,6 +291,8 @@ export default function Canvas916Designer({
         layoutConfig.threads_card_theme === 'CHAT_IMESSAGE_LIGHT'
       ? 'Threads • Chat'
       : 'Threads & Bình Luận'
+    : effMode === 'topic' && layoutConfig.motion_preview_active
+    ? 'Chủ Đề • Motion Graphics'
     : MODE_BADGE_MAP[effMode] || MODE_BADGE_MAP[activeTab] || 'Studio';
   const gpus = systemStatus?.gpus || [];
   const storage = systemStatus?.storage || {};
@@ -878,6 +880,87 @@ export default function Canvas916Designer({
                     <div style={{ fontSize: 8, opacity: 0.72 }}>♥ 1,4K • Trả lời • Đăng lại</div>
                   </div>
                 )}
+              </div>
+            ) : !isThreadsMode && isTopicMode && layoutConfig.motion_preview_active ? (
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  padding: 13,
+                  background:
+                    layoutConfig.motion_theme === 'DAN_KOE_MINIMAL'
+                      ? 'linear-gradient(165deg, #060608 0%, #121216 100%)'
+                      : layoutConfig.motion_theme === 'WARM_ARTISAN_GOLD'
+                      ? 'linear-gradient(165deg, #140f0c 0%, #261b13 100%)'
+                      : layoutConfig.motion_theme === 'NEON_TECH_INFOGRAPHIC'
+                      ? 'linear-gradient(165deg, #06101a 0%, #0a202e 100%)'
+                      : 'linear-gradient(165deg, #0b0f1a 0%, #161f32 100%)',
+                  color: '#f8fafc',
+                }}
+              >
+                <div style={{ textAlign: 'center', marginBottom: 7 }}>
+                  <span
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: 99,
+                      fontSize: 7.5,
+                      fontWeight: 800,
+                      border: '1px solid rgba(56,189,248,0.65)',
+                      color:
+                        layoutConfig.motion_theme === 'WARM_ARTISAN_GOLD'
+                          ? '#f5bc52'
+                          : layoutConfig.motion_theme === 'DAN_KOE_MINIMAL'
+                          ? '#fafafa'
+                          : '#38bdf8',
+                    }}
+                  >
+                    MOTION GRAPHICS • 30FPS
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 800, textAlign: 'center', marginBottom: 8 }}>
+                  Đồ họa &amp; Biểu đồ tự khớp giọng đọc
+                </div>
+                <div
+                  style={{
+                    padding: 8,
+                    borderRadius: 10,
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(148,163,184,0.28)',
+                    display: 'grid',
+                    gap: 5,
+                    fontSize: 8,
+                  }}
+                >
+                  {[
+                    ['Độ vang & chiều sâu', '94%'],
+                    ['Trải nghiệm thực tế', '78%'],
+                    ['Phổ thông cũ', '42%'],
+                  ].map(([lbl, pct], bi) => (
+                    <div key={bi}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <span>{lbl}</span>
+                        <strong>{pct}</strong>
+                      </div>
+                      <div style={{ height: 5, borderRadius: 99, background: 'rgba(255,255,255,0.14)' }}>
+                        <div
+                          style={{
+                            width: pct,
+                            height: '100%',
+                            borderRadius: 99,
+                            background:
+                              layoutConfig.motion_theme === 'WARM_ARTISAN_GOLD'
+                                ? '#f5bc52'
+                                : layoutConfig.motion_theme === 'DAN_KOE_MINIMAL'
+                                ? '#fafafa'
+                                : '#38bdf8',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : !previewFrameUrl ? (
               <div

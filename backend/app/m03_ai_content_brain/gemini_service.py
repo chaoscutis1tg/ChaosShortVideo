@@ -22,6 +22,10 @@ from app.m00_core_contracts import (
     MAX_ALLOWED_CLIP_SEC,
     MAX_NARRATION_CPS,
     MIN_ALLOWED_CLIP_SEC,
+    MotionSceneRefineRequestDTO,
+    MotionSceneSpecDTO,
+    MotionSceneTemplate,
+    MotionThemeStyle,
     NarrationLineDTO,
     ProductCategory,
     ProductReviewPromptDTO,
@@ -73,26 +77,277 @@ def _extract_json(raw: str) -> Any:
     m = JSON_FENCE_RE.search(cleaned)
     if m:
         cleaned = m.group(1).strip()
+    if not cleaned.startswith(("{", "[")):
+        i_brace = cleaned.find("{")
+        j_brace = cleaned.rfind("}")
+        if i_brace != -1 and j_brace > i_brace:
+            cleaned = cleaned[i_brace : j_brace + 1]
     return json.loads(cleaned)
 
 
+def infer_motion_spec_for_line(
+    vi_text: str,
+    seq_index: int = 0,
+    total_lines: int = 5,
+    theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK,
+    topic_hint: str = "",
+) -> MotionSceneSpecDTO:
+    """Deterministic Motion Graphics storyboarder creating varied Remotion/Claude-style specs
+    from natural Vietnamese narration (used both as offline engine & structured sanitizer).
+    """
+    clean = re.sub(r"\s+", " ", vi_text or "").strip()
+    low = clean.lower()
+    words = clean.split()
+    short_head = " ".join(words[:9]) + ("..." if len(words) > 9 else "")
+
+    # Scene 0 -> Opening Kinetic Hook unless explicit A/B comparison
+    if seq_index == 0:
+        return MotionSceneSpecDTO(
+            template=MotionSceneTemplate.KINETIC_HOOK,
+            theme=theme,
+            badge_text=(topic_hint[:28].upper() if topic_hint else "ĐIỂM MẤU CHỐT"),
+            headline=clean[:140],
+            subheadline="Trọng tâm cốt lõi quyết định 80% trải nghiệm thực tế",
+        )
+
+    # Detect percentage / number metric (`70%`, `3 lần`, `20 phút`, `4 cấp độ`)
+    num_m = re.search(r"(\d+(?:[.,]\d+)?)\s*(%|phần trăm|lần|phút|giây|cấp độ|bước|năm)", low)
+    if num_m and seq_index % 4 != 3:
+        raw_val = float(num_m.group(1).replace(",", "."))
+        unit_raw = num_m.group(2)
+        suffix = "%" if unit_raw in ("%", "phần trăm") else f" {unit_raw}"
+        return MotionSceneSpecDTO(
+            template=MotionSceneTemplate.STAT_COUNTER,
+            theme=theme,
+            badge_text="CON SỐ BIẾT NÓI",
+            headline=short_head,
+            subheadline=clean[:180],
+            stat_value=max(1.0, min(999.0, raw_val)),
+            stat_suffix=suffix,
+        )
+
+    # Detect comparison (`so với`, `khác`, `gỗ thịt`, `gỗ ép`, `hay`, `phân biệt`)
+    if any(k in low for k in ("so với", "khác biệt", "phân biệt", "gỗ ép", "thay vì", "trong khi")):
+        is_wood = any(k in low for k in ("gỗ", "đàn", "guitar", "violin", "âm"))
+        return MotionSceneSpecDTO(
+            template=MotionSceneTemplate.VERSUS_SPLIT,
+            theme=theme,
+            badge_text="SO SÁNH TRỰC DIỆN",
+            headline=short_head,
+            left_title="Gỗ Thịt Solid" if is_wood else "Cách Tối Ưu",
+            right_title="Gỗ Ép Phổ Thông" if is_wood else "Cách Cũ Dễ Sai",
+            left_points=(
+                ["Âm vang dày, ấm tự nhiên", "Càng chơi lâu tiếng càng mở", "Bấm êm tay, giữ âm chuẩn"]
+                if is_wood
+                else ["Đi thẳng trọng tâm cốt lõi", "Tiết kiệm 60% thời gian", "Hiệu quả bền vững lâu dài"]
+            ),
+            right_points=(
+                ["Âm mỏng, ít độ ngân sâu", "Độ cộng hưởng giảm theo năm", "Dễ mỏi tay khi mới tập"]
+                if is_wood
+                else ["Lan man thiếu điểm tựa", "Nhanh nản ở tuần thứ 2", "Khó đo lường tiến bộ"]
+            ),
+        )
+
+    # Cycle cleanly across remaining high-retention infographic templates so scenes never repeat!
+    cycle = [
+        MotionSceneTemplate.STEP_FLOW,
+        MotionSceneTemplate.BAR_CHART,
+        MotionSceneTemplate.SPEC_SPOTLIGHT,
+        MotionSceneTemplate.VERSUS_SPLIT,
+    ]
+    chosen_tpl = cycle[(seq_index - 1) % len(cycle)]
+
+    # Split sentence clauses into crisp card items
+    clauses = [
+        c.strip(" ,.;:-•")
+        for c in re.split(r"[,.;—–\-]|(?:\s+và\s+)|(?:\s+nhưng\s+)", clean)
+        if len(c.strip(" ,.;:-•")) >= 6
+    ]
+    while len(clauses) < 3:
+        clauses.append(
+            [
+                "Nắm vững nền tảng cốt lõi ngay từ đầu",
+                "Duy trì nhịp thực hành đều đặn mỗi ngày",
+                "Cảm nhận sự thay đổi rõ rệt qua từng tuần",
+            ][len(clauses)]
+        )
+
+    if chosen_tpl == MotionSceneTemplate.BAR_CHART:
+        bars = [
+            f"{clauses[0][:30]}|94",
+            f"{clauses[1][:30]}|72",
+            f"{clauses[2][:30]}|46",
+        ]
+        return MotionSceneSpecDTO(
+            template=MotionSceneTemplate.BAR_CHART,
+            theme=theme,
+            badge_text="THƯỚC ĐO HIỆU QUẢ",
+            headline=short_head,
+            subheadline=clean[:160],
+            items=bars,
+        )
+
+    if chosen_tpl == MotionSceneTemplate.VERSUS_SPLIT:
+        return MotionSceneSpecDTO(
+            template=MotionSceneTemplate.VERSUS_SPLIT,
+            theme=theme,
+            badge_text="GÓC NHÌN ĐỐI CHIẾU",
+            headline=short_head,
+            left_title="Chuẩn Chuyên Gia",
+            right_title="Thói Quen Cũ",
+            left_points=[clauses[0][:44], clauses[1][:44], "Tối ưu trải nghiệm thực tế"],
+            right_points=["Bỏ qua bước chuẩn bị nền", clauses[2][:44], "Dễ chững lại giữa chừng"],
+        )
+
+    return MotionSceneSpecDTO(
+        template=chosen_tpl,
+        theme=theme,
+        badge_text=f"PHÂN CẢNH {seq_index + 1:02d}/{max(total_lines, seq_index + 1):02d}",
+        headline=short_head,
+        subheadline=clean[:160],
+        items=[c[:54] for c in clauses[:4]],
+    )
+
+
+def _coerce_motion_spec(
+    raw_obj: Any,
+    vi_text: str,
+    seq_index: int,
+    total_lines: int,
+    theme: MotionThemeStyle,
+    topic_hint: str = "",
+) -> MotionSceneSpecDTO:
+    """Safely parse LLM JSON `motion_spec` dict or fall back to deterministic scene inference."""
+    fallback = infer_motion_spec_for_line(vi_text, seq_index, total_lines, theme, topic_hint)
+    if not isinstance(raw_obj, dict):
+        return fallback
+    try:
+        tpl_str = str(raw_obj.get("template") or fallback.template.value).strip().upper()
+        tpl = (
+            MotionSceneTemplate(tpl_str)
+            if tpl_str in {t.value for t in MotionSceneTemplate}
+            else fallback.template
+        )
+        raw_items = [str(x).strip()[:68] for x in (raw_obj.get("items") or []) if str(x).strip()][:4]
+        raw_lp = [str(x).strip()[:56] for x in (raw_obj.get("left_points") or []) if str(x).strip()][:3]
+        raw_rp = [str(x).strip()[:56] for x in (raw_obj.get("right_points") or []) if str(x).strip()][:3]
+        return MotionSceneSpecDTO(
+            template=tpl,
+            theme=theme,
+            badge_text=str(raw_obj.get("badge_text") or fallback.badge_text).strip()[:75],
+            headline=str(raw_obj.get("headline") or fallback.headline).strip()[:200],
+            subheadline=str(raw_obj.get("subheadline") or fallback.subheadline).strip()[:300],
+            stat_value=float(raw_obj.get("stat_value") if raw_obj.get("stat_value") is not None else fallback.stat_value),
+            stat_prefix=str(raw_obj.get("stat_prefix") or "").strip()[:18],
+            stat_suffix=str(raw_obj.get("stat_suffix") or fallback.stat_suffix).strip()[:24],
+            items=raw_items or fallback.items,
+            left_title=str(raw_obj.get("left_title") or fallback.left_title).strip()[:75],
+            right_title=str(raw_obj.get("right_title") or fallback.right_title).strip()[:75],
+            left_points=raw_lp or fallback.left_points,
+            right_points=raw_rp or fallback.right_points,
+        )
+    except Exception:
+        return fallback
+
+
 class GeminiContentBrainService(ILLMService):
-    """Gemini-powered scriptwriter, context-aware drama translator, smart cutter & SEO generator."""
+    """Multi-Brain (Anthropic Claude Sonnet + Google Gemini) scriptwriter, Motion Graphics director,
+    context-aware drama translator, smart cutter & SEO generator.
+    """
 
     def __init__(
         self,
         api_key: str = "",
         model_name: str = "gemini-3-flash-preview",
         allow_offline_fallback: bool = True,
+        anthropic_api_key: str = "",
+        anthropic_model: str = "claude-sonnet-4-5",
+        preferred_llm: str = "AUTO",
     ) -> None:
         self.api_key = api_key.strip()
         self.model_name = model_name
+        self.anthropic_api_key = anthropic_api_key.strip()
+        self.anthropic_model = anthropic_model.strip() or "claude-sonnet-4-5"
+        self.preferred_llm = (preferred_llm or "AUTO").strip().upper()
         self.allow_offline_fallback = allow_offline_fallback
 
+    @property
+    def has_llm_key(self) -> bool:
+        return bool(self.anthropic_api_key or self.api_key)
+
+    async def _call_claude_json(self, prompt: str) -> Any:
+        """Invoke Anthropic Claude Messages API across Sonnet models and parse pure JSON."""
+        import httpx
+
+        if not self.anthropic_api_key:
+            raise AIContentBrainError("Chưa cấu hình khóa ANTHROPIC_API_KEY.")
+
+        models = list(
+            dict.fromkeys(
+                [
+                    self.anthropic_model,
+                    "claude-sonnet-4-5",
+                    "claude-3-7-sonnet-latest",
+                    "claude-3-5-sonnet-latest",
+                ]
+            )
+        )
+        headers = {
+            "x-api-key": self.anthropic_api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        sys_msg = (
+            "Bạn là Đạo diễn Biên kịch & Motion Graphics hàng đầu Việt Nam. "
+            "Văn phong tiếng Việt tự nhiên, sắc sảo, giàu cảm xúc đời thực, không dùng văn mẫu sáo rỗng. "
+            "BẮT BUỘC CHỈ TRẢ VỀ ĐÚNG 1 ĐỐI TƯỢNG JSON HỢP LỆ (không kèm lời giải thích ngoài JSON)."
+        )
+        last_err: Exception | None = None
+        async with httpx.AsyncClient(timeout=32.0) as client:
+            for m_name in models:
+                try:
+                    res = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers=headers,
+                        json={
+                            "model": m_name,
+                            "max_tokens": 4096,
+                            "temperature": 0.55,
+                            "system": sys_msg,
+                            "messages": [{"role": "user", "content": prompt}],
+                        },
+                    )
+                    if res.status_code != 200:
+                        last_err = RuntimeError(f"Claude HTTP {res.status_code}: {res.text[:220]}")
+                        continue
+                    blocks = res.json().get("content") or []
+                    txt = "".join(
+                        str(b.get("text") or "") for b in blocks if b.get("type") == "text"
+                    )
+                    return _extract_json(txt)
+                except Exception as exc:
+                    last_err = exc
+                    continue
+        raise AIContentBrainError(f"Gọi Claude API thất bại: {last_err}")
+
     async def _call_gemini_json(self, prompt: str) -> Any:
-        """Invoke Gemini API across resilient model chain and parse JSON output."""
+        """Unified resilient Multi-LLM JSON caller: honors `preferred_llm` (`AUTO`/`CLAUDE`/`GEMINI`)
+        with automatic cross-provider failover between Anthropic Claude and Google Gemini.
+        """
+        prefer_claude_first = (
+            self.preferred_llm in ("AUTO", "CLAUDE") and bool(self.anthropic_api_key)
+        )
+        if prefer_claude_first:
+            try:
+                return await self._call_claude_json(prompt)
+            except Exception as claude_err:
+                if not self.api_key:
+                    raise AIContentBrainError(str(claude_err)) from claude_err
+
         if not self.api_key:
-            raise AIContentBrainError("Chưa cấu hình khóa GEMINI_API_KEY trong tệp .env.")
+            if self.anthropic_api_key:
+                return await self._call_claude_json(prompt)
+            raise AIContentBrainError("Chưa cấu hình khóa ANTHROPIC_API_KEY hoặc GEMINI_API_KEY.")
 
         eff_primary = (
             "gemini-3-flash-preview"
@@ -138,7 +393,7 @@ class GeminiContentBrainService(ILLMService):
 
     async def expand_short_brief(self, req: BriefExpandRequestDTO) -> BriefExpandResultDTO:
         """Analyze a short title + rough description via API Key and expand into a full video plan."""
-        if self.api_key:
+        if self.has_llm_key:
             try:
                 return await self._expand_brief_via_gemini(req)
             except Exception:
@@ -432,7 +687,7 @@ class GeminiContentBrainService(ILLMService):
 
     async def build_topic_clips(self, req: TopicPromptDTO) -> CutPlanDTO:
         """Generate multi-scene Topic-to-Video CutPlanDTO (Hook 3s + Body + CTA)."""
-        if self.api_key:
+        if self.has_llm_key:
             try:
                 return await self._build_topic_via_gemini(req)
             except Exception:
@@ -455,6 +710,24 @@ class GeminiContentBrainService(ILLMService):
 
     async def _build_topic_via_gemini(self, req: TopicPromptDTO) -> CutPlanDTO:
         scenes_per_part = max(6, round(req.target_duration_sec / 7.5))
+        is_motion = req.visual_mode == VisualMode.MOTION_GRAPHICS
+        motion_schema_instruction = (
+            '4. `motion_spec`: Vì đang ở chế độ Đồ Họa Chuyển Động (Motion Graphics kiểu Remotion / Apple / Dan Koe), mỗi cảnh BẮT BUỘC đi kèm đối tượng `motion_spec` đa dạng bố cục (luân phiên KHÔNG trùng lặp liên tiếp giữa: `KINETIC_HOOK`, `STAT_COUNTER`, `BAR_CHART`, `VERSUS_SPLIT`, `STEP_FLOW`, `SPEC_SPOTLIGHT`):\n'
+            '   - `template`: Một trong 6 mã trên\n'
+            '   - `badge_text`: Nhãn ngắn in hoa (<= 24 ký tự, VD: "BÍ MẬT ÂM SẮC", "CẤP ĐỘ 02")\n'
+            '   - `headline`: Tiêu đề đồ họa cô đọng cực sắc nét (<= 65 ký tự)\n'
+            '   - `subheadline`: Dòng bổ trợ ngắn gọn (<= 95 ký tự)\n'
+            '   - `stat_value` (số, VD 75) & `stat_suffix` (VD "%", " phút") nếu là `STAT_COUNTER`\n'
+            '   - `items`: Mảng 3-4 chuỗi ngắn (nếu `BAR_CHART` ghi dạng `"Tên tiêu chí|92"`, nếu `STEP_FLOW`/`SPEC_SPOTLIGHT` ghi nội dung ngắn từng bước/ô)\n'
+            '   - `left_title`, `right_title`, `left_points` (3 ý tốt), `right_points` (3 ý đối chiếu) nếu là `VERSUS_SPLIT`.\n\n'
+            if is_motion
+            else ""
+        )
+        motion_json_example = (
+            ', "motion_spec": {"template": "STAT_COUNTER", "badge_text": "THỐNG KÊ", "headline": "...", "subheadline": "...", "stat_value": 85, "stat_suffix": "%", "items": ["Ý 1|90", "Ý 2|55"], "left_title": "Chuẩn", "right_title": "Thường", "left_points": ["..."], "right_points": ["..."]}'
+            if is_motion
+            else ""
+        )
         prompt = (
             "Bạn là biên kịch & đạo diễn hình ảnh video ngắn triệu view trên YouTube Shorts và TikTok.\n"
             f"Chủ đề / Tiêu đề chính: {req.topic_title}\n"
@@ -465,17 +738,19 @@ class GeminiContentBrainService(ILLMService):
             "QUY TẮC BẮT BUỘC ĐỂ VIDEO ĐẠT CHẤT LƯỢNG CAO NHẤT:\n"
             "1. `vi_text`: Lời đọc thuyết minh tiếng Việt tự nhiên, truyền cảm, giàu nhịp điệu nói (KHÔNG viết nhãn 'Cảnh 1:', KHÔNG dùng dấu hai chấm khô cứng). Cảnh 1 phải là câu Hook 3 giây cực cuốn.\n"
             "2. `image_prompt`: Viết bằng TIẾNG ANH mô tả cụ thể khung hình điện ảnh dọc (nhân vật đồng nhất giữa các cảnh, hành động cụ thể khớp 100% với `vi_text`, bối cảnh, góc máy, ánh sáng rõ nét — TUYỆT ĐỐI KHÔNG yêu cầu vẽ chữ/văn bản trên màn hình và KHÔNG dùng từ pitch-black tối đen hoàn toàn).\n"
-            "3. `stock_keywords`: 2-3 từ khóa tiếng Anh cụ thể khớp sát nội dung cảnh.\n\n"
+            "3. `stock_keywords`: 2-3 từ khóa tiếng Anh cụ thể khớp sát nội dung cảnh.\n"
+            f"{motion_schema_instruction}"
             "Trả về JSON theo đúng cấu trúc:\n"
             '{"parts": [{"part_number": 1, "hook_banner_title": "...", "scenes": ['
             '{"duration_sec": 7, "vi_text": "Câu đọc thuyết minh tiếng Việt cuốn hút...", '
             '"image_prompt": "Cinematic portrait movie still of [consistent subject + concrete action + vivid lighting + detailed setting]...", '
-            '"stock_keywords": ["english photo keyword 1", "english photo keyword 2"]}]}]}'
+            f'"stock_keywords": ["english photo keyword 1", "english photo keyword 2"]{motion_json_example}'
+            "}]}]}"
         )
         data = await self._call_gemini_json(prompt)
         parts_raw = data.get("parts") or []
         if not parts_raw:
-            raise AIContentBrainError("Gemini không trả về danh sách phân cảnh hợp lệ.")
+            raise AIContentBrainError("AI không trả về danh sách phân cảnh hợp lệ.")
 
         clips: List[ClipSpecDTO] = []
         for idx, p_obj in enumerate(parts_raw, start=1):
@@ -484,6 +759,7 @@ class GeminiContentBrainService(ILLMService):
             scenes = p_obj.get("scenes") or []
             lines: List[NarrationLineDTO] = []
             cursor_ms = 0
+            n_sc = max(1, len(scenes))
             for s_idx, sc in enumerate(scenes):
                 dur_ms = max(3000, int(round(float(sc.get("duration_sec") or 7.0) * 1000)))
                 vi_txt = str(sc.get("vi_text") or "").strip()
@@ -492,6 +768,18 @@ class GeminiContentBrainService(ILLMService):
                 img_p = str(sc.get("image_prompt") or f"cinematic vertical 9:16 {req.topic_title}")
                 kws = [str(k) for k in (sc.get("stock_keywords") or [req.topic_title])][:4]
                 end_ms = cursor_ms + dur_ms
+                m_spec = (
+                    _coerce_motion_spec(
+                        sc.get("motion_spec"),
+                        vi_txt,
+                        len(lines),
+                        n_sc,
+                        req.motion_theme,
+                        req.topic_title,
+                    )
+                    if is_motion
+                    else None
+                )
                 lines.append(
                     NarrationLineDTO(
                         seq_index=len(lines),
@@ -500,6 +788,7 @@ class GeminiContentBrainService(ILLMService):
                         vi_text=vi_txt,
                         image_prompt=img_p,
                         stock_keywords=kws,
+                        motion_spec=m_spec,
                         words=_distribute_words(vi_txt, cursor_ms, end_ms),
                     )
                 )
@@ -557,6 +846,17 @@ class GeminiContentBrainService(ILLMService):
             cur = 0
             for s_idx, sentence in enumerate(all_sentences):
                 nxt = cur + step_ms if s_idx < len(all_sentences) - 1 else max(total_ms, cur + 4000)
+                m_spec = (
+                    infer_motion_spec_for_line(
+                        sentence,
+                        s_idx,
+                        len(all_sentences),
+                        req.motion_theme,
+                        req.topic_title,
+                    )
+                    if req.visual_mode == VisualMode.MOTION_GRAPHICS
+                    else None
+                )
                 lines.append(
                     NarrationLineDTO(
                         seq_index=s_idx,
@@ -565,6 +865,7 @@ class GeminiContentBrainService(ILLMService):
                         vi_text=sentence,
                         image_prompt=f"cinematic dramatic vertical 9:16 scene about {req.topic_title}, scene {s_idx + 1}",
                         stock_keywords=[req.topic_title, "cinematic"],
+                        motion_spec=m_spec,
                         words=_distribute_words(sentence, cur, nxt),
                     )
                 )
@@ -739,7 +1040,7 @@ class GeminiContentBrainService(ILLMService):
         """Generate ready-to-copy YouTube Shorts & TikTok titles, descriptions, and hashtags."""
         preview_lines = " ".join(ln.vi_text for ln in clip.lines[:6])[:500]
         is_product = mode_label == ProjectMode.PRODUCT_SHOWCASE.value
-        if self.api_key:
+        if self.has_llm_key:
             prompt = (
                 (
                     "Sinh gói nội dung bán hàng chốt đơn trên YouTube Shorts và TikTok Shop chuẩn SEO:\n"
@@ -1030,7 +1331,7 @@ class GeminiContentBrainService(ILLMService):
                 ),
             )
 
-        if self.api_key:
+        if self.has_llm_key:
             raw_cmts_dump = [
                 {
                     "source_index": i,
@@ -1733,7 +2034,7 @@ class GeminiContentBrainService(ILLMService):
         }
         vibe_desc = vibe_map.get(req.story_vibe, vibe_map["CRUSH_ROMANTIC"])
 
-        if self.api_key:
+        if self.has_llm_key:
             prompt = (
                 "Bạn là biên kịch chuyên viết kịch bản Video Tin Nhắn Chat (Messenger / Zalo / iMessage) triệu view trên TikTok/Shorts.\n"
                 f"Ý tưởng tình huống: {idea}\n"
@@ -1882,7 +2183,7 @@ class GeminiContentBrainService(ILLMService):
         words = [w for w in hook.split() if w]
         est_sec = round(max(0.8, len(words) / 3.9), 1)
 
-        if self.api_key:
+        if self.has_llm_key:
             prompt = (
                 "Bạn là chuyên gia tối ưu tỷ lệ giữ chân 3 giây đầu (3-Second Hook Retention) trên TikTok, Reels & YouTube Shorts.\n"
                 f"Câu mở đầu hiện tại: \"{hook}\"\n"
@@ -2021,7 +2322,7 @@ class GeminiContentBrainService(ILLMService):
         q_count = max(1, min(8, int(req.question_count or 3)))
         cd_sec = max(2, min(5, int(req.countdown_sec or 3)))
 
-        if self.api_key:
+        if self.has_llm_key:
             prompt = (
                 "Bạn là biên kịch chuyên tạo Video Đố Vui / Trắc Nghiệm Phản Xạ 3 Giây kéo hàng nghìn bình luận trên TikTok & YouTube Shorts.\n"
                 f"Chủ đề đố vui: {topic} (Nhóm: {req.quiz_category})\n"
@@ -2202,5 +2503,152 @@ class GeminiContentBrainService(ILLMService):
             used_api_key=False,
             extraction_note=f"Đã tạo bộ {q_count} câu đố phản xạ {cd_sec}-2-1 kèm giải thích đáp án!",
         )
+
+    async def refine_motion_scene(self, req: MotionSceneRefineRequestDTO) -> Dict[str, Any]:
+        """Claude Artifact-style natural language single-scene editor: rewrites `MotionSceneSpecDTO`
+        (and optionally `vi_text`) from a short Vietnamese prompt.
+        """
+        instr = req.user_instruction.strip()
+        vi_txt = req.vi_text.strip()
+        cur_json = req.current_spec.model_dump() if req.current_spec else {}
+
+        if self.has_llm_key:
+            prompt = (
+                "Bạn là Đạo diễn Motion Graphics (kiểu Claude Artifacts / Remotion / Apple Keynote).\n"
+                "Người dùng đang chỉnh sửa trực tiếp 1 phân cảnh đồ họa chuyển động bằng ngôn ngữ tự nhiên.\n"
+                f"- Lời dẫn hiện tại (`vi_text`): {vi_txt}\n"
+                f"- Cấu hình đồ họa hiện tại (`current_spec`): {json.dumps(cur_json, ensure_ascii=False)}\n"
+                f"- Yêu cầu chỉnh sửa của người dùng: {instr}\n\n"
+                "Các `template` hợp lệ:\n"
+                "- `KINETIC_HOOK`: Chữ động lớn nhấn từ khóa + vòng sóng đồng tâm\n"
+                "- `STAT_COUNTER`: Con số khổng lồ chạy tăng dần (`stat_value`, `stat_suffix`) + đồng hồ vòng cung\n"
+                "- `BAR_CHART`: Biểu đồ thanh ngang (`items` dạng `[\"Tiêu chí A|95\", \"Tiêu chí B|52\"]`)\n"
+                "- `VERSUS_SPLIT`: Bảng đối đầu 2 cột (`left_title`, `right_title`, `left_points`, `right_points`)\n"
+                "- `STEP_FLOW`: Sơ đồ tiến trình từng bước đánh số 01-02-03 (`items`)\n"
+                "- `SPEC_SPOTLIGHT`: Lưới thẻ thông số Bento sang trọng (`items`)\n\n"
+                "Trả về JSON chuẩn:\n"
+                "{\n"
+                '  "vi_text": "Giữ nguyên lời dẫn (hoặc tinh chỉnh nếu người dùng yêu cầu sửa lời)",\n'
+                '  "note": "Mô tả ngắn 1 câu tiếng Việt về thay đổi vừa áp dụng",\n'
+                '  "motion_spec": {\n'
+                '    "template": "VERSUS_SPLIT",\n'
+                '    "badge_text": "...",\n'
+                '    "headline": "...",\n'
+                '    "subheadline": "...",\n'
+                '    "stat_value": 85,\n'
+                '    "stat_prefix": "",\n'
+                '    "stat_suffix": "%",\n'
+                '    "items": ["..."],\n'
+                '    "left_title": "...",\n'
+                '    "right_title": "...",\n'
+                '    "left_points": ["..."],\n'
+                '    "right_points": ["..."]\n'
+                "  }\n"
+                "}"
+            )
+            try:
+                parsed = await self._call_gemini_json(prompt)
+                new_vi = str(parsed.get("vi_text") or vi_txt).strip()
+                new_spec = _coerce_motion_spec(
+                    parsed.get("motion_spec"),
+                    new_vi,
+                    0,
+                    5,
+                    req.motion_theme,
+                )
+                return {
+                    "vi_text": new_vi,
+                    "motion_spec": new_spec.model_dump(),
+                    "note": str(parsed.get("note") or "AI đã cập nhật hoạt ảnh phân cảnh theo yêu cầu!"),
+                    "used_api_key": True,
+                }
+            except Exception:
+                if not self.allow_offline_fallback:
+                    raise
+
+        # Instant deterministic Vietnamese NLP command parser (works 100% offline in <5ms!)
+        low_i = instr.lower()
+        base = req.current_spec or infer_motion_spec_for_line(vi_txt, 1, 5, req.motion_theme)
+
+        if any(k in low_i for k in ("so sánh", "đối đầu", "2 cột", "hai cột", "vs", "versus", "khác nhau")):
+            tpl = MotionSceneTemplate.VERSUS_SPLIT
+            # Extract `A và B` or `A vs B` if mentioned
+            vs_m = re.search(r"(?:giữa|cột)\s+([^,.;]+?)\s+(?:và|vs|với)\s+([^,.;]+)", instr, re.IGNORECASE)
+            lt = vs_m.group(1).strip()[:36] if vs_m else (base.left_title or "Phương án Chuẩn")
+            rt = vs_m.group(2).strip()[:36] if vs_m else (base.right_title or "Phổ thông")
+            updated = base.model_copy(
+                update={
+                    "template": tpl,
+                    "theme": req.motion_theme,
+                    "badge_text": "SO SÁNH TRỰC QUAN",
+                    "left_title": lt,
+                    "right_title": rt,
+                    "left_points": base.left_points or ["Hiệu quả vượt trội rõ rệt", "Độ ổn định lâu dài", "Trải nghiệm tối ưu"],
+                    "right_points": base.right_points or ["Hạn chế về chiều sâu", "Nhanh chững lại", "Khó tối ưu"],
+                }
+            )
+            note = f"Đã chuyển phân cảnh sang Bảng So Sánh 2 Cột ({lt} vs {rt})."
+        elif any(k in low_i for k in ("biểu đồ", "cột", "chart", "thanh")):
+            updated = base.model_copy(
+                update={
+                    "template": MotionSceneTemplate.BAR_CHART,
+                    "theme": req.motion_theme,
+                    "badge_text": "BIỂU ĐỒ ĐỐI CHIẾU",
+                    "items": (
+                        base.items
+                        if (base.items and "|" in base.items[0])
+                        else ["Mức tối ưu|95", "Mức tiêu chuẩn|68", "Mức cơ bản|40"]
+                    ),
+                }
+            )
+            note = "Đã chuyển phân cảnh sang Biểu Đồ Thanh Chuyển Động."
+        elif any(k in low_i for k in ("con số", "phần trăm", "%", "counter", "đếm")) or re.search(r"\b\d+\s*%", low_i):
+            num_m = re.search(r"(\d+(?:[.,]\d+)?)\s*(%|lần|phút|giây|x)?", low_i)
+            val = float(num_m.group(1).replace(",", ".")) if num_m else base.stat_value
+            suf = (num_m.group(2) or "%") if num_m else base.stat_suffix
+            updated = base.model_copy(
+                update={
+                    "template": MotionSceneTemplate.STAT_COUNTER,
+                    "theme": req.motion_theme,
+                    "badge_text": "CON SỐ ẤN TƯỢNG",
+                    "stat_value": val,
+                    "stat_suffix": suf,
+                }
+            )
+            note = f"Đã chuyển sang Đồng Hồ Đếm Số Liệu ({val:g}{suf})."
+        elif any(k in low_i for k in ("bước", "lộ trình", "quy trình", "sơ đồ", "flow", "cấp độ")):
+            updated = base.model_copy(
+                update={
+                    "template": MotionSceneTemplate.STEP_FLOW,
+                    "theme": req.motion_theme,
+                    "badge_text": "LỘ TRÌNH TỪNG BƯỚC",
+                }
+            )
+            note = "Đã chuyển phân cảnh sang Sơ Đồ Lộ Trình Từng Bước."
+        elif any(k in low_i for k in ("bento", "thông số", "spotlight", "ô thẻ")):
+            updated = base.model_copy(
+                update={
+                    "template": MotionSceneTemplate.SPEC_SPOTLIGHT,
+                    "theme": req.motion_theme,
+                    "badge_text": "ĐIỂM SÁNG CỐT LÕI",
+                }
+            )
+            note = "Đã chuyển sang Lưới Thẻ Thông Số Bento."
+        else:
+            updated = base.model_copy(
+                update={
+                    "template": MotionSceneTemplate.KINETIC_HOOK,
+                    "theme": req.motion_theme,
+                    "headline": instr[:120] if len(instr) > 12 else (base.headline or vi_txt[:110]),
+                }
+            )
+            note = "Đã cập nhật chữ động Kinetic cho phân cảnh."
+
+        return {
+            "vi_text": vi_txt,
+            "motion_spec": updated.model_dump(),
+            "note": note,
+            "used_api_key": False,
+        }
 
 

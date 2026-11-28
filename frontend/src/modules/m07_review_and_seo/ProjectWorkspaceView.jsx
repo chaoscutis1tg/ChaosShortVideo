@@ -229,6 +229,13 @@ export default function ProjectWorkspaceView({
             ln.voice_pitch_override !== undefined && ln.voice_pitch_override !== null
               ? Number(ln.voice_pitch_override)
               : null,
+          motion_spec: (() => {
+            try {
+              return ln.motion_spec_json ? JSON.parse(ln.motion_spec_json) : null;
+            } catch {
+              return null;
+            }
+          })(),
         })),
       }))
     );
@@ -1292,6 +1299,11 @@ export default function ProjectWorkspaceView({
                     <span className="badge" style={{ fontSize: 11.2 }}>
                       {savedAspect}
                     </span>
+                    {detail.saved_request?.visual_mode === 'MOTION_GRAPHICS' && (
+                      <span className="badge badge-ok" style={{ fontSize: 11.2 }}>
+                        🎬 Motion Graphics
+                      </span>
+                    )}
                     {detail.mode === 'THREADS_TOPIC' &&
                       detail.saved_request?.layout_config?.threads_card_theme ===
                         'MIDNIGHT_VINYL_LYRIC' && (

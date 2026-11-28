@@ -49,6 +49,9 @@ from app.m00_core_contracts import (
     IngestRequestDTO,
     JobState,
     LayoutAndAntiCopyConfigDTO,
+    MotionSceneRefineRequestDTO,
+    MotionSceneSpecDTO,
+    MotionThemeStyle,
     NarrationLineDTO,
     ProductCategory,
     ProductFramingStyle,
@@ -93,6 +96,7 @@ from app.m03_ai_content_brain import (
 )
 from app.m04_visual_producer import (
     ChillBgLoopGenerator,
+    MotionGraphicsProvider,
     ProductPhotoShowcaseProvider,
     StockVideoProvider,
     ThreadsCardVisualRenderer,
@@ -120,6 +124,7 @@ class TopicStartRequest(BaseModel):
     topic_title: str = Field(min_length=3, max_length=200)
     key_points: str = ""
     visual_mode: VisualMode = VisualMode.AI_IMAGE
+    motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
     target_duration_sec: int = Field(default=90, ge=15, le=180)
     part_count: int = Field(default=1, ge=1, le=20)
     narrative_tone: str = "cuốn hút, kịch tính kiểu kể chuyện Shorts/TikTok"
@@ -132,6 +137,7 @@ class TopicStartRequest(BaseModel):
     bgm_volume: float = 0.08
     enable_smart_sfx: bool = True
     smart_keyword_highlight: bool = True
+    precomputed_lines: Optional[List["ApprovedClipLinePatch"]] = None
     layout_config: LayoutAndAntiCopyConfigDTO = Field(
         default_factory=LayoutAndAntiCopyConfigDTO
     )
@@ -271,6 +277,10 @@ class ApprovedClipLinePatch(BaseModel):
     is_op_post: bool = False
     voice_speed_override: Optional[float] = None
     voice_pitch_override: Optional[float] = None
+    motion_spec: Optional[MotionSceneSpecDTO] = None
+
+
+TopicStartRequest.model_rebuild()
 
 
 class ApprovedClipPatch(BaseModel):
@@ -299,12 +309,22 @@ class RenderApprovedRequest(BaseModel):
 
 class APIKeysUpdateRequest(BaseModel):
     gemini_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    preferred_llm: Optional[str] = None
     pexels_api_key: Optional[str] = None
     pixabay_api_key: Optional[str] = None
     elevenlabs_api_key: Optional[str] = None
     fpt_ai_api_key: Optional[str] = None
     vbee_api_key: Optional[str] = None
     vbee_app_id: Optional[str] = None
+
+
+class MotionStoryboardPreviewRequest(BaseModel):
+    topic_title: str = Field(min_length=3, max_length=200)
+    key_points: str = Field(default="", max_length=6000)
+    target_duration_sec: int = Field(default=60, ge=15, le=180)
+    narrative_tone: str = Field(default="sâu sắc, súc tích kiểu Claude / Dan Koe")
+    motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK
 
 
 class GPUSelectRequest(BaseModel):
@@ -521,6 +541,9 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 api_key=settings.gemini_api_key,
                 model_name=settings.gemini_model,
                 allow_offline_fallback=True,
+                anthropic_api_key=settings.anthropic_api_key,
+                anthropic_model=settings.anthropic_model,
+                preferred_llm=settings.preferred_llm,
             ),
             visual_producer=VisualProducerFacade(
                 pexels_api_key=settings.pexels_api_key,
@@ -639,8 +662,10 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             "whisper_model": settings.whisper_model_size,
             "outputs_dir": str(settings.outputs_dir),
             "storage": job_mgr.inspect_storage(),
+            "preferred_llm": settings.preferred_llm,
             "keys_configured": {
                 "gemini": bool(settings.gemini_api_key),
+                "anthropic": bool(settings.anthropic_api_key),
                 "pexels": bool(settings.pexels_api_key),
                 "pixabay": bool(settings.pixabay_api_key),
                 "elevenlabs": bool(settings.elevenlabs_api_key),
@@ -678,6 +703,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
 
         updates = {
             "GEMINI_API_KEY": req.gemini_api_key,
+            "ANTHROPIC_API_KEY": req.anthropic_api_key,
+            "PREFERRED_LLM": req.preferred_llm,
             "PEXELS_API_KEY": req.pexels_api_key,
             "PIXABAY_API_KEY": req.pixabay_api_key,
             "ELEVENLABS_API_KEY": req.elevenlabs_api_key,
@@ -692,6 +719,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 os.environ[env_key] = clean_v
 
         settings.gemini_api_key = existing.get("GEMINI_API_KEY", settings.gemini_api_key)
+        settings.anthropic_api_key = existing.get("ANTHROPIC_API_KEY", settings.anthropic_api_key)
+        settings.preferred_llm = existing.get("PREFERRED_LLM", settings.preferred_llm) or "AUTO"
         settings.pexels_api_key = existing.get("PEXELS_API_KEY", settings.pexels_api_key)
         settings.pixabay_api_key = existing.get("PIXABAY_API_KEY", settings.pixabay_api_key)
         settings.elevenlabs_api_key = existing.get("ELEVENLABS_API_KEY", settings.elevenlabs_api_key)
@@ -1270,6 +1299,24 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             with Image.open(plate_png) as bp, Image.open(ovr_png) as ov:
                 composed = Image.alpha_composite(bp.convert("RGBA"), ov.convert("RGBA"))
 
+            if req.active_tab == "topic" and cfg.motion_preview_active and not req.preview_as_cover:
+                sample_mg = MotionSceneSpecDTO(
+                    template="BAR_CHART",  # type: ignore[arg-type]
+                    theme=cfg.motion_theme,
+                    badge_text="MOTION GRAPHICS 9:16",
+                    headline=req.banner_title[:90],
+                    subheadline=req.sample_subtitle[:160],
+                    items=["Độ vang & chiều sâu|95", "Trải nghiệm thực tế|82", "Phổ thông cũ|44"],
+                )
+                mg_im = MotionGraphicsProvider.render_frame_pil(
+                    spec=sample_mg,
+                    vi_text=req.sample_subtitle,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    progress=0.86,
+                )
+                composed = Image.alpha_composite(mg_im.convert("RGBA"), ov.convert("RGBA")) if ovr_png.exists() else mg_im
+
             if req.active_tab == "threads" and not req.preview_as_cover:
                 card_snap = snap_dir / f"th_card_{uid}.png"
                 sample_sents = [
@@ -1778,6 +1825,46 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/motion/preview-storyboard")
+    async def preview_motion_graphics_storyboard(
+        req: MotionStoryboardPreviewRequest,
+    ) -> Dict[str, Any]:
+        """Generate a Claude/Remotion-style interactive Motion Graphics storyboard before rendering MP4."""
+        try:
+            plan = await orchestrator.brain.build_topic_clips(
+                TopicPromptDTO(
+                    project_id=f"mgprev_{uuid.uuid4().hex[:6]}",
+                    topic_title=req.topic_title.strip(),
+                    key_points=req.key_points.strip(),
+                    visual_mode=VisualMode.MOTION_GRAPHICS,
+                    motion_theme=req.motion_theme,
+                    target_duration_sec=req.target_duration_sec,
+                    part_count=1,
+                    narrative_tone=req.narrative_tone,
+                )
+            )
+            clip0 = plan.clips[0]
+            return {
+                "hook_banner_title": clip0.hook_banner_title,
+                "motion_theme": req.motion_theme.value,
+                "used_llm_brain": (
+                    "Claude Sonnet"
+                    if (settings.anthropic_api_key and settings.preferred_llm != "GEMINI")
+                    else ("Google Gemini" if settings.gemini_api_key else "Smart Studio Engine")
+                ),
+                "scenes": [ln.model_dump() for ln in clip0.lines],
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/motion/refine-scene")
+    async def refine_single_motion_scene(req: MotionSceneRefineRequestDTO) -> Dict[str, Any]:
+        """Claude Artifact-style natural language prompt editor for any individual Motion Graphics scene."""
+        try:
+            return await orchestrator.brain.refine_motion_scene(req)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/threads/bg-videos")
     async def list_saved_background_videos() -> List[Dict[str, Any]]:
         """List reusable background videos stored in the Studio Background Library."""
@@ -2263,9 +2350,21 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             topic_title=req.topic_title,
             key_points=req.key_points,
             visual_mode=req.visual_mode,
+            motion_theme=req.motion_theme,
             target_duration_sec=req.target_duration_sec,
             part_count=req.part_count,
             narrative_tone=req.narrative_tone,
+        )
+        eff_topic_layout = req.layout_config.model_copy(
+            update={
+                "motion_theme": req.motion_theme,
+                "motion_preview_active": req.visual_mode == VisualMode.MOTION_GRAPHICS,
+                "show_top_banner": (
+                    False
+                    if req.visual_mode == VisualMode.MOTION_GRAPHICS
+                    else req.layout_config.show_top_banner
+                ),
+            }
         )
         audio_cfg = _resolve_bgm_into_audio_cfg(
             AudioSubConfigDTO(
@@ -2273,8 +2372,8 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 keep_original_audio=False,
                 bgm_volume=req.bgm_volume,
                 subtitle_style=req.subtitle_style,
-                subtitle_pos_y=req.layout_config.subtitle_pos_y,
-                subtitle_font_size=req.layout_config.subtitle_font_size,
+                subtitle_pos_y=eff_topic_layout.subtitle_pos_y,
+                subtitle_font_size=eff_topic_layout.subtitle_font_size,
                 voice_speed_global=req.voice_speed_global,
                 voice_pitch_global=req.voice_pitch_global,
                 enable_smart_sfx=bool(req.enable_smart_sfx),
@@ -2283,6 +2382,56 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
             req.bgm_preset_id,
             req.custom_bgm_path,
         )
+        if req.precomputed_lines:
+            built_lines = [
+                NarrationLineDTO(
+                    seq_index=idx_l,
+                    rel_start_ms=max(0, ln.rel_start_ms),
+                    rel_end_ms=max(ln.rel_start_ms + 1000, ln.rel_end_ms),
+                    original_text=ln.original_text,
+                    vi_text=ln.vi_text,
+                    image_prompt=ln.image_prompt,
+                    stock_keywords=ln.stock_keywords,
+                    motion_spec=ln.motion_spec,
+                )
+                for idx_l, ln in enumerate(req.precomputed_lines)
+                if ln.vi_text.strip()
+            ]
+            if built_lines:
+                custom_plan = CutPlanDTO(
+                    project_id=project_id,
+                    mode=ProjectMode.TOPIC_VIDEO,
+                    clips=[
+                        ClipSpecDTO(
+                            clip_id=f"{project_id}_part_01",
+                            project_id=project_id,
+                            part_number=1,
+                            source_start_ms=0,
+                            source_end_ms=built_lines[-1].rel_end_ms,
+                            hook_banner_title=req.topic_title[:120],
+                            lines=built_lines,
+                            append_cta_outro=False,
+                        )
+                    ],
+                )
+                repo.save_cut_plan(custom_plan)
+                orchestrator._pending_plans[project_id] = custom_plan
+                orchestrator._pending_visual_modes[project_id] = req.visual_mode
+                initial_state = job_mgr.enqueue_job(
+                    project_id=project_id,
+                    mode=ProjectMode.TOPIC_VIDEO,
+                    is_render_only=True,
+                    coro_factory=lambda: orchestrator.render_approved_plan(
+                        project_id=project_id,
+                        cut_plan=custom_plan,
+                        voice_profile_id=req.voice_profile_id,
+                        audio_config=audio_cfg,
+                        layout_config=eff_topic_layout,
+                        visual_mode=req.visual_mode,
+                    ),
+                )
+                return {"project_id": project_id, "state": initial_state}
+
         initial_state = job_mgr.enqueue_job(
             project_id=project_id,
             mode=ProjectMode.TOPIC_VIDEO,
@@ -2291,7 +2440,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                 prompt_dto,
                 req.voice_profile_id,
                 audio_cfg,
-                req.layout_config,
+                eff_topic_layout,
                 req.auto_one_click,
             ),
         )
@@ -2584,6 +2733,7 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                                 is_op_post=ln.is_op_post,
                                 voice_speed_override=ln.voice_speed_override,
                                 voice_pitch_override=ln.voice_pitch_override,
+                                motion_spec=ln.motion_spec,
                             )
                             for ln in cp.lines
                         ],
@@ -2633,6 +2783,11 @@ def create_studio_app(custom_settings: Optional[StudioSettings] = None) -> FastA
                             voice_pitch_override=(
                                 float(s["voice_pitch_override"])
                                 if s.get("voice_pitch_override") is not None
+                                else None
+                            ),
+                            motion_spec=(
+                                MotionSceneSpecDTO(**json.loads(s["motion_spec_json"]))
+                                if s.get("motion_spec_json")
                                 else None
                             ),
                         )

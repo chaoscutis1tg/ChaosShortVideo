@@ -60,6 +60,8 @@ export const DEFAULT_LAYOUT_CONFIG = {
   ambience_overlay: 'NONE',
   story_progress_bar_enabled: false,
   quiz_countdown_sec: 3,
+  motion_theme: 'APPLE_GLASS_DARK',
+  motion_preview_active: false,
 };
 
 export const DEFAULT_AUDIO_CONFIG = {

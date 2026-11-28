@@ -390,6 +390,37 @@ class PipelineOrchestrator:
     ) -> List[RenderOutputDTO]:
         """Generate TTS/Visual assets, render MP4s via NVENC, and write SEO files."""
         cb = self._cb(project_id)
+        try:
+            return await self._render_approved_plan_inner(
+                project_id=project_id,
+                cut_plan=cut_plan,
+                voice_profile_id=voice_profile_id,
+                audio_config=audio_config,
+                layout_config=layout_config,
+                visual_mode=visual_mode,
+                media_override=media_override,
+                image_paths_override=image_paths_override,
+            )
+        except JobCancelledException:
+            raise
+        except Exception as exc:
+            err_txt = exc.message if isinstance(exc, StudioBaseError) else str(exc)
+            self.repo.update_project_state(project_id, JobState.FAILED, error_message=err_txt)
+            cb("FAILED", 0.0, f"Lỗi kết xuất: {err_txt}")
+            raise
+
+    async def _render_approved_plan_inner(
+        self,
+        project_id: str,
+        cut_plan: CutPlanDTO,
+        voice_profile_id: str,
+        audio_config: AudioSubConfigDTO,
+        layout_config: LayoutAndAntiCopyConfigDTO,
+        visual_mode: VisualMode = VisualMode.AI_IMAGE,
+        media_override: Optional[MediaAssetDTO] = None,
+        image_paths_override: Optional[List[Path]] = None,
+    ) -> List[RenderOutputDTO]:
+        cb = self._cb(project_id)
         proj_info = self.repo.get_project(project_id) or {"name": project_id}
         folder_slug = _slugify_folder(f"{proj_info.get('name', project_id)}_{project_id[:6]}", project_id)
         project_out_dir = self.settings.outputs_dir / folder_slug
@@ -635,6 +666,8 @@ class PipelineOrchestrator:
                     visual_mode=eff_vis_mode,
                     out_dir=project_work_dir,
                     on_progress=cb,
+                    motion_theme=layout_config.motion_theme,
+                    aspect_ratio=layout_config.aspect_ratio,
                 )
             else:
                 if media is None:

@@ -9,6 +9,7 @@ from app.m00_core_contracts import (
     ExportAspectRatio,
     IVisualProducer,
     IVisualProvider,
+    MotionThemeStyle,
     ProductFramingStyle,
     ProgressCallback,
     SceneVisualItemDTO,
@@ -20,6 +21,7 @@ from app.m00_core_contracts import (
 )
 
 from .ai_image_provider import AIImageKenBurnsProvider
+from .motion_graphics_provider import MotionGraphicsProvider
 from .product_visual_provider import ProductPhotoShowcaseProvider
 from .stock_video_provider import StockVideoProvider
 from .threads_card_renderer import ThreadsCardVisualRenderer
@@ -43,6 +45,7 @@ class VisualProducerFacade(IVisualProducer):
             pixabay_api_key=pixabay_api_key,
             fallback_provider=self._ai_provider,
         )
+        self._motion_provider = MotionGraphicsProvider()
 
     async def produce(
         self,
@@ -50,8 +53,16 @@ class VisualProducerFacade(IVisualProducer):
         visual_mode: VisualMode,
         out_dir: Path,
         on_progress: Optional[ProgressCallback] = None,
+        motion_theme: MotionThemeStyle = MotionThemeStyle.APPLE_GLASS_DARK,
+        aspect_ratio: ExportAspectRatio = ExportAspectRatio.RATIO_9_16,
     ) -> VisualAssetListDTO:
         """Generate or download content-matched visual assets concurrently across scenes."""
+        from app.m00_core_contracts import resolve_aspect_dimensions
+
+        cw, ch = resolve_aspect_dimensions(aspect_ratio)
+        self._motion_provider.default_theme = motion_theme
+        self._motion_provider.canvas_w = cw
+        self._motion_provider.canvas_h = ch
         clip_dir = out_dir / clip.clip_id / "visuals"
         clip_dir.mkdir(parents=True, exist_ok=True)
 
@@ -159,6 +170,8 @@ class VisualProducerFacade(IVisualProducer):
         )
 
     def _select_provider(self, mode: VisualMode, scene_idx: int) -> IVisualProvider:
+        if mode == VisualMode.MOTION_GRAPHICS:
+            return self._motion_provider
         if mode == VisualMode.AI_IMAGE:
             return self._ai_provider
         if mode == VisualMode.STOCK_VIDEO:

@@ -777,7 +777,9 @@ export default function App() {
               onGroupsChanged={refreshGroupsAndProjects}
               onProjectStarted={handleProjectStarted}
               notify={notify}
-              apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+              apiKeyConfigured={Boolean(
+                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
+              )}
               onOpenApiSettings={() => setShowSettings(true)}
             />
           </div>
@@ -801,7 +803,9 @@ export default function App() {
                   onPreviewFrameReady={(u) => setTabPreviewFrame('threads', u)}
                   onProjectStarted={handleProjectStarted}
                   notify={notify}
-                  apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+                  apiKeyConfigured={Boolean(
+                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
+              )}
                   onOpenApiSettings={() => setShowSettings(true)}
                 />
               </div>
@@ -819,7 +823,9 @@ export default function App() {
                   onPreviewFrameReady={(u) => setTabPreviewFrame('product', u)}
                   onProjectStarted={handleProjectStarted}
                   notify={notify}
-                  apiKeyConfigured={Boolean(systemStatus?.keys_configured?.gemini)}
+                  apiKeyConfigured={Boolean(
+                systemStatus?.keys_configured?.anthropic || systemStatus?.keys_configured?.gemini
+              )}
                   onOpenApiSettings={() => setShowSettings(true)}
                 />
               </div>

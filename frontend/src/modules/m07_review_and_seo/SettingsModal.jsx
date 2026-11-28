@@ -11,6 +11,8 @@ export default function SettingsModal({
   notify,
 }) {
   const [geminiKey, setGeminiKey] = useState('');
+  const [anthropicKey, setAnthropicKey] = useState('');
+  const [preferredLlm, setPreferredLlm] = useState(systemStatus?.preferred_llm || 'AUTO');
   const [pexelsKey, setPexelsKey] = useState('');
   const [pixabayKey, setPixabayKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
@@ -25,6 +27,7 @@ export default function SettingsModal({
     e.preventDefault();
     setFormErr('');
     const entries = [
+      ['Anthropic Claude API Key', anthropicKey],
       ['Gemini API Key', geminiKey],
       ['Pexels API Key', pexelsKey],
       ['Pixabay API Key', pixabayKey],
@@ -53,7 +56,8 @@ export default function SettingsModal({
 
     setSaving(true);
     try {
-      const payload = {};
+      const payload = { preferred_llm: preferredLlm };
+      if (anthropicKey.trim()) payload.anthropic_api_key = anthropicKey.trim();
       if (geminiKey.trim()) payload.gemini_api_key = geminiKey.trim();
       if (pexelsKey.trim()) payload.pexels_api_key = pexelsKey.trim();
       if (pixabayKey.trim()) payload.pixabay_api_key = pixabayKey.trim();
@@ -140,7 +144,7 @@ export default function SettingsModal({
           </button>
         </div>
 
-        {/* SECTION 1: API KEYS */}
+        {/* SECTION 1: MULTI-BRAIN AI KEYS (CLAUDE SONNET + GOOGLE GEMINI) */}
         <div className="step-box" style={{ padding: 14, marginBottom: 14 }}>
           <div
             style={{
@@ -151,12 +155,42 @@ export default function SettingsModal({
             }}
           >
             <label className="form-label" style={{ marginBottom: 0 }}>
-              Google Gemini API Key (Viết kịch bản, Nhìn ảnh sản phẩm & Dịch phim)
+              Anthropic Claude API Key (Claude Sonnet — Viết kịch bản tự nhiên &amp; Đạo diễn Motion Graphics)
+            </label>
+            <span className={`badge ${keys.anthropic ? 'badge-ok' : 'badge-warn'}`}>
+              {keys.anthropic ? (
+                <>
+                  <CheckCircle2 size={12} /> Đã kết nối Claude
+                </>
+              ) : (
+                'Tùy chọn'
+              )}
+            </span>
+          </div>
+          <input
+            type="password"
+            className="input"
+            style={{ marginBottom: 10 }}
+            placeholder="sk-ant-api03-... (để trống để giữ khóa hiện tại)"
+            value={anthropicKey}
+            onChange={(e) => setAnthropicKey(e.target.value)}
+          />
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+            }}
+          >
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Google Gemini API Key (Viết kịch bản, Nhìn ảnh sản phẩm &amp; Dịch phim)
             </label>
             <span className={`badge ${keys.gemini ? 'badge-ok' : 'badge-warn'}`}>
               {keys.gemini ? (
                 <>
-                  <CheckCircle2 size={12} /> Đã kết nối
+                  <CheckCircle2 size={12} /> Đã kết nối Gemini
                 </>
               ) : (
                 'Chưa nhập'
@@ -166,10 +200,26 @@ export default function SettingsModal({
           <input
             type="password"
             className="input"
-            placeholder="Dán khóa mới nếu muốn cập nhật (để trống để giữ khóa hiện tại)..."
+            style={{ marginBottom: 10 }}
+            placeholder="Dán khóa Gemini mới nếu muốn cập nhật (để trống để giữ khóa hiện tại)..."
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
           />
+
+          <div>
+            <label className="form-label" style={{ fontSize: 12 }}>
+              Bộ não AI ưu tiên khi phân tích kịch bản &amp; dựng phân cảnh Motion Graphics
+            </label>
+            <select
+              className="select"
+              value={preferredLlm}
+              onChange={(e) => setPreferredLlm(e.target.value)}
+            >
+              <option value="AUTO">✨ Tự động ưu tiên Claude Sonnet (dự phòng sang Gemini)</option>
+              <option value="CLAUDE">Ưu tiên Anthropic Claude Sonnet</option>
+              <option value="GEMINI">Ưu tiên Google Gemini</option>
+            </select>
+          </div>
         </div>
 
         <div className="form-grid">

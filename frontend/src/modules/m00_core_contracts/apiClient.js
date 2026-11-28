@@ -164,6 +164,18 @@ export const studioApi = {
       body: JSON.stringify(payload),
     }),
 
+  previewMotionStoryboard: (payload) =>
+    requestJSON('/api/motion/preview-storyboard', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  refineMotionScene: (payload) =>
+    requestJSON('/api/motion/refine-scene', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   listBgVideos: () => requestJSON('/api/threads/bg-videos'),
 
   generateChillBgVideo: (payload) =>

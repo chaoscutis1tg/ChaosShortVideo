@@ -1767,6 +1767,120 @@ def test_m07_uc19_opt_in_vinyl_quiz321_ambience_story_bar_and_chill_bg(tmp_path:
         assert Path(v_detail["clips"][0]["output_mp4_path"]).stat().st_size > 8000
 
 
+def test_m07_uc20_claude_motion_graphics_storyboard_refine_and_render(tmp_path: Path) -> None:
+    """Verify UC-20 Claude/Remotion-Style Motion Graphics + Artifact Scene Refiner + Multi-Brain Config:
+    1. Default `VisualMode` remains `AI_IMAGE` and `motion_preview_active` defaults to `False`.
+    2. `/api/system/status` exposes `keys_configured.anthropic` & `preferred_llm`.
+    3. `POST /api/motion/preview-storyboard` builds varied `MotionSceneSpecDTO` scenes.
+    4. `POST /api/motion/refine-scene` rewrites a scene into `VERSUS_SPLIT` and `STAT_COUNTER` from natural Vietnamese prompts.
+    5. `POST /api/topic/start` with `visual_mode='MOTION_GRAPHICS'` + `precomputed_lines` renders a crisp 1080p MP4 end-to-end.
+    """
+    from app.m00_core_contracts import LayoutAndAntiCopyConfigDTO, MotionThemeStyle, TopicPromptDTO, VisualMode
+
+    assert TopicPromptDTO(project_id="p1", topic_title="Test Default").visual_mode == VisualMode.AI_IMAGE
+    assert LayoutAndAntiCopyConfigDTO().motion_preview_active is False
+
+    test_settings = StudioSettings(
+        workspace_root=tmp_path,
+        assets_dir=tmp_path / "assets",
+        work_dir=tmp_path / "work",
+        outputs_dir=tmp_path / "outputs",
+        sqlite_db_path=tmp_path / "work" / "test_uc20.db",
+        gemini_api_key="",
+        anthropic_api_key="",
+        preferred_llm="AUTO",
+        prefer_nvenc_gpu=False,
+    )
+    studio_app = create_studio_app(custom_settings=test_settings)
+
+    with TestClient(studio_app) as client:
+        st = client.get("/api/system/status").json()
+        assert "anthropic" in st["keys_configured"]
+        assert st["preferred_llm"] == "AUTO"
+
+        # 1. Generate Motion Graphics storyboard
+        sb_res = client.post(
+            "/api/motion/preview-storyboard",
+            json={
+                "topic_title": "Phân biệt đàn Guitar gỗ thịt nguyên tấm và gỗ ép",
+                "key_points": "- Mặt gỗ thịt quyết định 70% âm vang\n- So sánh độ bền và cảm giác bấm hợp âm",
+                "target_duration_sec": 25,
+                "motion_theme": MotionThemeStyle.WARM_ARTISAN_GOLD.value,
+            },
+        )
+        assert sb_res.status_code == 200, sb_res.text
+        sb_data = sb_res.json()
+        scenes = sb_data["scenes"]
+        assert len(scenes) >= 3
+        assert scenes[0]["motion_spec"] is not None
+
+        # 2. Refine Scene 1 via natural Vietnamese command (Artifact-style prompt)
+        ref_res = client.post(
+            "/api/motion/refine-scene",
+            json={
+                "vi_text": scenes[1]["vi_text"],
+                "user_instruction": "Đổi thành bảng so sánh giữa Gỗ thịt Solid và Gỗ ép công nghiệp",
+                "current_spec": scenes[1]["motion_spec"],
+                "motion_theme": "WARM_ARTISAN_GOLD",
+            },
+        )
+        assert ref_res.status_code == 200, ref_res.text
+        ref_json = ref_res.json()
+        assert ref_json["motion_spec"]["template"] == "VERSUS_SPLIT"
+        scenes[1]["motion_spec"] = ref_json["motion_spec"]
+
+        # 3. Verify 1080p True Frame Preview in Motion Graphics mode
+        snap_mg = client.post(
+            "/api/preview/render-frame",
+            json={
+                "active_tab": "topic",
+                "banner_title": "Guitar Gỗ Thịt vs Gỗ Ép",
+                "sample_subtitle": "Mặt gỗ thịt cộng hưởng tạo độ ngân ấm.",
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "motion_theme": "WARM_ARTISAN_GOLD",
+                    "motion_preview_active": True,
+                },
+            },
+        )
+        assert snap_mg.status_code == 200
+
+        # 4. Render customized 2-scene Motion Graphics storyboard end-to-end to MP4
+        fast_scenes = scenes[:2]
+        start_mg = client.post(
+            "/api/topic/start",
+            json={
+                "topic_title": "So sánh Guitar Gỗ Thịt và Gỗ Ép",
+                "visual_mode": "MOTION_GRAPHICS",
+                "motion_theme": "WARM_ARTISAN_GOLD",
+                "target_duration_sec": 15,
+                "voice_profile_id": "threads_nu_chinh",
+                "voice_speed_global": 1.35,
+                "subtitle_style": "NONE",
+                "precomputed_lines": fast_scenes,
+                "layout_config": {
+                    "aspect_ratio": "9:16",
+                    "motion_theme": "WARM_ARTISAN_GOLD",
+                    "motion_preview_active": True,
+                    "show_top_banner": False,
+                },
+            },
+        )
+        assert start_mg.status_code == 200, start_mg.text
+        mg_pid = start_mg.json()["project_id"]
+
+        mg_detail = {}
+        for _ in range(240):
+            mg_detail = client.get(f"/api/projects/{mg_pid}").json()
+            if mg_detail["state"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.25)
+        assert mg_detail["state"] == "COMPLETED", mg_detail.get("error_message")
+        out_mp4 = Path(mg_detail["clips"][0]["output_mp4_path"])
+        assert out_mp4.exists() and out_mp4.stat().st_size > 12000
+
+
+
 
 
 

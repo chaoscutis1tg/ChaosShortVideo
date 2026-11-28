@@ -730,6 +730,10 @@ class SQLiteRepository:
                 conn.execute(
                     "ALTER TABLE subtitle_segments ADD COLUMN speaker_avatar_path TEXT DEFAULT ''"
                 )
+            if "motion_spec_json" not in seg_cols:
+                conn.execute(
+                    "ALTER TABLE subtitle_segments ADD COLUMN motion_spec_json TEXT DEFAULT ''"
+                )
             seo_cols = [
                 r["name"] for r in conn.execute("PRAGMA table_info(seo_metadata)").fetchall()
             ]
@@ -1057,8 +1061,8 @@ class SQLiteRepository:
                          vi_narration_text, image_prompt, stock_keywords_json, matched_image_index,
                          is_real_demo_slot, callout_label, voice_speed_override, voice_pitch_override,
                          voice_profile_override, speaker_handle, display_card_text, likes_display, is_op_post,
-                         card_image_path, speaker_avatar_path)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         card_image_path, speaker_avatar_path, motion_spec_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             seg_id,
@@ -1082,6 +1086,7 @@ class SQLiteRepository:
                             1 if line.is_op_post else 0,
                             line.card_image_path,
                             line.speaker_avatar_path,
+                            line.motion_spec.model_dump_json() if line.motion_spec else "",
                         ),
                     )
 

@@ -26,6 +26,7 @@ import {
   StudioLoadingBanner,
   SwitchCard,
 } from '../m00_core_contracts/StudioWidgets';
+import MotionArtifactStudio, { MOTION_THEME_OPTIONS } from './MotionArtifactStudio';
 
 const TOPIC_DRAFT_KEY = 'chaos_draft_topic_v1';
 
@@ -42,8 +43,14 @@ const VISUAL_SOURCE_CHOICES = [
   {
     value: 'AI_IMAGE',
     title: 'Ảnh minh họa chuyển động mượt',
-    subtitle: 'Tự tạo hình theo từng câu kèm chuyển cảnh CapCut êm ái',
+    subtitle: 'Tự tạo hình theo từng câu kèm chuyển cảnh CapCut êm ái (Mặc định)',
     icon: Image,
+  },
+  {
+    value: 'MOTION_GRAPHICS',
+    title: '✨ Đồ họa chuyển động (Kiểu Claude / Remotion)',
+    subtitle: 'Chữ động Kinetic, số liệu chạy, biểu đồ & bảng so sánh A/B kiểu Apple / Dan Koe',
+    icon: Sparkles,
   },
   {
     value: 'HYBRID',
@@ -135,6 +142,43 @@ export default function TopicStudioForm({
   const [loadingRadar, setLoadingRadar] = useState(false);
   const [hookScoreRes, setHookScoreRes] = useState(null);
   const [scoringHook, setScoringHook] = useState(false);
+  const [motionScenes, setMotionScenes] = useState([]);
+  const [loadingMotionStoryboard, setLoadingMotionStoryboard] = useState(false);
+  const [motionBrainUsed, setMotionBrainUsed] = useState('Claude / Gemini');
+
+  const motionTheme = layoutConfig?.motion_theme || 'APPLE_GLASS_DARK';
+
+  useEffect(() => {
+    updateTopicLayout({ motion_preview_active: visualMode === 'MOTION_GRAPHICS' });
+  }, [visualMode]);
+
+  const handleBuildMotionStoryboard = async () => {
+    const effTitle = topicTitle.trim() || shortBrief.trim().slice(0, 90);
+    if (effTitle.length < 3) {
+      setErrors({ topicTitle: 'Vui lòng nhập tiêu đề hoặc ý tưởng ngắn ở Bước 1 trước khi dựng phân cảnh đồ họa.' });
+      scrollToFirstValidationError(rootRef);
+      notify('Vui lòng nhập tiêu đề chủ đề ở Bước 1 trước.');
+      return;
+    }
+    clearError('topicTitle');
+    setLoadingMotionStoryboard(true);
+    try {
+      const res = await studioApi.previewMotionStoryboard({
+        topic_title: effTitle,
+        key_points: (keyPoints.trim() || shortBrief.trim()).slice(0, 5000),
+        target_duration_sec: Math.min(160, Math.max(25, Number(durationSec) || 60)),
+        narrative_tone: tone.trim() || 'sâu sắc, gãy gọn kiểu Claude / Dan Koe',
+        motion_theme: motionTheme,
+      });
+      setMotionScenes(res.scenes || []);
+      setMotionBrainUsed(res.used_llm_brain || 'Claude / Gemini');
+      notify(`Đã dựng ${(res.scenes || []).length} phân cảnh Đồ họa chuyển động — mời xem thử & gõ lệnh sửa trực tiếp!`);
+    } catch (err) {
+      notify(`Lỗi dựng phân cảnh đồ họa: ${err.message}`);
+    } finally {
+      setLoadingMotionStoryboard(false);
+    }
+  };
 
   const handleOpenTopicRadar = async (niche = 'ALL_HOT') => {
     setRadarOpen(true);
@@ -306,7 +350,7 @@ export default function TopicStudioForm({
     }
   };
 
-  const handleStart = async (autoOneClick) => {
+  const handleStart = async (autoOneClick, customStoryboardScenes = null) => {
     const effTitle = topicTitle.trim() || shortBrief.trim().slice(0, 90);
     const partsNum = Number(partCount);
     const nextErrs = {};
@@ -330,14 +374,20 @@ export default function TopicStudioForm({
     setErrors({});
     const effPoints = keyPoints.trim() || shortBrief.trim();
     const safeDur = Math.min(160, Math.max(30, Number(durationSec) || 75));
+    const scenesToUse = Array.isArray(customStoryboardScenes)
+      ? customStoryboardScenes
+      : visualMode === 'MOTION_GRAPHICS' && motionScenes.length > 0
+      ? motionScenes
+      : null;
     setSubmitting(true);
     try {
       const res = await studioApi.startTopicProject({
         topic_title: effTitle,
         key_points: effPoints,
         visual_mode: visualMode,
+        motion_theme: motionTheme,
         target_duration_sec: safeDur,
-        part_count: partsNum,
+        part_count: scenesToUse ? 1 : partsNum,
         narrative_tone: tone.trim() || 'Giọng kể tự nhiên cuốn hút',
         voice_profile_id: voiceId,
         voice_speed_global: Number(voiceSpeed),
@@ -348,6 +398,7 @@ export default function TopicStudioForm({
         bgm_volume: bgmVolume,
         enable_smart_sfx: enableSmartSfx,
         smart_keyword_highlight: smartKeywordHighlight,
+        precomputed_lines: scenesToUse,
         layout_config: layoutConfig,
         parent_group_id: parentGroupId || null,
         auto_one_click: autoOneClick,
@@ -444,6 +495,9 @@ export default function TopicStudioForm({
           </span>
           <span className="badge badge-info">Thời lượng: ~{durationSec}s</span>
           <span className="badge">{partCount} tập</span>
+          {visualMode === 'MOTION_GRAPHICS' && (
+            <span className="badge badge-ok">🎬 Motion Graphics</span>
+          )}
           {layoutConfig?.ambience_overlay && layoutConfig.ambience_overlay !== 'NONE' && (
             <span className="badge badge-ok">✨ Không khí: {layoutConfig.ambience_overlay}</span>
           )}
@@ -899,9 +953,83 @@ export default function TopicStudioForm({
           <ModeChoiceGrid
             options={VISUAL_SOURCE_CHOICES}
             value={visualMode}
-            onChange={setVisualMode}
+            onChange={(nextMode) => {
+              setVisualMode(nextMode);
+              if (nextMode === 'MOTION_GRAPHICS' && subtitleStyle === 'KARAOKE_CAPCUT') {
+                setSubtitleStyle('CINEMA');
+              }
+            }}
           />
         </div>
+
+        {visualMode === 'MOTION_GRAPHICS' && (
+          <div
+            className="surface-box fade-slide-in"
+            style={{
+              marginBottom: 14,
+              borderColor: 'var(--brand)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.3, marginBottom: 4 }}>
+                🎬 Chế độ Đồ Họa Chuyển Động (Motion Graphics kiểu Claude / Remotion / Dan Koe)
+              </div>
+              <div className="text-sub" style={{ fontSize: 12.1 }}>
+                AI tự dựng hoạt ảnh chữ Kinetic, đồng hồ số chạy, biểu đồ cột &amp; bảng đối chiếu A/B khớp từng câu đọc — có thể bấm xem thử &amp; gõ lệnh sửa từng phân cảnh ngay bên dưới!
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                className="select"
+                style={{ width: 'auto', minWidth: 235 }}
+                value={motionTheme}
+                onChange={(e) => updateTopicLayout({ motion_theme: e.target.value })}
+              >
+                {MOTION_THEME_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 39, fontWeight: 700 }}
+                disabled={loadingMotionStoryboard || submitting}
+                onClick={handleBuildMotionStoryboard}
+              >
+                {loadingMotionStoryboard ? (
+                  <Loader2 size={15} className="spin" />
+                ) : (
+                  <Sparkles size={15} />
+                )}{' '}
+                {loadingMotionStoryboard
+                  ? 'Đang dựng phân cảnh...'
+                  : motionScenes.length > 0
+                  ? 'Tạo lại Phân cảnh Đồ họa'
+                  : 'Dựng thử & Sửa từng cảnh (Artifacts)'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {visualMode === 'MOTION_GRAPHICS' && motionScenes.length > 0 && (
+          <MotionArtifactStudio
+            scenes={motionScenes}
+            setScenes={setMotionScenes}
+            motionTheme={motionTheme}
+            onChangeTheme={(nextT) => updateTopicLayout({ motion_theme: nextT })}
+            usedBrainLabel={motionBrainUsed}
+            submitting={submitting}
+            onRenderMp4={(editedScenes) => handleStart(true, editedScenes)}
+            notify={notify}
+          />
+        )}
 
         <div className="form-grid">
           <InlineVoiceSelector

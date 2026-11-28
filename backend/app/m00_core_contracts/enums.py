@@ -143,6 +143,35 @@ class VisualMode(str, Enum):
     AI_IMAGE = "AI_IMAGE"
     STOCK_VIDEO = "STOCK_VIDEO"
     HYBRID = "HYBRID"
+    MOTION_GRAPHICS = "MOTION_GRAPHICS"
+
+
+class MotionThemeStyle(str, Enum):
+    """Color & typography design systems for programmatic Motion Graphics (`MOTION_GRAPHICS`)."""
+
+    APPLE_GLASS_DARK = "APPLE_GLASS_DARK"
+    DAN_KOE_MINIMAL = "DAN_KOE_MINIMAL"
+    WARM_ARTISAN_GOLD = "WARM_ARTISAN_GOLD"
+    NEON_TECH_INFOGRAPHIC = "NEON_TECH_INFOGRAPHIC"
+
+
+class MotionSceneTemplate(str, Enum):
+    """Animated vector/infographic scene templates synced to spoken narration."""
+
+    KINETIC_HOOK = "KINETIC_HOOK"
+    STAT_COUNTER = "STAT_COUNTER"
+    BAR_CHART = "BAR_CHART"
+    VERSUS_SPLIT = "VERSUS_SPLIT"
+    STEP_FLOW = "STEP_FLOW"
+    SPEC_SPOTLIGHT = "SPEC_SPOTLIGHT"
+
+
+class LLMBrainChoice(str, Enum):
+    """Preferred LLM scriptwriting & storyboard brain in Module M03."""
+
+    AUTO = "AUTO"
+    CLAUDE = "CLAUDE"
+    GEMINI = "GEMINI"
 
 
 class CutStrategy(str, Enum):
